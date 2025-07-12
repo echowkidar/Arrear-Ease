@@ -73,9 +73,25 @@ export default function RatesPage() {
 
         const handleInputChange = (id: string, field: keyof Rate, e: React.ChangeEvent<HTMLInputElement>) => {
             const value = e.target.value;
-            const numericValue = Number(value);
-            updateRate(id, field, isNaN(numericValue) ? '' : numericValue);
+            // For numeric fields, handle empty string and convert to number on blur or when valid
+            if (value === '') {
+                updateRate(id, field, '');
+            } else {
+                const numericValue = parseFloat(value);
+                if (!isNaN(numericValue)) {
+                    updateRate(id, field, numericValue);
+                } else if (value === '') {
+                     updateRate(id, field, '');
+                }
+            }
         };
+
+        const handleBlur = (id: string, field: keyof Rate, e: React.FocusEvent<HTMLInputElement>) => {
+            const value = e.target.value;
+            if (value === '') {
+                updateRate(id, field, 0);
+            }
+        }
   
         return (
             <Card>
@@ -114,11 +130,11 @@ export default function RatesPage() {
                                             />
                                         </TableCell>
                                         {withBasicRange && <>
-                                            <TableCell><Input type="number" value={field.basicFrom || ''} onChange={e => handleInputChange(field.id, 'basicFrom', e)} /></TableCell>
-                                            <TableCell><Input type="number" value={field.basicTo || ''} onChange={e => handleInputChange(field.id, 'basicTo', e)} /></TableCell>
+                                            <TableCell><Input type="number" value={field.basicFrom ?? ''} onChange={e => handleInputChange(field.id, 'basicFrom', e)} onBlur={e => handleBlur(field.id, 'basicFrom', e)} /></TableCell>
+                                            <TableCell><Input type="number" value={field.basicTo ?? ''} onChange={e => handleInputChange(field.id, 'basicTo', e)} onBlur={e => handleBlur(field.id, 'basicTo', e)} /></TableCell>
                                         </>}
                                         <TableCell>
-                                            <Input type="number" value={field.rate || ''} onChange={e => handleInputChange(field.id, 'rate', e)} />
+                                            <Input type="number" value={field.rate ?? ''} onChange={e => handleInputChange(field.id, 'rate', e)} onBlur={e => handleBlur(field.id, 'rate', e)}/>
                                         </TableCell>
                                         <TableCell>
                                             <Button type="button" variant="destructive" size="icon" onClick={() => remove(field.id)}>
@@ -160,5 +176,3 @@ export default function RatesPage() {
         </main>
     );
 }
-
-    
