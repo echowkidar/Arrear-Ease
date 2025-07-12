@@ -17,6 +17,7 @@ import {
   Info,
   Trash2,
   PlusCircle,
+  Settings,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -49,6 +50,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar } from "@/components/ui/calendar";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Popover,
   PopoverContent,
@@ -68,6 +70,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cpcData } from "@/lib/cpc-data";
 
 const rateSchema = z.object({
+  id: z.string(),
   fromDate: z.date(),
   toDate: z.date(),
   rate: z.coerce.number().min(0),
@@ -78,13 +81,16 @@ const rateSchema = z.object({
     path: ["toDate"],
 });
 
+type Rate = z.infer<typeof rateSchema>;
+
 const salaryComponentSchema = z.object({
   basicPay: z.coerce.number({ required_error: "Basic Pay is required." }).min(0, "Cannot be negative"),
   payLevel: z.string({ required_error: "Pay Level is required." }),
-  daRate: z.coerce.number({ required_error: "DA Rate is required." }).min(0).max(200, "DA rate seems high"),
-  hraRate: z.coerce.number({ required_error: "HRA Rate is required." }).min(0).max(100),
-  npaRate: z.coerce.number({ required_error: "NPA Rate is required." }).min(0).max(100),
-  taRate: z.coerce.number({ required_error: "TA Rate is required." }).min(0),
+  daApplicable: z.boolean().default(false),
+  hraApplicable: z.boolean().default(false),
+  npaApplicable: z.boolean().default(false),
+  taApplicable: z.boolean().default(false),
+  taRate: z.coerce.number().min(0).optional(),
   otherAllowanceName: z.string().optional(),
   otherAllowance: z.coerce.number().min(0).optional().default(0),
 });
@@ -101,11 +107,6 @@ const formSchema = z.object({
     incrementMonth: z.string({ required_error: "Increment month is required." }),
     paid: salaryComponentSchema,
     toBePaid: salaryComponentSchema,
-
-    daRates: z.array(rateSchema),
-    hraRates: z.array(rateSchema),
-    npaRates: z.array(rateSchema),
-    taRates: z.array(rateSchema),
   }).refine(data => data.toDate >= data.fromDate, {
     message: "To Date cannot be before From Date.",
     path: ["toDate"],
@@ -126,16 +127,20 @@ type StatementTotals = {
   difference: number;
 };
 
-const MONTHS = [
-  { value: "1", label: "January" }, { value: "2", label: "February" }, { value: "3", label: "March" },
-  { value: "4", label: "April" }, { value: "5", label: "May" }, { value: "6", label: "June" },
-  { value: "7", label: "July" }, { value: "8", label: "August" }, { value: "9", label: "September" },
-  { value: "10", label: "October" }, { value: "11", label: "November" }, { value: "12", label: "December" },
+const INCREMENT_MONTHS = [
+  { value: "1", label: "January" },
+  { value: "7", label: "July" },
 ];
 
 export default function Home() {
   const [statement, setStatement] = React.useState<{ rows: StatementRow[]; totals: StatementTotals; employeeInfo: Partial<ArrearFormData> } | null>(null);
+  const [showRateTables, setShowRateTables] = React.useState(false);
   const { toast } = useToast();
+
+  const [daRates, setDaRates] = React.useState<Rate[]>([]);
+  const [hraRates, setHraRates] = React.useState<Rate[]>([]);
+  const [npaRates, setNpaRates] = React.useState<Rate[]>([]);
+  const [taRates, setTaRates] = React.useState<Rate[]>([]);
   
   const form = useForm<ArrearFormData>({
     resolver: zodResolver(formSchema),
@@ -147,42 +152,40 @@ export default function Home() {
       payFixationRef: "",
       paid: {
         basicPay: undefined,
-        daRate: undefined,
-        hraRate: undefined,
-        npaRate: undefined,
+        payLevel: undefined,
+        daApplicable: false,
+        hraApplicable: false,
+        npaApplicable: false,
+        taApplicable: false,
         taRate: undefined,
         otherAllowance: 0,
-        payLevel: undefined,
         otherAllowanceName: "",
       },
       toBePaid: {
         basicPay: undefined,
-        daRate: undefined,
-        hraRate: undefined,
-        npaRate: undefined,
+        payLevel: undefined,
+        daApplicable: false,
+        hraApplicable: false,
+        npaApplicable: false,
+        taApplicable: false,
         taRate: undefined,
         otherAllowance: 0,
-        payLevel: undefined,
         otherAllowanceName: "",
       },
-      daRates: [],
-      hraRates: [],
-      npaRates: [],
-      taRates: [],
     },
   });
 
   const cpc = form.watch("cpc");
   const payLevels = cpc ? cpcData[cpc].payLevels.map(pl => ({ value: pl.level, label: `Level ${pl.level}`})) : [];
 
-  const getRateForDate = (rates: z.infer<typeof rateSchema>[], date: Date, basicPay?: number) => {
+  const getRateForDate = (rates: Rate[], date: Date, basicPay?: number) => {
     const applicableRate = rates.find(r => {
       const from = r.fromDate;
       const to = r.toDate;
       let isDateMatch = date >= from && date <= to;
       let isBasicMatch = true;
       if (basicPay !== undefined) {
-        if (r.basicFrom !== undefined && r.basicTo !== undefined) {
+        if (r.basicFrom !== undefined && r.basicTo !== undefined && r.basicFrom > 0 && r.basicTo > 0) {
           isBasicMatch = basicPay >= r.basicFrom && basicPay <= r.basicTo;
         }
       }
@@ -204,63 +207,63 @@ export default function Home() {
       const endDate = data.toDate;
       const monthCount = differenceInCalendarMonths(endDate, startDate);
 
+      let drawnBasicTracker = data.paid.basicPay;
+      let dueBasicTracker = data.toBePaid.basicPay;
+
       for (let i = 0; i <= monthCount; i++) {
         const currentDate = addMonths(startDate, i);
         const currentMonth = currentDate.getMonth() + 1;
         
-        let currentDrawnBasic = data.paid.basicPay;
-        let currentDueBasic = data.toBePaid.basicPay;
-        
         const incrementMonthValue = parseInt(data.incrementMonth);
-        if (incrementMonthValue === currentMonth) {
-            // This is a simplified increment logic. Real logic can be much more complex.
-            // For 7th CPC, increment is 3% of basic pay, rounded to next 100.
-            if(cpc === '7th' && data.paid.payLevel) {
-              const levelData = cpcData['7th'].payLevels.find(l => l.level === data.paid.payLevel);
-              if (levelData) {
-                  const currentBasicIndex = levelData.values.indexOf(currentDrawnBasic);
-                  if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
-                      currentDrawnBasic = levelData.values[currentBasicIndex + 1];
-                  }
-              }
-            }
-            if(cpc === '7th' && data.toBePaid.payLevel) {
-              const levelData = cpcData['7th'].payLevels.find(l => l.level === data.toBePaid.payLevel);
-              if (levelData) {
-                  const currentBasicIndex = levelData.values.indexOf(currentDueBasic);
-                  if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
-                      currentDueBasic = levelData.values[currentBasicIndex + 1];
-                  }
-              }
+        if (i > 0 && incrementMonthValue === currentMonth) {
+            if(cpc === '7th') {
+                if (data.paid.payLevel) {
+                    const levelData = cpcData['7th'].payLevels.find(l => l.level === data.paid.payLevel);
+                    if (levelData) {
+                        const currentBasicIndex = levelData.values.indexOf(drawnBasicTracker);
+                        if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
+                            drawnBasicTracker = levelData.values[currentBasicIndex + 1];
+                        }
+                    }
+                }
+                if (data.toBePaid.payLevel) {
+                    const levelData = cpcData['7th'].payLevels.find(l => l.level === data.toBePaid.payLevel);
+                    if (levelData) {
+                        const currentBasicIndex = levelData.values.indexOf(dueBasicTracker);
+                        if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
+                            dueBasicTracker = levelData.values[currentBasicIndex + 1];
+                        }
+                    }
+                }
             }
         }
 
-        const drawnDaRate = getRateForDate(data.daRates, currentDate);
-        const drawnHraRate = getRateForDate(data.hraRates, currentDate, currentDrawnBasic);
-        const drawnNpaRate = getRateForDate(data.npaRates, currentDate);
-        const drawnTaRate = getRateForDate(data.taRates, currentDate, currentDrawnBasic);
-        
-        const dueDaRate = getRateForDate(data.daRates, currentDate);
-        const dueHraRate = getRateForDate(data.hraRates, currentDate, currentDueBasic);
-        const dueNpaRate = getRateForDate(data.npaRates, currentDate);
-        const dueTaRate = getRateForDate(data.taRates, currentDate, currentDueBasic);
+        const drawnDaRate = data.paid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
+        const drawnHraRate = data.paid.hraApplicable ? getRateForDate(hraRates, currentDate, drawnBasicTracker) : 0;
+        const drawnNpaRate = data.paid.npaApplicable ? getRateForDate(npaRates, currentDate) : 0;
+        const drawnTaAmount = data.paid.taApplicable ? (data.paid.taRate || 0) : 0;
 
-        const drawnDA = currentDrawnBasic * (drawnDaRate / 100);
-        const drawnHRA = currentDrawnBasic * (drawnHraRate / 100);
-        const drawnNPA = currentDrawnBasic * (drawnNpaRate / 100);
-        const drawnTotal = currentDrawnBasic + drawnDA + drawnHRA + drawnNPA + drawnTaRate + (data.paid.otherAllowance || 0);
+        const dueDaRate = data.toBePaid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
+        const dueHraRate = data.toBePaid.hraApplicable ? getRateForDate(hraRates, currentDate, dueBasicTracker) : 0;
+        const dueNpaRate = data.toBePaid.npaApplicable ? getRateForDate(npaRates, currentDate) : 0;
+        const dueTaAmount = data.toBePaid.taApplicable ? (data.toBePaid.taRate || 0) : 0;
 
-        const dueDA = currentDueBasic * (dueDaRate / 100);
-        const dueHRA = currentDueBasic * (dueHraRate / 100);
-        const dueNPA = currentDueBasic * (dueNpaRate / 100);
-        const dueTotal = currentDueBasic + dueDA + dueHRA + dueNPA + dueTaRate + (data.toBePaid.otherAllowance || 0);
+        const drawnDA = drawnBasicTracker * (drawnDaRate / 100);
+        const drawnHRA = drawnBasicTracker * (drawnHraRate / 100);
+        const drawnNPA = drawnBasicTracker * (drawnNpaRate / 100);
+        const drawnTotal = drawnBasicTracker + drawnDA + drawnHRA + drawnNPA + drawnTaAmount + (data.paid.otherAllowance || 0);
+
+        const dueDA = dueBasicTracker * (dueDaRate / 100);
+        const dueHRA = dueBasicTracker * (dueHraRate / 100);
+        const dueNPA = dueBasicTracker * (dueNpaRate / 100);
+        const dueTotal = dueBasicTracker + dueDA + dueHRA + dueNPA + dueTaAmount + (data.toBePaid.otherAllowance || 0);
         
         const difference = dueTotal - drawnTotal;
 
         rows.push({
           month: format(currentDate, "MMM yyyy"),
-          drawn: { basic: currentDrawnBasic, da: drawnDA, hra: drawnHRA, npa: drawnNPA, ta: drawnTaRate, other: data.paid.otherAllowance || 0, total: drawnTotal },
-          due: { basic: currentDueBasic, da: dueDA, hra: dueHRA, npa: dueNPA, ta: dueTaRate, other: data.toBePaid.otherAllowance || 0, total: dueTotal },
+          drawn: { basic: drawnBasicTracker, da: drawnDA, hra: drawnHRA, npa: drawnNPA, ta: drawnTaAmount, other: data.paid.otherAllowance || 0, total: drawnTotal },
+          due: { basic: dueBasicTracker, da: dueDA, hra: dueHRA, npa: dueNPA, ta: dueTaAmount, other: data.toBePaid.otherAllowance || 0, total: dueTotal },
           difference,
         });
 
@@ -304,16 +307,46 @@ export default function Home() {
        )} />
       <FormField control={form.control} name={`${type}.basicPay`} render={({ field }) => (
         <FormItem>
-          <FormLabel>Basic Pay (₹)</FormLabel>
+          <FormLabel>Basic Pay</FormLabel>
           <FormControl><Input type="number" placeholder="e.g., 50000" {...field} /></FormControl>
           <FormMessage />
         </FormItem>
       )} />
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <FormField control={form.control} name={`${type}.daRate`} render={({ field }) => ( <FormItem> <FormLabel>DA Rate (%)</FormLabel> <FormControl><Input type="number" placeholder="e.g., 50" {...field} /></FormControl> <FormMessage /> </FormItem> )} />
-        <FormField control={form.control} name={`${type}.hraRate`} render={({ field }) => ( <FormItem> <FormLabel>HRA Rate (%)</FormLabel> <FormControl><Input type="number" placeholder="e.g., 18" {...field} /></FormControl> <FormMessage /> </FormItem> )} />
-        <FormField control={form.control} name={`${type}.npaRate`} render={({ field }) => ( <FormItem> <FormLabel>NPA Rate (%)</FormLabel> <FormControl><Input type="number" placeholder="e.g., 20" {...field} /></FormControl> <FormMessage /> </FormItem> )} />
-        <FormField control={form.control} name={`${type}.taRate`} render={({ field }) => ( <FormItem> <FormLabel>TA Rate (₹)</FormLabel> <FormControl><Input type="number" placeholder="e.g., 3600" {...field} /></FormControl> <FormMessage /> </FormItem> )} />
+      <div className="space-y-4 rounded-md border p-4">
+          <h4 className="font-medium">Applicable Allowances</h4>
+          <FormField control={form.control} name={`${type}.daApplicable`} render={({ field }) => (
+            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                <FormLabel className="font-normal">DA (Dearness Allowance)</FormLabel>
+            </FormItem>
+          )} />
+          <FormField control={form.control} name={`${type}.hraApplicable`} render={({ field }) => (
+            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                <FormLabel className="font-normal">HRA (House Rent Allowance)</FormLabel>
+            </FormItem>
+          )} />
+          <FormField control={form.control} name={`${type}.npaApplicable`} render={({ field }) => (
+            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                <FormLabel className="font-normal">NPA (Non-Practicing Allowance)</FormLabel>
+            </FormItem>
+          )} />
+          <FormField control={form.control} name={`${type}.taApplicable`} render={({ field }) => (
+            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                <FormLabel className="font-normal">TA (Transport Allowance)</FormLabel>
+            </FormItem>
+          )} />
+          {form.watch(`${type}.taApplicable`) && (
+            <FormField control={form.control} name={`${type}.taRate`} render={({ field }) => (
+                <FormItem>
+                  <FormLabel>TA Amount</FormLabel>
+                  <FormControl><Input type="number" placeholder="Enter fixed TA amount" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+          )}
       </div>
        <FormField control={form.control} name={`${type}.otherAllowanceName`} render={({ field }) => (
         <FormItem>
@@ -324,7 +357,7 @@ export default function Home() {
         )} />
       <FormField control={form.control} name={`${type}.otherAllowance`} render={({ field }) => (
         <FormItem>
-          <FormLabel>Other Allowance Amount (₹)</FormLabel>
+          <FormLabel>Other Allowance Amount</FormLabel>
           <FormControl><Input type="number" placeholder="e.g., 1500" {...field} /></FormControl>
           <FormMessage />
         </FormItem>
@@ -332,17 +365,25 @@ export default function Home() {
     </div>
   );
 
-  const RateTable = ({ name, title, withBasicRange }: { name: "daRates" | "hraRates" | "npaRates" | "taRates", title: string, withBasicRange?: boolean }) => {
-      const { fields, append, remove } = useFieldArray({
-          control: form.control,
-          name,
-      });
+  const RateTable = ({ title, withBasicRange, rates, setRates }: { title: string, withBasicRange?: boolean, rates: Rate[], setRates: React.Dispatch<React.SetStateAction<Rate[]>> }) => {
+      
+      const append = () => {
+          setRates(prev => [...prev, { id: crypto.randomUUID(), fromDate: new Date(), toDate: new Date(), rate: 0, basicFrom: 0, basicTo: 0 }])
+      }
+
+      const remove = (id: string) => {
+          setRates(prev => prev.filter(r => r.id !== id))
+      }
+
+      const updateRate = (id: string, field: keyof Rate, value: any) => {
+          setRates(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r))
+      }
 
       return (
           <Card>
               <CardHeader>
                   <CardTitle className="flex justify-between items-center">{title}
-                      <Button type="button" size="sm" onClick={() => append({ fromDate: new Date(), toDate: new Date(), rate: 0, basicFrom: 0, basicTo: 0 })}>
+                      <Button type="button" size="sm" onClick={append}>
                           <PlusCircle className="mr-2"/> Add Row
                       </Button>
                   </CardTitle>
@@ -353,29 +394,35 @@ export default function Home() {
                           <TableRow>
                               <TableHead>From Date</TableHead>
                               <TableHead>To Date</TableHead>
-                              {withBasicRange && <><TableHead>Basic From (₹)</TableHead><TableHead>Basic To (₹)</TableHead></>}
+                              {withBasicRange && <><TableHead>Basic From</TableHead><TableHead>Basic To</TableHead></>}
                               <TableHead>Rate (%)</TableHead>
                               <TableHead>Action</TableHead>
                           </TableRow>
                       </TableHeader>
                       <TableBody>
-                          {fields.map((field, index) => (
+                          {rates.map((field) => (
                               <TableRow key={field.id}>
                                   <TableCell>
-                                      <FormField control={form.control} name={`${name}.${index}.fromDate`} render={({ field }) => (<DateInput field={field} />)} />
+                                      <DateInput 
+                                        value={field.fromDate} 
+                                        onChange={(date) => updateRate(field.id, 'fromDate', date)}
+                                      />
                                   </TableCell>
                                   <TableCell>
-                                      <FormField control={form.control} name={`${name}.${index}.toDate`} render={({ field }) => (<DateInput field={field} />)} />
+                                     <DateInput 
+                                        value={field.toDate} 
+                                        onChange={(date) => updateRate(field.id, 'toDate', date)}
+                                      />
                                   </TableCell>
                                   {withBasicRange && <>
-                                      <TableCell><FormField control={form.control} name={`${name}.${index}.basicFrom`} render={({ field }) => <Input type="number" {...field} />} /></TableCell>
-                                      <TableCell><FormField control={form.control} name={`${name}.${index}.basicTo`} render={({ field }) => <Input type="number" {...field} />} /></TableCell>
+                                      <TableCell><Input type="number" value={field.basicFrom} onChange={e => updateRate(field.id, 'basicFrom', e.target.valueAsNumber)} /></TableCell>
+                                      <TableCell><Input type="number" value={field.basicTo} onChange={e => updateRate(field.id, 'basicTo', e.target.valueAsNumber)} /></TableCell>
                                   </>}
                                   <TableCell>
-                                      <FormField control={form.control} name={`${name}.${index}.rate`} render={({ field }) => <Input type="number" {...field} />} />
+                                      <Input type="number" value={field.rate} onChange={e => updateRate(field.id, 'rate', e.target.valueAsNumber)} />
                                   </TableCell>
                                   <TableCell>
-                                      <Button type="button" variant="destructive" size="icon" onClick={() => remove(index)}>
+                                      <Button type="button" variant="destructive" size="icon" onClick={() => remove(field.id)}>
                                           <Trash2 />
                                       </Button>
                                   </TableCell>
@@ -388,18 +435,32 @@ export default function Home() {
       )
   }
 
-  const DateInput = ({ field }: { field: any }) => (
+  const DateInput = ({ value, onChange }: { value: Date; onChange: (date?: Date) => void }) => (
+      <Popover>
+          <PopoverTrigger asChild>
+              <Button variant={"outline"} className={cn("w-[240px] pl-3 text-left font-normal", !value && "text-muted-foreground")}>
+                  {value ? format(value, "PPP") : <span>Pick a date</span>}
+                  <CalendarDays className="ml-auto h-4 w-4 opacity-50" />
+              </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start">
+              <Calendar mode="single" selected={value} onSelect={onChange} captionLayout="dropdown-buttons" fromYear={1990} toYear={2050} initialFocus />
+          </PopoverContent>
+      </Popover>
+  );
+
+  const FormDateInput = ({ field }: { field: any }) => (
       <Popover>
           <PopoverTrigger asChild>
               <FormControl>
-                  <Button variant={"outline"} className={cn("w-[240px] pl-3 text-left font-normal", !field.value && "text-muted-foreground")}>
+                  <Button variant={"outline"} className={cn("w-full pl-3 text-left font-normal", !field.value && "text-muted-foreground")}>
                       {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
                       <CalendarDays className="ml-auto h-4 w-4 opacity-50" />
                   </Button>
               </FormControl>
           </PopoverTrigger>
           <PopoverContent className="w-auto p-0" align="start">
-              <Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus />
+              <Calendar mode="single" selected={field.value} onSelect={field.onChange} captionLayout="dropdown-buttons" fromYear={1990} toYear={2050} initialFocus />
           </PopoverContent>
       </Popover>
   );
@@ -407,10 +468,25 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-background">
       <main className="container mx-auto px-4 py-8 md:py-12">
-        <header className="text-center mb-12 no-print">
+        <header className="text-center mb-8 no-print">
           <h1 className="font-headline text-4xl md:text-5xl font-bold text-primary">ArrearEase</h1>
           <p className="text-muted-foreground mt-2 text-lg">A Simple Tool for Complex Salary Arrear Calculations</p>
         </header>
+
+        <div className="flex justify-end mb-4 no-print">
+          <Button variant="outline" onClick={() => setShowRateTables(prev => !prev)}>
+            <Settings className="mr-2" /> {showRateTables ? "Hide" : "Show"} Rate Configuration
+          </Button>
+        </div>
+
+        {showRateTables && (
+          <div className="space-y-8 mb-8 no-print">
+            <RateTable title="DA Rate Master" rates={daRates} setRates={setDaRates} />
+            <RateTable title="HRA Rate Master" withBasicRange rates={hraRates} setRates={setHraRates} />
+            <RateTable title="NPA Rate Master" rates={npaRates} setRates={setNpaRates} />
+            <RateTable title="TA Rate Master" rates={taRates} setRates={setTaRates} />
+          </div>
+        )}
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8 no-print">
@@ -442,8 +518,8 @@ export default function Home() {
                   <CardHeader><CardTitle className="flex items-center gap-2"><CalendarDays /> Calculation Period & Pay Details</CardTitle></CardHeader>
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <FormField control={form.control} name="fromDate" render={({ field }) => ( <FormItem className="flex flex-col"><FormLabel>From Date</FormLabel><DateInput field={field}/><FormMessage /></FormItem> )} />
-                       <FormField control={form.control} name="toDate" render={({ field }) => ( <FormItem className="flex flex-col"><FormLabel>To Date</FormLabel><DateInput field={field}/><FormMessage /></FormItem> )} />
+                      <FormField control={form.control} name="fromDate" render={({ field }) => ( <FormItem className="flex flex-col"><FormLabel>From Date</FormLabel><FormDateInput field={field}/><FormMessage /></FormItem> )} />
+                       <FormField control={form.control} name="toDate" render={({ field }) => ( <FormItem className="flex flex-col"><FormLabel>To Date</FormLabel><FormDateInput field={field}/><FormMessage /></FormItem> )} />
                     </div>
                     <FormField control={form.control} name="payFixationRef" render={({ field }) => (<FormItem><FormLabel>Pay Fixation Reference</FormLabel><FormControl><Input placeholder="Reference No." {...field} /></FormControl></FormItem>)} />
                     <FormField control={form.control} name="incrementMonth" render={({ field }) => (
@@ -451,7 +527,7 @@ export default function Home() {
                         <FormLabel>Increment Month</FormLabel>
                         <Select onValueChange={field.onChange} defaultValue={field.value}>
                           <FormControl><SelectTrigger><SelectValue placeholder="Select a month" /></SelectTrigger></FormControl>
-                          <SelectContent>{MONTHS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent>
+                          <SelectContent>{INCREMENT_MONTHS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent>
                         </Select>
                         <FormMessage />
                       </FormItem>
@@ -474,13 +550,6 @@ export default function Home() {
                   </CardContent>
                 </Card>
               </div>
-            </div>
-
-            <div className="space-y-8">
-              <RateTable name="daRates" title="DA Rates" />
-              <RateTable name="hraRates" title="HRA Rates" withBasicRange />
-              <RateTable name="npaRates" title="NPA Rates" />
-              <RateTable name="taRates" title="TA Rates" withBasicRange />
             </div>
 
             <div className="flex justify-center">
@@ -511,9 +580,9 @@ export default function Home() {
                     <TableHeader>
                       <TableRow>
                         <TableHead rowSpan={2} className="text-center align-middle border-r">Month</TableHead>
-                        <TableHead colSpan={7} className="text-center border-r">Amount Drawn (₹)</TableHead>
-                        <TableHead colSpan={7} className="text-center border-r">Amount Due (₹)</TableHead>
-                        <TableHead rowSpan={2} className="text-center align-middle">Difference (₹)</TableHead>
+                        <TableHead colSpan={7} className="text-center border-r">Amount Drawn</TableHead>
+                        <TableHead colSpan={7} className="text-center border-r">Amount Due</TableHead>
+                        <TableHead rowSpan={2} className="text-center align-middle">Difference</TableHead>
                       </TableRow>
                       <TableRow>
                         <TableHead className="text-right">Basic</TableHead>
