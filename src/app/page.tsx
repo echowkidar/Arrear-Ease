@@ -1,22 +1,19 @@
 "use client";
 
 import * as React from "react";
-import { useForm, useFieldArray, Controller } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { format, addMonths, differenceInCalendarMonths, parse } from "date-fns";
+import Link from "next/link";
+import { format, addMonths, differenceInCalendarMonths } from "date-fns";
 import {
   User,
   Building,
-  Briefcase,
   CalendarDays,
   FileText,
-  Percent,
   Download,
   Calculator,
   Info,
-  Trash2,
-  PlusCircle,
   Settings,
 } from "lucide-react";
 
@@ -68,20 +65,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { cpcData } from "@/lib/cpc-data";
-
-const rateSchema = z.object({
-  id: z.string(),
-  fromDate: z.date(),
-  toDate: z.date(),
-  rate: z.coerce.number().min(0),
-  basicFrom: z.coerce.number().optional(),
-  basicTo: z.coerce.number().optional(),
-}).refine(data => !data.toDate || !data.fromDate || data.toDate >= data.fromDate, {
-    message: "To Date cannot be before From Date.",
-    path: ["toDate"],
-});
-
-type Rate = z.infer<typeof rateSchema>;
+import { Rate, useRates } from "@/context/rates-context";
 
 const salaryComponentSchema = z.object({
   basicPay: z.coerce.number({ required_error: "Basic Pay is required." }).min(0, "Cannot be negative"),
@@ -134,13 +118,8 @@ const INCREMENT_MONTHS = [
 
 export default function Home() {
   const [statement, setStatement] = React.useState<{ rows: StatementRow[]; totals: StatementTotals; employeeInfo: Partial<ArrearFormData> } | null>(null);
-  const [showRateTables, setShowRateTables] = React.useState(false);
   const { toast } = useToast();
-
-  const [daRates, setDaRates] = React.useState<Rate[]>([]);
-  const [hraRates, setHraRates] = React.useState<Rate[]>([]);
-  const [npaRates, setNpaRates] = React.useState<Rate[]>([]);
-  const [taRates, setTaRates] = React.useState<Rate[]>([]);
+  const { daRates, hraRates, npaRates, taRates } = useRates();
   
   const form = useForm<ArrearFormData>({
     resolver: zodResolver(formSchema),
@@ -365,90 +344,6 @@ export default function Home() {
     </div>
   );
 
-  const RateTable = ({ title, withBasicRange, rates, setRates }: { title: string, withBasicRange?: boolean, rates: Rate[], setRates: React.Dispatch<React.SetStateAction<Rate[]>> }) => {
-      
-      const append = () => {
-          setRates(prev => [...prev, { id: crypto.randomUUID(), fromDate: new Date(), toDate: new Date(), rate: 0, basicFrom: 0, basicTo: 0 }])
-      }
-
-      const remove = (id: string) => {
-          setRates(prev => prev.filter(r => r.id !== id))
-      }
-
-      const updateRate = (id: string, field: keyof Rate, value: any) => {
-          setRates(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r))
-      }
-
-      return (
-          <Card>
-              <CardHeader>
-                  <CardTitle className="flex justify-between items-center">{title}
-                      <Button type="button" size="sm" onClick={append}>
-                          <PlusCircle className="mr-2"/> Add Row
-                      </Button>
-                  </CardTitle>
-              </CardHeader>
-              <CardContent>
-                  <Table>
-                      <TableHeader>
-                          <TableRow>
-                              <TableHead>From Date</TableHead>
-                              <TableHead>To Date</TableHead>
-                              {withBasicRange && <><TableHead>Basic From</TableHead><TableHead>Basic To</TableHead></>}
-                              <TableHead>Rate (%)</TableHead>
-                              <TableHead>Action</TableHead>
-                          </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                          {rates.map((field) => (
-                              <TableRow key={field.id}>
-                                  <TableCell>
-                                      <DateInput 
-                                        value={field.fromDate} 
-                                        onChange={(date) => updateRate(field.id, 'fromDate', date)}
-                                      />
-                                  </TableCell>
-                                  <TableCell>
-                                     <DateInput 
-                                        value={field.toDate} 
-                                        onChange={(date) => updateRate(field.id, 'toDate', date)}
-                                      />
-                                  </TableCell>
-                                  {withBasicRange && <>
-                                      <TableCell><Input type="number" value={field.basicFrom} onChange={e => updateRate(field.id, 'basicFrom', e.target.valueAsNumber)} /></TableCell>
-                                      <TableCell><Input type="number" value={field.basicTo} onChange={e => updateRate(field.id, 'basicTo', e.target.valueAsNumber)} /></TableCell>
-                                  </>}
-                                  <TableCell>
-                                      <Input type="number" value={field.rate} onChange={e => updateRate(field.id, 'rate', e.target.valueAsNumber)} />
-                                  </TableCell>
-                                  <TableCell>
-                                      <Button type="button" variant="destructive" size="icon" onClick={() => remove(field.id)}>
-                                          <Trash2 />
-                                      </Button>
-                                  </TableCell>
-                              </TableRow>
-                          ))}
-                      </TableBody>
-                  </Table>
-              </CardContent>
-          </Card>
-      )
-  }
-
-  const DateInput = ({ value, onChange }: { value: Date; onChange: (date?: Date) => void }) => (
-      <Popover>
-          <PopoverTrigger asChild>
-              <Button variant={"outline"} className={cn("w-[240px] pl-3 text-left font-normal", !value && "text-muted-foreground")}>
-                  {value ? format(value, "PPP") : <span>Pick a date</span>}
-                  <CalendarDays className="ml-auto h-4 w-4 opacity-50" />
-              </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-              <Calendar mode="single" selected={value} onSelect={onChange} captionLayout="dropdown-buttons" fromYear={1990} toYear={2050} initialFocus />
-          </PopoverContent>
-      </Popover>
-  );
-
   const FormDateInput = ({ field }: { field: any }) => (
       <Popover>
           <PopoverTrigger asChild>
@@ -474,19 +369,12 @@ export default function Home() {
         </header>
 
         <div className="flex justify-end mb-4 no-print">
-          <Button variant="outline" onClick={() => setShowRateTables(prev => !prev)}>
-            <Settings className="mr-2" /> {showRateTables ? "Hide" : "Show"} Rate Configuration
-          </Button>
+            <Button variant="outline" asChild>
+                <Link href="/rates">
+                    <Settings className="mr-2" /> Rate Configuration
+                </Link>
+            </Button>
         </div>
-
-        {showRateTables && (
-          <div className="space-y-8 mb-8 no-print">
-            <RateTable title="DA Rate Master" rates={daRates} setRates={setDaRates} />
-            <RateTable title="HRA Rate Master" withBasicRange rates={hraRates} setRates={setHraRates} />
-            <RateTable title="NPA Rate Master" rates={npaRates} setRates={setNpaRates} />
-            <RateTable title="TA Rate Master" rates={taRates} setRates={setTaRates} />
-          </div>
-        )}
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8 no-print">
