@@ -273,27 +273,35 @@ export default function Home() {
 
         const proratedDrawnBasic = drawnBasicTracker * proRataFactor;
         const proratedDueBasic = dueBasicTracker * proRataFactor;
-
-        const drawnDaRate = data.paid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
+        
         const drawnHraRate = data.paid.hraApplicable ? getRateForDate(hraRates, currentDate, drawnBasicTracker) : 0;
         const drawnNpaRate = data.paid.npaApplicable ? getRateForDate(npaRates, currentDate) : 0;
         const drawnTaAmount = data.paid.taApplicable ? getRateForDate(taRates, currentDate, drawnBasicTracker) * proRataFactor : 0;
         const drawnOtherAmount = (data.paid.otherAllowance || 0) * proRataFactor;
 
-        const dueDaRate = data.toBePaid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
         const dueHraRate = data.toBePaid.hraApplicable ? getRateForDate(hraRates, currentDate, dueBasicTracker) : 0;
         const dueNpaRate = data.toBePaid.npaApplicable ? getRateForDate(npaRates, currentDate) : 0;
         const dueTaAmount = data.toBePaid.taApplicable ? getRateForDate(taRates, currentDate, dueBasicTracker) * proRataFactor : 0;
         const dueOtherAmount = (data.toBePaid.otherAllowance || 0) * proRataFactor;
 
-        const drawnDA = proratedDrawnBasic * (drawnDaRate / 100);
-        const drawnHRA = proratedDrawnBasic * (drawnHraRate / 100);
+        // Calculate NPA first as it affects DA
         const drawnNPA = proratedDrawnBasic * (drawnNpaRate / 100);
-        const drawnTotal = proratedDrawnBasic + drawnDA + drawnHRA + drawnNPA + drawnTaAmount + drawnOtherAmount;
-
-        const dueDA = proratedDueBasic * (dueDaRate / 100);
-        const dueHRA = proratedDueBasic * (dueHraRate / 100);
         const dueNPA = proratedDueBasic * (dueNpaRate / 100);
+
+        // Calculate DA base
+        const drawnDaRate = data.paid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
+        const drawnDaBase = data.paid.npaApplicable ? proratedDrawnBasic + drawnNPA : proratedDrawnBasic;
+        const drawnDA = drawnDaBase * (drawnDaRate / 100);
+
+        const dueDaRate = data.toBePaid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
+        const dueDaBase = data.toBePaid.npaApplicable ? proratedDueBasic + dueNPA : proratedDueBasic;
+        const dueDA = dueDaBase * (dueDaRate / 100);
+
+        // Calculate other allowances
+        const drawnHRA = proratedDrawnBasic * (drawnHraRate / 100);
+        const dueHRA = proratedDueBasic * (dueHraRate / 100);
+
+        const drawnTotal = proratedDrawnBasic + drawnDA + drawnHRA + drawnNPA + drawnTaAmount + drawnOtherAmount;
         const dueTotal = proratedDueBasic + dueDA + dueHRA + dueNPA + dueTaAmount + dueOtherAmount;
         
         const difference = dueTotal - drawnTotal;
@@ -330,7 +338,19 @@ export default function Home() {
       totals.due.total = Math.round(totals.due.total);
       totals.difference = Math.round(totals.difference);
 
-      setStatement({ rows, totals, employeeInfo: { employeeName: data.employeeName, designation: data.designation, employeeId: data.employeeId, department: data.department, payFixationRef: data.payFixationRef } });
+      setStatement({ 
+        rows, 
+        totals, 
+        employeeInfo: { 
+          employeeName: data.employeeName, 
+          designation: data.designation, 
+          employeeId: data.employeeId, 
+          department: data.department, 
+          payFixationRef: data.payFixationRef,
+          fromDate: data.fromDate,
+          toDate: data.toDate,
+        } 
+      });
       toast({
         title: "Calculation Complete",
         description: "Arrear statement has been generated below.",
@@ -620,7 +640,10 @@ export default function Home() {
                    <CardDescription>
                      For: {statement.employeeInfo.employeeName} ({statement.employeeInfo.employeeId}) <br />
                      {statement.employeeInfo.designation}, {statement.employeeInfo.department} <br/>
-                     {statement.employeeInfo.payFixationRef && `Ref: ${statement.employeeInfo.payFixationRef}`}
+                     {statement.employeeInfo.payFixationRef && `Ref: ${statement.employeeInfo.payFixationRef}`} <br/>
+                     {statement.employeeInfo.fromDate && statement.employeeInfo.toDate &&
+                      `Period: ${format(new Date(statement.employeeInfo.fromDate), "dd/MM/yyyy")} to ${format(new Date(statement.employeeInfo.toDate), "dd/MM/yyyy")}`
+                     }
                    </CardDescription>
                 </div>
                 <div className="flex gap-2 no-print">
@@ -708,3 +731,5 @@ export default function Home() {
     </div>
   );
 }
+
+    
