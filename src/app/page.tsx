@@ -130,24 +130,24 @@ export default function Home() {
       department: "",
       payFixationRef: "",
       paid: {
-        basicPay: undefined,
+        basicPay: '' as any,
         payLevel: undefined,
         daApplicable: false,
         hraApplicable: false,
         npaApplicable: false,
         taApplicable: false,
-        taRate: undefined,
+        taRate: '' as any,
         otherAllowance: 0,
         otherAllowanceName: "",
       },
       toBePaid: {
-        basicPay: undefined,
+        basicPay: '' as any,
         payLevel: undefined,
         daApplicable: false,
         hraApplicable: false,
         npaApplicable: false,
         taApplicable: false,
-        taRate: undefined,
+        taRate: '' as any,
         otherAllowance: 0,
         otherAllowanceName: "",
       },
@@ -557,5 +557,3 @@ export default function Home() {
     </div>
   );
 }
-
-    
