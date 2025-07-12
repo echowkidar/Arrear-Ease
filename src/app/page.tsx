@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import Link from "next/link";
-import { format, addMonths, differenceInCalendarMonths } from "date-fns";
+import { format, addMonths, differenceInCalendarMonths, getDaysInMonth, startOfMonth, endOfMonth, isSameMonth } from "date-fns";
 import {
   User,
   Building,
@@ -184,14 +184,16 @@ export default function Home() {
       
       const startDate = data.fromDate;
       const endDate = data.toDate;
+      const firstMonth = startOfMonth(startDate);
       const monthCount = differenceInCalendarMonths(endDate, startDate);
 
       let drawnBasicTracker = data.paid.basicPay;
       let dueBasicTracker = data.toBePaid.basicPay;
 
       for (let i = 0; i <= monthCount; i++) {
-        const currentDate = addMonths(startDate, i);
+        const currentDate = addMonths(firstMonth, i);
         const currentMonth = currentDate.getMonth() + 1;
+        const currentYear = currentDate.getFullYear();
         
         const incrementMonthValue = parseInt(data.incrementMonth);
         if (i > 0 && incrementMonthValue === currentMonth) {
@@ -217,32 +219,49 @@ export default function Home() {
             }
         }
 
+        const daysInMonth = getDaysInMonth(currentDate);
+        let daysToCalculate = daysInMonth;
+
+        if (isSameMonth(currentDate, startDate)) {
+          daysToCalculate = daysInMonth - startDate.getDate() + 1;
+        }
+        if (isSameMonth(currentDate, endDate)) {
+            daysToCalculate = isSameMonth(startDate, endDate) ? endDate.getDate() - startDate.getDate() + 1 : endDate.getDate();
+        }
+
+        const proRataFactor = daysToCalculate / daysInMonth;
+
+        const proratedDrawnBasic = drawnBasicTracker * proRataFactor;
+        const proratedDueBasic = dueBasicTracker * proRataFactor;
+
         const drawnDaRate = data.paid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
         const drawnHraRate = data.paid.hraApplicable ? getRateForDate(hraRates, currentDate, drawnBasicTracker) : 0;
         const drawnNpaRate = data.paid.npaApplicable ? getRateForDate(npaRates, currentDate) : 0;
-        const drawnTaAmount = data.paid.taApplicable ? (data.paid.taRate || 0) : 0;
+        const drawnTaAmount = data.paid.taApplicable ? (data.paid.taRate || 0) * proRataFactor : 0;
+        const drawnOtherAmount = (data.paid.otherAllowance || 0) * proRataFactor;
 
         const dueDaRate = data.toBePaid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
         const dueHraRate = data.toBePaid.hraApplicable ? getRateForDate(hraRates, currentDate, dueBasicTracker) : 0;
         const dueNpaRate = data.toBePaid.npaApplicable ? getRateForDate(npaRates, currentDate) : 0;
-        const dueTaAmount = data.toBePaid.taApplicable ? (data.toBePaid.taRate || 0) : 0;
+        const dueTaAmount = data.toBePaid.taApplicable ? (data.toBePaid.taRate || 0) * proRataFactor : 0;
+        const dueOtherAmount = (data.toBePaid.otherAllowance || 0) * proRataFactor;
 
-        const drawnDA = drawnBasicTracker * (drawnDaRate / 100);
-        const drawnHRA = drawnBasicTracker * (drawnHraRate / 100);
-        const drawnNPA = drawnBasicTracker * (drawnNpaRate / 100);
-        const drawnTotal = drawnBasicTracker + drawnDA + drawnHRA + drawnNPA + drawnTaAmount + (data.paid.otherAllowance || 0);
+        const drawnDA = proratedDrawnBasic * (drawnDaRate / 100);
+        const drawnHRA = proratedDrawnBasic * (drawnHraRate / 100);
+        const drawnNPA = proratedDrawnBasic * (drawnNpaRate / 100);
+        const drawnTotal = proratedDrawnBasic + drawnDA + drawnHRA + drawnNPA + drawnTaAmount + drawnOtherAmount;
 
-        const dueDA = dueBasicTracker * (dueDaRate / 100);
-        const dueHRA = dueBasicTracker * (dueHraRate / 100);
-        const dueNPA = dueBasicTracker * (dueNpaRate / 100);
-        const dueTotal = dueBasicTracker + dueDA + dueHRA + dueNPA + dueTaAmount + (data.toBePaid.otherAllowance || 0);
+        const dueDA = proratedDueBasic * (dueDaRate / 100);
+        const dueHRA = proratedDueBasic * (dueHraRate / 100);
+        const dueNPA = proratedDueBasic * (dueNpaRate / 100);
+        const dueTotal = proratedDueBasic + dueDA + dueHRA + dueNPA + dueTaAmount + dueOtherAmount;
         
         const difference = dueTotal - drawnTotal;
 
         rows.push({
           month: format(currentDate, "MMM yyyy"),
-          drawn: { basic: drawnBasicTracker, da: drawnDA, hra: drawnHRA, npa: drawnNPA, ta: drawnTaAmount, other: data.paid.otherAllowance || 0, total: drawnTotal },
-          due: { basic: dueBasicTracker, da: dueDA, hra: dueHRA, npa: dueNPA, ta: dueTaAmount, other: data.toBePaid.otherAllowance || 0, total: dueTotal },
+          drawn: { basic: proratedDrawnBasic, da: drawnDA, hra: drawnHRA, npa: drawnNPA, ta: drawnTaAmount, other: drawnOtherAmount, total: drawnTotal },
+          due: { basic: proratedDueBasic, da: dueDA, hra: dueHRA, npa: dueNPA, ta: dueTaAmount, other: dueOtherAmount, total: dueTotal },
           difference,
         });
 
@@ -371,7 +390,7 @@ export default function Home() {
         <div className="flex justify-end mb-4 no-print">
             <Button variant="outline" asChild>
                 <Link href="/rates">
-                    <Settings className="mr-2" /> Rate Configuration
+                    <Settings className="mr-2 h-4 w-4" /> Rate Configuration
                 </Link>
             </Button>
         </div>
@@ -538,3 +557,5 @@ export default function Home() {
     </div>
   );
 }
+
+    

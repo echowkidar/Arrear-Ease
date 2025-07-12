@@ -68,19 +68,14 @@ export default function RatesPage() {
         }
   
         const updateRate = (id: string, field: keyof Rate, value: any) => {
-            setRates(prev => prev.map(r => {
-                if (r.id === id) {
-                    const updatedRate = { ...r, [field]: value };
-                    // Handle case where value might be empty string from input
-                    if (field === 'rate' || field === 'basicFrom' || field === 'basicTo') {
-                       const numericValue = Number(value);
-                       updatedRate[field] = isNaN(numericValue) ? 0 : numericValue;
-                    }
-                    return updatedRate;
-                }
-                return r;
-            }));
+            setRates(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r));
         }
+
+        const handleInputChange = (id: string, field: keyof Rate, e: React.ChangeEvent<HTMLInputElement>) => {
+            const value = e.target.value;
+            const numericValue = Number(value);
+            updateRate(id, field, isNaN(numericValue) ? '' : numericValue);
+        };
   
         return (
             <Card>
@@ -109,21 +104,21 @@ export default function RatesPage() {
                                         <TableCell>
                                             <DateInput 
                                               value={field.fromDate} 
-                                              onChange={(date) => updateRate(field.id, 'fromDate', date)}
+                                              onChange={(date) => date && updateRate(field.id, 'fromDate', date)}
                                             />
                                         </TableCell>
                                         <TableCell>
                                            <DateInput 
                                               value={field.toDate} 
-                                              onChange={(date) => updateRate(field.id, 'toDate', date)}
+                                              onChange={(date) => date && updateRate(field.id, 'toDate', date)}
                                             />
                                         </TableCell>
                                         {withBasicRange && <>
-                                            <TableCell><Input type="number" value={field.basicFrom || ''} onChange={e => updateRate(field.id, 'basicFrom', e.target.value)} /></TableCell>
-                                            <TableCell><Input type="number" value={field.basicTo || ''} onChange={e => updateRate(field.id, 'basicTo', e.target.value)} /></TableCell>
+                                            <TableCell><Input type="number" value={field.basicFrom || ''} onChange={e => handleInputChange(field.id, 'basicFrom', e)} /></TableCell>
+                                            <TableCell><Input type="number" value={field.basicTo || ''} onChange={e => handleInputChange(field.id, 'basicTo', e)} /></TableCell>
                                         </>}
                                         <TableCell>
-                                            <Input type="number" value={field.rate || ''} onChange={e => updateRate(field.id, 'rate', e.target.value)} />
+                                            <Input type="number" value={field.rate || ''} onChange={e => handleInputChange(field.id, 'rate', e)} />
                                         </TableCell>
                                         <TableCell>
                                             <Button type="button" variant="destructive" size="icon" onClick={() => remove(field.id)}>
@@ -165,3 +160,5 @@ export default function RatesPage() {
         </main>
     );
 }
+
+    

@@ -70,7 +70,8 @@
     left: 0;
     top: 0;
     width: 100%;
-    padding: 2rem;
+    height: auto;
+    padding: 1rem;
     margin: 0;
   }
   .no-print {
@@ -81,3 +82,5 @@
      box-shadow: none;
   }
 }
+
+    
