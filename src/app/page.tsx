@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from "react";
@@ -15,6 +16,9 @@ import {
   Calculator,
   Info,
   Settings,
+  Save,
+  FolderOpen,
+  Trash2,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -54,6 +58,16 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
   Form,
   FormControl,
   FormDescription,
@@ -74,7 +88,6 @@ const salaryComponentSchema = z.object({
   hraApplicable: z.boolean().default(false),
   npaApplicable: z.boolean().default(false),
   taApplicable: z.boolean().default(false),
-  taRate: z.coerce.number().min(0).optional(),
   otherAllowanceName: z.string().optional(),
   otherAllowance: z.coerce.number().min(0).optional().default(0),
 });
@@ -111,15 +124,38 @@ type StatementTotals = {
   difference: number;
 };
 
+type SavedStatement = {
+  id: string;
+  savedAt: string;
+  rows: StatementRow[];
+  totals: StatementTotals;
+  employeeInfo: Partial<ArrearFormData>;
+};
+
 const INCREMENT_MONTHS = [
   { value: "1", label: "January" },
   { value: "7", label: "July" },
 ];
 
+const LOCAL_STORAGE_KEY = "arrearEaseSavedStatements";
+
 export default function Home() {
-  const [statement, setStatement] = React.useState<{ rows: StatementRow[]; totals: StatementTotals; employeeInfo: Partial<ArrearFormData> } | null>(null);
+  const [statement, setStatement] = React.useState<Omit<SavedStatement, 'id' | 'savedAt'> | null>(null);
+  const [savedStatements, setSavedStatements] = React.useState<SavedStatement[]>([]);
+  const [isLoadDialogOpen, setLoadDialogOpen] = React.useState(false);
   const { toast } = useToast();
   const { daRates, hraRates, npaRates, taRates } = useRates();
+
+  React.useEffect(() => {
+    try {
+        const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (savedData) {
+            setSavedStatements(JSON.parse(savedData));
+        }
+    } catch (error) {
+        console.error("Could not load saved statements:", error);
+    }
+  }, []);
   
   const form = useForm<ArrearFormData>({
     resolver: zodResolver(formSchema),
@@ -128,7 +164,11 @@ export default function Home() {
       employeeName: "",
       designation: "",
       department: "",
+      cpc: undefined,
+      fromDate: undefined,
+      toDate: undefined,
       payFixationRef: "",
+      incrementMonth: undefined,
       paid: {
         basicPay: '' as any,
         payLevel: undefined,
@@ -136,8 +176,7 @@ export default function Home() {
         hraApplicable: false,
         npaApplicable: false,
         taApplicable: false,
-        taRate: '' as any,
-        otherAllowance: 0,
+        otherAllowance: '' as any,
         otherAllowanceName: "",
       },
       toBePaid: {
@@ -147,20 +186,19 @@ export default function Home() {
         hraApplicable: false,
         npaApplicable: false,
         taApplicable: false,
-        taRate: '' as any,
-        otherAllowance: 0,
+        otherAllowance: '' as any,
         otherAllowanceName: "",
       },
     },
   });
 
   const cpc = form.watch("cpc");
-  const payLevels = cpc ? cpcData[cpc].payLevels.map(pl => ({ value: pl.level, label: `Level ${pl.level}`})) : [];
+  const payLevels = cpc ? cpcData[cpc].payLevels.map(pl => ({ value: pl.level, label: cpc === '6th' ? `GP ${pl.gradePay} (${pl.payBand})` : `Level ${pl.level}`})) : [];
 
   const getRateForDate = (rates: Rate[], date: Date, basicPay?: number) => {
     const applicableRate = rates.find(r => {
-      const from = r.fromDate;
-      const to = r.toDate;
+      const from = new Date(r.fromDate);
+      const to = new Date(r.toDate);
       let isDateMatch = date >= from && date <= to;
       let isBasicMatch = true;
       if (basicPay !== undefined) {
@@ -172,7 +210,7 @@ export default function Home() {
     });
     return applicableRate ? applicableRate.rate : 0;
   }
-
+  
   const handlePrint = () => {
     window.print();
   };
@@ -193,7 +231,6 @@ export default function Home() {
       for (let i = 0; i <= monthCount; i++) {
         const currentDate = addMonths(firstMonth, i);
         const currentMonth = currentDate.getMonth() + 1;
-        const currentYear = currentDate.getFullYear();
         
         const incrementMonthValue = parseInt(data.incrementMonth);
         if (i > 0 && incrementMonthValue === currentMonth) {
@@ -216,6 +253,9 @@ export default function Home() {
                         }
                     }
                 }
+            } else if (cpc === '6th') {
+                 drawnBasicTracker = Math.round(drawnBasicTracker * 1.03);
+                 dueBasicTracker = Math.round(dueBasicTracker * 1.03);
             }
         }
 
@@ -237,13 +277,13 @@ export default function Home() {
         const drawnDaRate = data.paid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
         const drawnHraRate = data.paid.hraApplicable ? getRateForDate(hraRates, currentDate, drawnBasicTracker) : 0;
         const drawnNpaRate = data.paid.npaApplicable ? getRateForDate(npaRates, currentDate) : 0;
-        const drawnTaAmount = data.paid.taApplicable ? (data.paid.taRate || 0) * proRataFactor : 0;
+        const drawnTaAmount = data.paid.taApplicable ? getRateForDate(taRates, currentDate, drawnBasicTracker) * proRataFactor : 0;
         const drawnOtherAmount = (data.paid.otherAllowance || 0) * proRataFactor;
 
         const dueDaRate = data.toBePaid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
         const dueHraRate = data.toBePaid.hraApplicable ? getRateForDate(hraRates, currentDate, dueBasicTracker) : 0;
         const dueNpaRate = data.toBePaid.npaApplicable ? getRateForDate(npaRates, currentDate) : 0;
-        const dueTaAmount = data.toBePaid.taApplicable ? (data.toBePaid.taRate || 0) * proRataFactor : 0;
+        const dueTaAmount = data.toBePaid.taApplicable ? getRateForDate(taRates, currentDate, dueBasicTracker) * proRataFactor : 0;
         const dueOtherAmount = (data.toBePaid.otherAllowance || 0) * proRataFactor;
 
         const drawnDA = proratedDrawnBasic * (drawnDaRate / 100);
@@ -260,17 +300,37 @@ export default function Home() {
 
         rows.push({
           month: format(currentDate, "MMM yyyy"),
-          drawn: { basic: proratedDrawnBasic, da: drawnDA, hra: drawnHRA, npa: drawnNPA, ta: drawnTaAmount, other: drawnOtherAmount, total: drawnTotal },
-          due: { basic: proratedDueBasic, da: dueDA, hra: dueHRA, npa: dueNPA, ta: dueTaAmount, other: dueOtherAmount, total: dueTotal },
-          difference,
+          drawn: { 
+            basic: Math.round(proratedDrawnBasic), 
+            da: Math.round(drawnDA), 
+            hra: Math.round(drawnHRA), 
+            npa: Math.round(drawnNPA), 
+            ta: Math.round(drawnTaAmount), 
+            other: Math.round(drawnOtherAmount), 
+            total: Math.round(drawnTotal) 
+          },
+          due: { 
+            basic: Math.round(proratedDueBasic), 
+            da: Math.round(dueDA), 
+            hra: Math.round(dueHRA), 
+            npa: Math.round(dueNPA), 
+            ta: Math.round(dueTaAmount), 
+            other: Math.round(dueOtherAmount), 
+            total: Math.round(dueTotal) 
+          },
+          difference: Math.round(difference),
         });
 
         totals.drawn.total += drawnTotal;
         totals.due.total += dueTotal;
         totals.difference += difference;
       }
+      
+      totals.drawn.total = Math.round(totals.drawn.total);
+      totals.due.total = Math.round(totals.due.total);
+      totals.difference = Math.round(totals.difference);
 
-      setStatement({ rows, totals, employeeInfo: { employeeName: data.employeeName, designation: data.designation } });
+      setStatement({ rows, totals, employeeInfo: { employeeName: data.employeeName, designation: data.designation, employeeId: data.employeeId, department: data.department, payFixationRef: data.payFixationRef } });
       toast({
         title: "Calculation Complete",
         description: "Arrear statement has been generated below.",
@@ -288,13 +348,66 @@ export default function Home() {
       });
     }
   };
+  
+  const saveStatement = () => {
+    if (!statement) return;
+    try {
+      const newSavedStatement: SavedStatement = {
+        ...statement,
+        id: crypto.randomUUID(),
+        savedAt: new Date().toISOString()
+      };
+      const updatedStatements = [...savedStatements, newSavedStatement];
+      setSavedStatements(updatedStatements);
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedStatements));
+      toast({
+        title: "Arrear Saved",
+        description: "The current arrear statement has been saved.",
+      });
+    } catch(error) {
+      console.error("Failed to save statement:", error);
+      toast({
+        variant: "destructive",
+        title: "Save Failed",
+        description: "Could not save the arrear statement.",
+      });
+    }
+  };
+  
+  const loadStatement = (statementToLoad: SavedStatement) => {
+     setStatement(statementToLoad);
+     setLoadDialogOpen(false);
+     setTimeout(() => {
+        document.getElementById("statement-section")?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+  }
+
+  const deleteStatement = (id: string) => {
+    try {
+        const updatedStatements = savedStatements.filter(s => s.id !== id);
+        setSavedStatements(updatedStatements);
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedStatements));
+        toast({
+            title: "Arrear Deleted",
+            description: "The saved arrear statement has been removed.",
+        });
+    } catch (error) {
+        console.error("Failed to delete statement:", error);
+        toast({
+            variant: "destructive",
+            title: "Delete Failed",
+            description: "Could not delete the arrear statement.",
+        });
+    }
+  }
+
 
   const renderSalaryFields = (type: "paid" | "toBePaid") => (
     <div className="space-y-4">
        <FormField control={form.control} name={`${type}.payLevel`} render={({ field }) => (
         <FormItem>
             <FormLabel>Pay Level</FormLabel>
-            <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!cpc}>
+            <Select onValueChange={field.onChange} value={field.value} disabled={!cpc}>
                 <FormControl><SelectTrigger><SelectValue placeholder={cpc ? "Select a level" : "Select CPC first"} /></SelectTrigger></FormControl>
                 <SelectContent>
                 {payLevels.map(level => <SelectItem key={level.value} value={level.value}>{level.label}</SelectItem>)}
@@ -336,15 +449,6 @@ export default function Home() {
                 <FormLabel className="font-normal">TA (Transport Allowance)</FormLabel>
             </FormItem>
           )} />
-          {form.watch(`${type}.taApplicable`) && (
-            <FormField control={form.control} name={`${type}.taRate`} render={({ field }) => (
-                <FormItem>
-                  <FormLabel>TA Amount</FormLabel>
-                  <FormControl><Input type="number" placeholder="Enter fixed TA amount" {...field} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
-          )}
       </div>
        <FormField control={form.control} name={`${type}.otherAllowanceName`} render={({ field }) => (
         <FormItem>
@@ -387,7 +491,47 @@ export default function Home() {
           <p className="text-muted-foreground mt-2 text-lg">A Simple Tool for Complex Salary Arrear Calculations</p>
         </header>
 
-        <div className="flex justify-end mb-4 no-print">
+        <div className="flex justify-end gap-4 mb-4 no-print">
+            <Dialog open={isLoadDialogOpen} onOpenChange={setLoadDialogOpen}>
+                <DialogTrigger asChild>
+                    <Button variant="outline">
+                        <FolderOpen className="mr-2 h-4 w-4" /> Load Saved Arrears
+                    </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[800px]">
+                    <DialogHeader>
+                        <DialogTitle>Load Saved Arrear Statement</DialogTitle>
+                        <DialogDescription>Select a previously saved statement to view or print it again.</DialogDescription>
+                    </DialogHeader>
+                    <div className="max-h-[60vh] overflow-y-auto">
+                        {savedStatements.length > 0 ? (
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Employee</TableHead>
+                                        <TableHead>Saved On</TableHead>
+                                        <TableHead className="text-right">Actions</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {savedStatements.map(s => (
+                                        <TableRow key={s.id}>
+                                            <TableCell>{s.employeeInfo.employeeName} ({s.employeeInfo.employeeId})</TableCell>
+                                            <TableCell>{format(new Date(s.savedAt), "PPP p")}</TableCell>
+                                            <TableCell className="text-right">
+                                                <Button size="sm" onClick={() => loadStatement(s)} className="mr-2">Load</Button>
+                                                <Button size="sm" variant="destructive" onClick={() => deleteStatement(s.id)}><Trash2 className="h-4 w-4"/></Button>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        ) : (
+                            <p className="text-center text-muted-foreground py-8">No saved statements found.</p>
+                        )}
+                    </div>
+                </DialogContent>
+            </Dialog>
             <Button variant="outline" asChild>
                 <Link href="/rates">
                     <Settings className="mr-2 h-4 w-4" /> Rate Configuration
@@ -409,7 +553,7 @@ export default function Home() {
                     <FormField control={form.control} name="cpc" render={({ field }) => (
                       <FormItem>
                         <FormLabel>CPC</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl><SelectTrigger><SelectValue placeholder="Select CPC" /></SelectTrigger></FormControl>
                           <SelectContent>
                             <SelectItem value="6th">6th CPC</SelectItem>
@@ -432,7 +576,7 @@ export default function Home() {
                     <FormField control={form.control} name="incrementMonth" render={({ field }) => (
                       <FormItem>
                         <FormLabel>Increment Month</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl><SelectTrigger><SelectValue placeholder="Select a month" /></SelectTrigger></FormControl>
                           <SelectContent>{INCREMENT_MONTHS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent>
                         </Select>
@@ -472,14 +616,21 @@ export default function Home() {
             <Card className="printable-area" id="printable-statement-card">
               <CardHeader className="flex-row items-center justify-between">
                 <div>
-                  <CardTitle className="font-headline text-3xl">Arrear Statement</CardTitle>
-                  <CardDescription>
-                    For: {statement.employeeInfo.employeeName}, {statement.employeeInfo.designation}
-                  </CardDescription>
+                   <CardTitle className="font-headline text-3xl">Arrear Statement</CardTitle>
+                   <CardDescription>
+                     For: {statement.employeeInfo.employeeName} ({statement.employeeInfo.employeeId}) <br />
+                     {statement.employeeInfo.designation}, {statement.employeeInfo.department} <br/>
+                     {statement.employeeInfo.payFixationRef && `Ref: ${statement.employeeInfo.payFixationRef}`}
+                   </CardDescription>
                 </div>
-                <Button onClick={handlePrint} variant="outline" className="no-print">
-                  <Download className="mr-2 h-4 w-4" /> Download PDF
-                </Button>
+                <div className="flex gap-2 no-print">
+                   <Button onClick={saveStatement} variant="outline">
+                      <Save className="mr-2 h-4 w-4" /> Save Arrear
+                   </Button>
+                   <Button onClick={handlePrint} variant="outline">
+                     <Download className="mr-2 h-4 w-4" /> Download PDF
+                   </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
@@ -512,21 +663,21 @@ export default function Home() {
                       {statement.rows.map(row => (
                         <TableRow key={row.month}>
                           <TableCell className="font-medium border-r">{row.month}</TableCell>
-                          <TableCell className="text-right">{row.drawn.basic.toFixed(2)}</TableCell>
-                          <TableCell className="text-right">{row.drawn.da.toFixed(2)}</TableCell>
-                          <TableCell className="text-right">{row.drawn.hra.toFixed(2)}</TableCell>
-                          <TableCell className="text-right">{row.drawn.npa.toFixed(2)}</TableCell>
-                          <TableCell className="text-right">{row.drawn.ta.toFixed(2)}</TableCell>
-                          <TableCell className="text-right">{row.drawn.other.toFixed(2)}</TableCell>
-                          <TableCell className="text-right font-semibold border-r">{row.drawn.total.toFixed(2)}</TableCell>
-                          <TableCell className="text-right">{row.due.basic.toFixed(2)}</TableCell>
-                          <TableCell className="text-right">{row.due.da.toFixed(2)}</TableCell>
-                          <TableCell className="text-right">{row.due.hra.toFixed(2)}</TableCell>
-                          <TableCell className="text-right">{row.due.npa.toFixed(2)}</TableCell>
-                          <TableCell className="text-right">{row.due.ta.toFixed(2)}</TableCell>
-                          <TableCell className="text-right">{row.due.other.toFixed(2)}</TableCell>
-                          <TableCell className="text-right font-semibold border-r">{row.due.total.toFixed(2)}</TableCell>
-                          <TableCell className="text-right font-bold">{row.difference.toFixed(2)}</TableCell>
+                          <TableCell className="text-right">{row.drawn.basic.toLocaleString()}</TableCell>
+                          <TableCell className="text-right">{row.drawn.da.toLocaleString()}</TableCell>
+                          <TableCell className="text-right">{row.drawn.hra.toLocaleString()}</TableCell>
+                          <TableCell className="text-right">{row.drawn.npa.toLocaleString()}</TableCell>
+                          <TableCell className="text-right">{row.drawn.ta.toLocaleString()}</TableCell>
+                          <TableCell className="text-right">{row.drawn.other.toLocaleString()}</TableCell>
+                          <TableCell className="text-right font-semibold border-r">{row.drawn.total.toLocaleString()}</TableCell>
+                          <TableCell className="text-right">{row.due.basic.toLocaleString()}</TableCell>
+                          <TableCell className="text-right">{row.due.da.toLocaleString()}</TableCell>
+                          <TableCell className="text-right">{row.due.hra.toLocaleString()}</TableCell>
+                          <TableCell className="text-right">{row.due.npa.toLocaleString()}</TableCell>
+                          <TableCell className="text-right">{row.due.ta.toLocaleString()}</TableCell>
+                          <TableCell className="text-right">{row.due.other.toLocaleString()}</TableCell>
+                          <TableCell className="text-right font-semibold border-r">{row.due.total.toLocaleString()}</TableCell>
+                          <TableCell className="text-right font-bold">{row.difference.toLocaleString()}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -534,10 +685,10 @@ export default function Home() {
                       <TableRow className="bg-muted/50 font-bold">
                         <TableCell className="border-r">Total</TableCell>
                         <TableCell colSpan={6}></TableCell>
-                        <TableCell className="text-right border-r">{statement.totals.drawn.total.toFixed(2)}</TableCell>
+                        <TableCell className="text-right border-r">{statement.totals.drawn.total.toLocaleString()}</TableCell>
                         <TableCell colSpan={6}></TableCell>
-                        <TableCell className="text-right border-r">{statement.totals.due.total.toFixed(2)}</TableCell>
-                        <TableCell className="text-right">{Math.round(statement.totals.difference).toFixed(2)}</TableCell>
+                        <TableCell className="text-right border-r">{statement.totals.due.total.toLocaleString()}</TableCell>
+                        <TableCell className="text-right">{statement.totals.difference.toLocaleString()}</TableCell>
                       </TableRow>
                     </UiTableFooter>
                   </Table>
