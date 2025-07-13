@@ -42,19 +42,27 @@ import { useRates, Rate } from "@/context/rates-context";
 import { useToast } from "@/hooks/use-toast";
 
 
-const DateInput = ({ value, onChange }: { value: Date | undefined; onChange: (date?: Date) => void }) => (
-    <Popover>
-        <PopoverTrigger asChild>
-            <Button variant={"outline"} className={cn("w-full md:w-[240px] pl-3 text-left font-normal", !value && "text-muted-foreground")}>
-                {value ? format(new Date(value), "PPP") : <span>Pick a date</span>}
-                <CalendarDays className="ml-auto h-4 w-4 opacity-50" />
-            </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="start">
-            <Calendar mode="single" selected={value ? new Date(value) : undefined} onSelect={onChange} captionLayout="dropdown-buttons" fromYear={1990} toYear={2050} initialFocus />
-        </PopoverContent>
-    </Popover>
-);
+const DateInput = ({ value, onChange }: { value: Date | undefined; onChange: (date?: Date) => void }) => {
+    const [dateValue, setDateValue] = React.useState(value);
+
+    React.useEffect(() => {
+        setDateValue(value);
+    }, [value]);
+
+    return (
+        <Popover>
+            <PopoverTrigger asChild>
+                <Button variant={"outline"} className={cn("w-full md:w-[240px] pl-3 text-left font-normal", !dateValue && "text-muted-foreground")}>
+                    {dateValue ? format(new Date(dateValue), "PPP") : <span>Pick a date</span>}
+                    <CalendarDays className="ml-auto h-4 w-4 opacity-50" />
+                </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+                <Calendar mode="single" selected={dateValue ? new Date(dateValue) : undefined} onSelect={onChange} captionLayout="dropdown-buttons" fromYear={1990} toYear={2050} initialFocus={dateValue} />
+            </PopoverContent>
+        </Popover>
+    );
+};
 
 const RateTable = ({ title, description, withBasicRange, isAmount, initialRates, setGlobalRates }: { title: string, description?: string, withBasicRange?: boolean, isAmount?: boolean, initialRates: Rate[], setGlobalRates: React.Dispatch<React.SetStateAction<Rate[]>> }) => {
     const { toast } = useToast();
@@ -67,7 +75,6 @@ const RateTable = ({ title, description, withBasicRange, isAmount, initialRates,
     const isModified = !isEqual(initialRates, localRates);
 
     const handleSaveChanges = () => {
-        // Filter out rows where rate is empty/invalid before saving
         const validRates = localRates.filter(r => r.rate !== '' && !isNaN(parseFloat(r.rate as any)))
             .map(r => ({
                 ...r,

@@ -238,19 +238,12 @@ export default function Home() {
     const monthEnd = endOfMonth(calculationMonth);
     const daysInMonth = getDaysInMonth(calculationMonth);
 
-    // If no specific allowance dates, default to arrear period boundaries for this month
     const effectiveAllowanceFrom = allowanceFromDate || arrearStartDate;
     const effectiveAllowanceTo = allowanceToDate || arrearEndDate;
-
-    // Determine the intersection of three periods:
-    // 1. The current month being calculated (monthStart to monthEnd)
-    // 2. The overall arrear period (arrearStartDate to arrearEndDate)
-    // 3. The specific allowance applicability period (effectiveAllowanceFrom to effectiveAllowanceTo)
     
     const intersectionStart = max([monthStart, arrearStartDate, effectiveAllowanceFrom]);
     const intersectionEnd = min([monthEnd, arrearEndDate, effectiveAllowanceTo]);
 
-    // If the intersection is not valid (e.g., start is after end), there are no applicable days.
     if (intersectionStart > intersectionEnd) {
       return 0;
     }
@@ -309,7 +302,6 @@ export default function Home() {
         const monthStart = startOfMonth(currentDate);
         const monthEnd = endOfMonth(currentDate);
 
-        // Determine effective dates for basic pay calculation for this month
         const effectiveBasicStart = max([monthStart, arrearFromDate]);
         const effectiveBasicEnd = min([monthEnd, arrearToDate]);
 
@@ -320,6 +312,8 @@ export default function Home() {
         const proratedDueBasic = dueBasicTracker * basicProRataFactor;
 
         // --- DRAWN CALCULATION ---
+        const drawnDaRate = data.paid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
+        
         const drawnHraFactor = data.paid.hraApplicable ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data.paid.hraFromDate, data.paid.hraToDate) : 0;
         const drawnNpaFactor = data.paid.npaApplicable ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data.paid.npaFromDate, data.paid.npaToDate) : 0;
         const drawnTaFactor = data.paid.taApplicable ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data.paid.taFromDate, data.paid.taToDate) : 0;
@@ -327,18 +321,20 @@ export default function Home() {
         
         const drawnHraRate = drawnHraFactor > 0 ? getRateForDate(hraRates, currentDate, drawnBasicTracker) : 0;
         const drawnNpaRate = drawnNpaFactor > 0 ? getRateForDate(npaRates, currentDate) : 0;
-        const drawnTaAmount = drawnTaFactor > 0 ? getRateForDate(taRates, currentDate, drawnBasicTracker) * drawnTaFactor : 0;
-        const drawnOtherAmount = drawnOtherFactor > 0 ? (data.paid.otherAllowance || 0) * drawnOtherFactor : 0;
-        
+        const drawnTaBaseAmount = drawnTaFactor > 0 ? getRateForDate(taRates, currentDate, drawnBasicTracker) : 0;
+
         const drawnNPA = drawnBasicTracker * (drawnNpaRate / 100) * drawnNpaFactor;
         const drawnHRA = drawnBasicTracker * (drawnHraRate / 100) * drawnHraFactor;
+        const drawnTaWithDA = drawnTaBaseAmount * (1 + (drawnDaRate / 100));
+        const drawnTA = drawnTaWithDA * drawnTaFactor;
+        const drawnOtherAmount = (data.paid.otherAllowance || 0) * drawnOtherFactor;
         
-        // Correct DA calculation base: Prorated Basic + Prorated NPA
         const drawnBaseForDA = proratedDrawnBasic + drawnNPA;
-        const drawnDaRate = data.paid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
         const drawnDA = drawnBaseForDA * (drawnDaRate / 100);
         
         // --- DUE CALCULATION ---
+        const dueDaRate = data.toBePaid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
+
         const dueHraFactor = data.toBePaid.hraApplicable ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data.toBePaid.hraFromDate, data.toBePaid.hraToDate) : 0;
         const dueNpaFactor = data.toBePaid.npaApplicable ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data.toBePaid.npaFromDate, data.toBePaid.npaToDate) : 0;
         const dueTaFactor = data.toBePaid.taApplicable ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data.toBePaid.taFromDate, data.toBePaid.taToDate) : 0;
@@ -346,20 +342,19 @@ export default function Home() {
 
         const dueHraRate = dueHraFactor > 0 ? getRateForDate(hraRates, currentDate, dueBasicTracker) : 0;
         const dueNpaRate = dueNpaFactor > 0 ? getRateForDate(npaRates, currentDate) : 0;
-        const dueTaAmount = dueTaFactor > 0 ? getRateForDate(taRates, currentDate, dueBasicTracker) * dueTaFactor : 0;
-        const dueOtherAmount = dueOtherFactor > 0 ? (data.toBePaid.otherAllowance || 0) * dueOtherFactor : 0;
-
+        const dueTaBaseAmount = dueTaFactor > 0 ? getRateForDate(taRates, currentDate, dueBasicTracker) : 0;
+        
         const dueNPA = dueBasicTracker * (dueNpaRate / 100) * dueNpaFactor;
         const dueHRA = dueBasicTracker * (dueHraRate / 100) * dueHraFactor;
-        
-        // Correct DA calculation base: Prorated Basic + Prorated NPA
+        const dueTaWithDA = dueTaBaseAmount * (1 + (dueDaRate / 100));
+        const dueTA = dueTaWithDA * dueTaFactor;
+        const dueOtherAmount = (data.toBePaid.otherAllowance || 0) * dueOtherFactor;
+
         const dueBaseForDA = proratedDueBasic + dueNPA;
-        const dueDaRate = data.toBePaid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
         const dueDA = dueBaseForDA * (dueDaRate / 100);
 
-
-        const drawnTotal = proratedDrawnBasic + drawnDA + drawnHRA + drawnNPA + drawnTaAmount + drawnOtherAmount;
-        const dueTotal = proratedDueBasic + dueDA + dueHRA + dueNPA + dueTaAmount + dueOtherAmount;
+        const drawnTotal = proratedDrawnBasic + drawnDA + drawnHRA + drawnNPA + drawnTA + drawnOtherAmount;
+        const dueTotal = proratedDueBasic + dueDA + dueHRA + dueNPA + dueTA + dueOtherAmount;
         
         const difference = dueTotal - drawnTotal;
 
@@ -370,7 +365,7 @@ export default function Home() {
             da: Math.round(drawnDA), 
             hra: Math.round(drawnHRA), 
             npa: Math.round(drawnNPA), 
-            ta: Math.round(drawnTaAmount), 
+            ta: Math.round(drawnTA), 
             other: Math.round(drawnOtherAmount), 
             total: Math.round(drawnTotal) 
           },
@@ -379,7 +374,7 @@ export default function Home() {
             da: Math.round(dueDA), 
             hra: Math.round(dueHRA), 
             npa: Math.round(dueNPA), 
-            ta: Math.round(dueTaAmount), 
+            ta: Math.round(dueTA), 
             other: Math.round(dueOtherAmount), 
             total: Math.round(dueTotal) 
           },
@@ -489,7 +484,7 @@ export default function Home() {
               </FormControl>
           </PopoverTrigger>
           <PopoverContent className="w-auto p-0" align="start">
-              <Calendar mode="single" selected={field.value} onSelect={field.onChange} captionLayout="dropdown-buttons" fromYear={1990} toYear={2050} initialFocus />
+              <Calendar mode="single" selected={field.value} onSelect={field.onChange} captionLayout="dropdown-buttons" fromYear={1990} toYear={2050} initialFocus={field.value} />
           </PopoverContent>
       </Popover>
   );
