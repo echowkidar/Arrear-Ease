@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import Link from "next/link";
-import { format, addMonths, differenceInCalendarMonths, getDaysInMonth, startOfMonth, endOfMonth, isSameMonth, max, min } from "date-fns";
+import { format, addMonths, differenceInCalendarMonths, getDaysInMonth, startOfMonth, endOfMonth, max, min, isWithinInterval, differenceInDays } from "date-fns";
 import {
   User,
   Building,
@@ -225,31 +225,42 @@ export default function Home() {
   const handlePrint = () => {
     window.print();
   };
-  
-  const isDateInRange = (calculationMonth: Date, fromDate?: Date, toDate?: Date): boolean => {
-    if (!fromDate && !toDate) {
-        return true; // No specific range, so it's always applicable within the arrear period.
-    }
+
+  const getProratedFactorForAllowance = (calculationMonth: Date, fromDate?: Date, toDate?: Date): number => {
     const monthStart = startOfMonth(calculationMonth);
     const monthEnd = endOfMonth(calculationMonth);
+    const daysInMonth = getDaysInMonth(calculationMonth);
+
+    if (!fromDate && !toDate) {
+      return 1; // No specific range, full month is applicable
+    }
 
     const effectiveFrom = fromDate || new Date(-8640000000000000); // Distant past
     const effectiveTo = toDate || new Date(8640000000000000); // Distant future
-
+    
     // Check for overlap between the calculation month and the allowance period.
-    return monthStart <= effectiveTo && monthEnd >= effectiveFrom;
-};
+    if (monthStart > effectiveTo || monthEnd < effectiveFrom) {
+        return 0; // No overlap
+    }
 
+    // Determine the start and end of the intersection period
+    const intersectionStart = max([monthStart, effectiveFrom]);
+    const intersectionEnd = min([monthEnd, effectiveTo]);
+
+    const daysToCalculate = differenceInDays(intersectionEnd, intersectionStart) + 1;
+    
+    return daysToCalculate > 0 ? daysToCalculate / daysInMonth : 0;
+  };
 
   const onSubmit = (data: ArrearFormData) => {
     try {
       const rows: StatementRow[] = [];
       const totals: StatementTotals = { drawn: { total: 0 }, due: { total: 0 }, difference: 0 };
       
-      const startDate = data.fromDate;
-      const endDate = data.toDate;
-      const firstMonth = startOfMonth(startDate);
-      const monthCount = differenceInCalendarMonths(endDate, startDate);
+      const arrearFromDate = data.fromDate;
+      const arrearToDate = data.toDate;
+      const firstMonth = startOfMonth(arrearFromDate);
+      const monthCount = differenceInCalendarMonths(arrearToDate, arrearFromDate);
 
       let drawnBasicTracker = data.paid.basicPay;
       let dueBasicTracker = data.toBePaid.basicPay;
@@ -286,53 +297,54 @@ export default function Home() {
         }
 
         const daysInMonth = getDaysInMonth(currentDate);
-        let daysToCalculate = daysInMonth;
-
-        if (isSameMonth(currentDate, startDate)) {
-          daysToCalculate = daysInMonth - startDate.getDate() + 1;
-        }
-        if (isSameMonth(currentDate, endDate)) {
-            daysToCalculate = isSameMonth(startDate, endDate) ? endDate.getDate() - startDate.getDate() + 1 : endDate.getDate();
-        }
-
-        const proRataFactor = daysToCalculate / daysInMonth;
-
-        const proratedDrawnBasic = drawnBasicTracker * proRataFactor;
-        const proratedDueBasic = dueBasicTracker * proRataFactor;
         
-        const drawnHraApplicable = data.paid.hraApplicable && isDateInRange(currentDate, data.paid.hraFromDate, data.paid.hraToDate);
-        const drawnNpaApplicable = data.paid.npaApplicable && isDateInRange(currentDate, data.paid.npaFromDate, data.paid.npaToDate);
-        const drawnTaApplicable = data.paid.taApplicable && isDateInRange(currentDate, data.paid.taFromDate, data.paid.taToDate);
-        const drawnOtherApplicable = (data.paid.otherAllowance || 0) > 0 && isDateInRange(currentDate, data.paid.otherAllowanceFromDate, data.paid.otherAllowanceToDate);
+        const monthStart = startOfMonth(currentDate);
+        const monthEnd = endOfMonth(currentDate);
 
-        const dueHraApplicable = data.toBePaid.hraApplicable && isDateInRange(currentDate, data.toBePaid.hraFromDate, data.toBePaid.hraToDate);
-        const dueNpaApplicable = data.toBePaid.npaApplicable && isDateInRange(currentDate, data.toBePaid.npaFromDate, data.toBePaid.npaToDate);
-        const dueTaApplicable = data.toBePaid.taApplicable && isDateInRange(currentDate, data.toBePaid.taFromDate, data.toBePaid.taToDate);
-        const dueOtherApplicable = (data.toBePaid.otherAllowance || 0) > 0 && isDateInRange(currentDate, data.toBePaid.otherAllowanceFromDate, data.toBePaid.otherAllowanceToDate);
+        // Determine effective dates for basic pay calculation for this month
+        const effectiveBasicStart = max([monthStart, arrearFromDate]);
+        const effectiveBasicEnd = min([monthEnd, arrearToDate]);
 
-        const drawnHraRate = drawnHraApplicable ? getRateForDate(hraRates, currentDate, drawnBasicTracker) : 0;
-        const drawnNpaRate = drawnNpaApplicable ? getRateForDate(npaRates, currentDate) : 0;
-        const drawnTaAmount = drawnTaApplicable ? getRateForDate(taRates, currentDate, drawnBasicTracker) * proRataFactor : 0;
-        const drawnOtherAmount = drawnOtherApplicable ? (data.paid.otherAllowance || 0) * proRataFactor : 0;
+        const daysForBasic = differenceInDays(effectiveBasicEnd, effectiveBasicStart) + 1;
+        const basicProRataFactor = daysForBasic > 0 ? daysForBasic / daysInMonth : 0;
 
-        const dueHraRate = dueHraApplicable ? getRateForDate(hraRates, currentDate, dueBasicTracker) : 0;
-        const dueNpaRate = dueNpaApplicable ? getRateForDate(npaRates, currentDate) : 0;
-        const dueTaAmount = dueTaApplicable ? getRateForDate(taRates, currentDate, dueBasicTracker) * proRataFactor : 0;
-        const dueOtherAmount = dueOtherApplicable ? (data.toBePaid.otherAllowance || 0) * proRataFactor : 0;
+        const proratedDrawnBasic = drawnBasicTracker * basicProRataFactor;
+        const proratedDueBasic = dueBasicTracker * basicProRataFactor;
 
-        const drawnNPA = proratedDrawnBasic * (drawnNpaRate / 100);
-        const dueNPA = proratedDueBasic * (dueNpaRate / 100);
+        // --- DRAWN CALCULATION ---
+        const drawnHraFactor = data.paid.hraApplicable ? getProratedFactorForAllowance(currentDate, data.paid.hraFromDate, data.paid.hraToDate) : 0;
+        const drawnNpaFactor = data.paid.npaApplicable ? getProratedFactorForAllowance(currentDate, data.paid.npaFromDate, data.paid.npaToDate) : 0;
+        const drawnTaFactor = data.paid.taApplicable ? getProratedFactorForAllowance(currentDate, data.paid.taFromDate, data.paid.taToDate) : 0;
+        const drawnOtherFactor = (data.paid.otherAllowance || 0) > 0 ? getProratedFactorForAllowance(currentDate, data.paid.otherAllowanceFromDate, data.paid.otherAllowanceToDate) : 0;
+        
+        const drawnHraRate = drawnHraFactor > 0 ? getRateForDate(hraRates, currentDate, drawnBasicTracker) : 0;
+        const drawnNpaRate = drawnNpaFactor > 0 ? getRateForDate(npaRates, currentDate) : 0;
+        const drawnTaAmount = drawnTaFactor > 0 ? getRateForDate(taRates, currentDate, drawnBasicTracker) * drawnTaFactor : 0;
+        const drawnOtherAmount = drawnOtherFactor > 0 ? (data.paid.otherAllowance || 0) * drawnOtherFactor : 0;
 
+        const drawnNPA = drawnBasicTracker * (drawnNpaRate / 100) * drawnNpaFactor;
+        const dueBasicForDrawnDA = drawnNpaFactor > 0 ? drawnBasicTracker + (drawnBasicTracker * (drawnNpaRate / 100)) : drawnBasicTracker;
         const drawnDaRate = data.paid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
-        const drawnDaBase = data.paid.npaApplicable && drawnNpaApplicable ? proratedDrawnBasic + drawnNPA : proratedDrawnBasic;
-        const drawnDA = drawnDaBase * (drawnDaRate / 100);
+        const drawnDA = dueBasicForDrawnDA * (drawnDaRate / 100) * basicProRataFactor;
+        const drawnHRA = drawnBasicTracker * (drawnHraRate / 100) * drawnHraFactor;
+        
+        // --- DUE CALCULATION ---
+        const dueHraFactor = data.toBePaid.hraApplicable ? getProratedFactorForAllowance(currentDate, data.toBePaid.hraFromDate, data.toBePaid.hraToDate) : 0;
+        const dueNpaFactor = data.toBePaid.npaApplicable ? getProratedFactorForAllowance(currentDate, data.toBePaid.npaFromDate, data.toBePaid.npaToDate) : 0;
+        const dueTaFactor = data.toBePaid.taApplicable ? getProratedFactorForAllowance(currentDate, data.toBePaid.taFromDate, data.toBePaid.taToDate) : 0;
+        const dueOtherFactor = (data.toBePaid.otherAllowance || 0) > 0 ? getProratedFactorForAllowance(currentDate, data.toBePaid.otherAllowanceFromDate, data.toBePaid.otherAllowanceToDate) : 0;
 
+        const dueHraRate = dueHraFactor > 0 ? getRateForDate(hraRates, currentDate, dueBasicTracker) : 0;
+        const dueNpaRate = dueNpaFactor > 0 ? getRateForDate(npaRates, currentDate) : 0;
+        const dueTaAmount = dueTaFactor > 0 ? getRateForDate(taRates, currentDate, dueBasicTracker) * dueTaFactor : 0;
+        const dueOtherAmount = dueOtherFactor > 0 ? (data.toBePaid.otherAllowance || 0) * dueOtherFactor : 0;
+
+        const dueNPA = dueBasicTracker * (dueNpaRate / 100) * dueNpaFactor;
+        const dueBasicForDueDA = dueNpaFactor > 0 ? dueBasicTracker + (dueBasicTracker * (dueNpaRate / 100)) : dueBasicTracker;
         const dueDaRate = data.toBePaid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
-        const dueDaBase = data.toBePaid.npaApplicable && dueNpaApplicable ? proratedDueBasic + dueNPA : proratedDueBasic;
-        const dueDA = dueDaBase * (dueDaRate / 100);
+        const dueDA = dueBasicForDueDA * (dueDaRate / 100) * basicProRataFactor;
+        const dueHRA = dueBasicTracker * (dueHraRate / 100) * dueHraFactor;
 
-        const drawnHRA = proratedDrawnBasic * (drawnHraRate / 100);
-        const dueHRA = proratedDueBasic * (dueHraRate / 100);
 
         const drawnTotal = proratedDrawnBasic + drawnDA + drawnHRA + drawnNPA + drawnTaAmount + drawnOtherAmount;
         const dueTotal = proratedDueBasic + dueDA + dueHRA + dueNPA + dueTaAmount + dueOtherAmount;
@@ -752,7 +764,7 @@ export default function Home() {
                         <TableHead className="text-right">TA</TableHead>
                         <TableHead className="text-right">Other</TableHead>
                         <TableHead className="text-right font-bold border-r">Total</TableHead>
-                      </TableRow>
+                        </TableRow>
                     </TableHeader>
                     <TableBody>
                       {statement.rows.map(row => (
@@ -803,3 +815,4 @@ export default function Home() {
     </div>
   );
 }
+
