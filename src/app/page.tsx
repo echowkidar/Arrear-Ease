@@ -321,11 +321,11 @@ export default function Home() {
         const dueNPA = proratedDueBasic * (dueNpaRate / 100);
 
         const drawnDaRate = data.paid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
-        const drawnDaBase = data.paid.npaApplicable ? proratedDrawnBasic + drawnNPA : proratedDrawnBasic;
+        const drawnDaBase = data.paid.npaApplicable && drawnNpaApplicable ? proratedDrawnBasic + drawnNPA : proratedDrawnBasic;
         const drawnDA = drawnDaBase * (drawnDaRate / 100);
 
         const dueDaRate = data.toBePaid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
-        const dueDaBase = data.toBePaid.npaApplicable ? proratedDueBasic + dueNPA : proratedDueBasic;
+        const dueDaBase = data.toBePaid.npaApplicable && dueNpaApplicable ? proratedDueBasic + dueNPA : proratedDueBasic;
         const dueDA = dueDaBase * (dueDaRate / 100);
 
         const drawnHRA = proratedDrawnBasic * (drawnHraRate / 100);
@@ -480,7 +480,7 @@ export default function Home() {
         )}
       />
       {watchValues[`${name}Applicable`] && (
-        <div className="grid grid-cols-2 gap-2 pl-7 pt-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-7 pt-2">
             <FormField
               control={form.control}
               name={`${type}.${name}FromDate`}
@@ -551,7 +551,7 @@ export default function Home() {
             </FormItem>
           )} />
           {currentWatchValues.otherAllowance > 0 && (
-            <div className="grid grid-cols-2 gap-2 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
                 <FormField
                   control={form.control}
                   name={`${type}.otherAllowanceFromDate`}
@@ -580,7 +580,7 @@ export default function Home() {
           <p className="text-muted-foreground mt-2 text-lg">A Simple Tool for Complex Salary Arrear Calculations</p>
         </header>
 
-        <div className="flex justify-end gap-4 mb-4 no-print">
+        <div className="flex flex-col sm:flex-row justify-end gap-2 mb-4 no-print">
             <Dialog open={isLoadDialogOpen} onOpenChange={setLoadDialogOpen}>
                 <DialogTrigger asChild>
                     <Button variant="outline">
@@ -598,15 +598,15 @@ export default function Home() {
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead>Employee</TableHead>
-                                        <TableHead>Saved On</TableHead>
+                                        <TableHead className="hidden sm:table-cell">Saved On</TableHead>
                                         <TableHead className="text-right">Actions</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
                                     {savedStatements.map(s => (
                                         <TableRow key={s.id}>
-                                            <TableCell>{s.employeeInfo.employeeName} ({s.employeeInfo.employeeId})</TableCell>
-                                            <TableCell>{format(new Date(s.savedAt), "PPP p")}</TableCell>
+                                            <TableCell className="font-medium">{s.employeeInfo.employeeName} <span className="text-muted-foreground">({s.employeeInfo.employeeId})</span></TableCell>
+                                            <TableCell className="hidden sm:table-cell">{format(new Date(s.savedAt), "PPP p")}</TableCell>
                                             <TableCell className="text-right">
                                                 <Button size="sm" onClick={() => loadStatement(s)} className="mr-2">Load</Button>
                                                 <Button size="sm" variant="destructive" onClick={() => deleteStatement(s.id)}><Trash2 className="h-4 w-4"/></Button>
@@ -703,7 +703,7 @@ export default function Home() {
         {statement && (
           <div id="statement-section" className="mt-12">
             <Card className="printable-area" id="printable-statement-card">
-              <CardHeader className="flex-row items-center justify-between">
+              <CardHeader className="flex-col md:flex-row items-start md:items-center justify-between gap-4">
                 <div>
                    <CardTitle className="font-headline text-3xl">Arrear Statement</CardTitle>
                    <CardDescription>
@@ -715,7 +715,7 @@ export default function Home() {
                      }
                    </CardDescription>
                 </div>
-                <div className="flex gap-2 no-print">
+                <div className="flex flex-wrap gap-2 no-print">
                    <Button onClick={saveStatement} variant="outline">
                       <Save className="mr-2 h-4 w-4" /> Save Arrear
                    </Button>
@@ -800,5 +800,3 @@ export default function Home() {
     </div>
   );
 }
-
-    

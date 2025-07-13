@@ -45,7 +45,7 @@ import { useToast } from "@/hooks/use-toast";
 const DateInput = ({ value, onChange }: { value: Date; onChange: (date?: Date) => void }) => (
     <Popover>
         <PopoverTrigger asChild>
-            <Button variant={"outline"} className={cn("w-[240px] pl-3 text-left font-normal", !value && "text-muted-foreground")}>
+            <Button variant={"outline"} className={cn("w-full md:w-[240px] pl-3 text-left font-normal", !value && "text-muted-foreground")}>
                 {value ? format(new Date(value), "PPP") : <span>Pick a date</span>}
                 <CalendarDays className="ml-auto h-4 w-4 opacity-50" />
             </Button>
@@ -67,7 +67,24 @@ const RateTable = ({ title, description, withBasicRange, isAmount, initialRates,
     const isModified = !isEqual(initialRates, localRates);
 
     const handleSaveChanges = () => {
-        setGlobalRates(localRates);
+        // Filter out rows where rate is empty/invalid before saving
+        const validRates = localRates.filter(r => r.rate !== '' && !isNaN(parseFloat(r.rate as any)))
+            .map(r => ({
+                ...r,
+                rate: parseFloat(r.rate as any),
+                basicFrom: r.basicFrom ? parseFloat(r.basicFrom as any) : '',
+                basicTo: r.basicTo ? parseFloat(r.basicTo as any) : ''
+            }));
+        
+        if (validRates.length < localRates.length) {
+            toast({
+                variant: 'destructive',
+                title: "Invalid Rows",
+                description: "Some rows were not saved because they had an empty or invalid rate. Please complete all rows before saving.",
+            });
+        }
+
+        setGlobalRates(validRates);
         toast({
             title: "Rates Saved",
             description: `${title} have been updated successfully.`,
@@ -109,7 +126,7 @@ const RateTable = ({ title, description, withBasicRange, isAmount, initialRates,
     return (
         <Card>
             <CardHeader>
-                <div className="flex justify-between items-center">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
                   <div>
                     <CardTitle>{title}</CardTitle>
                     {description && <CardDescription className="mt-1">{description}</CardDescription>}
@@ -128,32 +145,32 @@ const RateTable = ({ title, description, withBasicRange, isAmount, initialRates,
                                 <TableHead>To Date</TableHead>
                                 {withBasicRange && <><TableHead>Basic From</TableHead><TableHead>Basic To</TableHead></>}
                                 <TableHead>{isAmount ? 'Amount' : 'Rate (%)'}</TableHead>
-                                <TableHead>Action</TableHead>
+                                <TableHead className="text-right">Action</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {localRates.map((field) => (
                                 <TableRow key={field.id}>
-                                    <TableCell>
+                                    <TableCell className="min-w-[160px]">
                                         <DateInput 
                                           value={field.fromDate} 
                                           onChange={(date) => handleDateChange(field.id, 'fromDate', date)}
                                         />
                                     </TableCell>
-                                    <TableCell>
+                                    <TableCell className="min-w-[160px]">
                                        <DateInput 
                                           value={field.toDate} 
                                           onChange={(date) => handleDateChange(field.id, 'toDate', date)}
                                         />
                                     </TableCell>
                                     {withBasicRange && <>
-                                        <TableCell><Input type="number" value={field.basicFrom ?? ''} onChange={e => handleInputChange(field.id, 'basicFrom', e)} onBlur={() => handleBlur(field.id, 'basicFrom')}/></TableCell>
-                                        <TableCell><Input type="number" value={field.basicTo ?? ''} onChange={e => handleInputChange(field.id, 'basicTo', e)} onBlur={() => handleBlur(field.id, 'basicTo')}/></TableCell>
+                                        <TableCell className="min-w-[120px]"><Input type="number" value={field.basicFrom ?? ''} onChange={e => handleInputChange(field.id, 'basicFrom', e)} onBlur={() => handleBlur(field.id, 'basicFrom')}/></TableCell>
+                                        <TableCell className="min-w-[120px]"><Input type="number" value={field.basicTo ?? ''} onChange={e => handleInputChange(field.id, 'basicTo', e)} onBlur={() => handleBlur(field.id, 'basicTo')}/></TableCell>
                                     </>}
-                                    <TableCell>
+                                    <TableCell className="min-w-[120px]">
                                         <Input type="number" value={field.rate ?? ''} onChange={e => handleInputChange(field.id, 'rate', e)} onBlur={() => handleBlur(field.id, 'rate')}/>
                                     </TableCell>
-                                    <TableCell>
+                                    <TableCell className="text-right">
                                         <Button type="button" variant="destructive" size="icon" onClick={() => remove(field.id)}>
                                             <Trash2 />
                                         </Button>
