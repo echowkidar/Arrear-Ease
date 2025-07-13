@@ -38,8 +38,22 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useRates, Rate } from "@/context/rates-context";
 import { useToast } from "@/hooks/use-toast";
+import { cpcData } from "@/lib/cpc-data";
+
+
+const allPayLevels = [
+    ...cpcData['6th'].payLevels.map(pl => ({ value: pl.level, label: `6th CPC: GP ${pl.gradePay} (${pl.payBand})`})),
+    ...cpcData['7th'].payLevels.map(pl => ({ value: pl.level, label: `7th CPC: Level ${pl.level}`}))
+];
 
 
 const DateInput = ({ value, onChange }: { value: Date | undefined; onChange: (date?: Date) => void }) => {
@@ -132,6 +146,23 @@ const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevelR
         }
     };
 
+    const handleSelectChange = (id: string, field: 'payLevelFrom' | 'payLevelTo', value: string) => {
+        updateRate(id, field, value);
+    };
+
+    const PayLevelSelect = ({ field, value, onChange }: { field: 'payLevelFrom' | 'payLevelTo', value: string | number | undefined, onChange: (value: string) => void }) => (
+        <Select onValueChange={onChange} value={value as string ?? ''}>
+            <SelectTrigger>
+                <SelectValue placeholder="Select Level" />
+            </SelectTrigger>
+            <SelectContent>
+                {allPayLevels.map(level => (
+                    <SelectItem key={level.value} value={level.value}>{level.label}</SelectItem>
+                ))}
+            </SelectContent>
+        </Select>
+    );
+
     return (
         <Card>
             <CardHeader>
@@ -178,8 +209,12 @@ const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevelR
                                         <TableCell className="min-w-[120px]"><Input type="number" value={field.basicTo ?? ''} onChange={e => handleInputChange(field.id, 'basicTo', e)} onBlur={() => handleBlur(field.id, 'basicTo')}/></TableCell>
                                     </>}
                                     {withPayLevelRange && <>
-                                        <TableCell className="min-w-[120px]"><Input value={field.payLevelFrom ?? ''} onChange={e => handleInputChange(field.id, 'payLevelFrom', e)} /></TableCell>
-                                        <TableCell className="min-w-[120px]"><Input value={field.payLevelTo ?? ''} onChange={e => handleInputChange(field.id, 'payLevelTo', e)} /></TableCell>
+                                        <TableCell className="min-w-[200px]">
+                                            <PayLevelSelect field="payLevelFrom" value={field.payLevelFrom} onChange={(value) => handleSelectChange(field.id, 'payLevelFrom', value)} />
+                                        </TableCell>
+                                        <TableCell className="min-w-[200px]">
+                                            <PayLevelSelect field="payLevelTo" value={field.payLevelTo} onChange={(value) => handleSelectChange(field.id, 'payLevelTo', value)} />
+                                        </TableCell>
                                     </>}
                                     <TableCell className="min-w-[120px]">
                                         <Input type="number" value={field.rate ?? ''} onChange={e => handleInputChange(field.id, 'rate', e)} onBlur={() => handleBlur(field.id, 'rate')}/>
@@ -246,3 +281,5 @@ export default function RatesPage() {
         </main>
     );
 }
+
+    
