@@ -206,18 +206,25 @@ export default function Home() {
 
   const payLevels = cpc ? cpcData[cpc].payLevels.map(pl => ({ value: pl.level, label: cpc === '6th' ? `GP ${pl.gradePay} (${pl.payBand})` : `Level ${pl.level}`})) : [];
 
-  const getRateForDate = (rates: Rate[], date: Date, basicPay?: number) => {
+  const getRateForDate = (rates: Rate[], date: Date, basicPay?: number, payLevel?: string) => {
     const applicableRate = rates.find(r => {
       const from = new Date(r.fromDate);
       const to = new Date(r.toDate);
       let isDateMatch = date >= from && date <= to;
+      
       let isBasicMatch = true;
       if (basicPay !== undefined) {
         if (r.basicFrom !== undefined && r.basicTo !== undefined && r.basicFrom > 0 && r.basicTo > 0) {
           isBasicMatch = basicPay >= r.basicFrom && basicPay <= r.basicTo;
         }
       }
-      return isDateMatch && isBasicMatch;
+
+      let isPayLevelMatch = true;
+      if (payLevel !== undefined && r.payLevel !== undefined && r.payLevel !== '') {
+          isPayLevelMatch = r.payLevel === payLevel;
+      }
+
+      return isDateMatch && isBasicMatch && isPayLevelMatch;
     });
     return applicableRate ? applicableRate.rate : 0;
   }
@@ -321,7 +328,7 @@ export default function Home() {
         
         const drawnHraRate = drawnHraFactor > 0 ? getRateForDate(hraRates, currentDate, drawnBasicTracker) : 0;
         const drawnNpaRate = drawnNpaFactor > 0 ? getRateForDate(npaRates, currentDate) : 0;
-        const drawnTaBaseAmount = drawnTaFactor > 0 ? getRateForDate(taRates, currentDate, drawnBasicTracker) : 0;
+        const drawnTaBaseAmount = drawnTaFactor > 0 ? getRateForDate(taRates, currentDate, drawnBasicTracker, data.paid.payLevel) : 0;
 
         const drawnNPA = drawnBasicTracker * (drawnNpaRate / 100) * drawnNpaFactor;
         const drawnHRA = drawnBasicTracker * (drawnHraRate / 100) * drawnHraFactor;
@@ -342,7 +349,7 @@ export default function Home() {
 
         const dueHraRate = dueHraFactor > 0 ? getRateForDate(hraRates, currentDate, dueBasicTracker) : 0;
         const dueNpaRate = dueNpaFactor > 0 ? getRateForDate(npaRates, currentDate) : 0;
-        const dueTaBaseAmount = dueTaFactor > 0 ? getRateForDate(taRates, currentDate, dueBasicTracker) : 0;
+        const dueTaBaseAmount = dueTaFactor > 0 ? getRateForDate(taRates, currentDate, dueBasicTracker, data.toBePaid.payLevel) : 0;
         
         const dueNPA = dueBasicTracker * (dueNpaRate / 100) * dueNpaFactor;
         const dueHRA = dueBasicTracker * (dueHraRate / 100) * dueHraFactor;
