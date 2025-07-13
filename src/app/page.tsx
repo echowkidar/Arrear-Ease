@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import Link from "next/link";
-import { format, addMonths, differenceInCalendarMonths, getDaysInMonth, startOfMonth, endOfMonth, isSameMonth } from "date-fns";
+import { format, addMonths, differenceInCalendarMonths, getDaysInMonth, startOfMonth, endOfMonth, isSameMonth, max, min } from "date-fns";
 import {
   User,
   Building,
@@ -226,17 +226,20 @@ export default function Home() {
     window.print();
   };
   
-  const isDateInRange = (date: Date, fromDate?: Date, toDate?: Date) => {
-    if (!fromDate && !toDate) return true; // No range specified, so it's always applicable
-    const checkDate = startOfMonth(date);
-    const start = fromDate ? startOfMonth(fromDate) : null;
-    const end = toDate ? endOfMonth(toDate) : null;
-    
-    if (start && end) return checkDate >= start && checkDate <= end;
-    if (start) return checkDate >= start;
-    if (end) return checkDate <= end;
-    return true;
-  };
+  const isDateInRange = (calculationMonth: Date, fromDate?: Date, toDate?: Date): boolean => {
+    if (!fromDate && !toDate) {
+        return true; // No specific range, so it's always applicable within the arrear period.
+    }
+    const monthStart = startOfMonth(calculationMonth);
+    const monthEnd = endOfMonth(calculationMonth);
+
+    const effectiveFrom = fromDate || new Date(-8640000000000000); // Distant past
+    const effectiveTo = toDate || new Date(8640000000000000); // Distant future
+
+    // Check for overlap between the calculation month and the allowance period.
+    return monthStart <= effectiveTo && monthEnd >= effectiveFrom;
+};
+
 
   const onSubmit = (data: ArrearFormData) => {
     try {
