@@ -72,7 +72,7 @@ const DateInput = ({ value, onChange }: { value: Date | undefined; onChange: (da
                 </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
-                <Calendar mode="single" selected={dateValue ? new Date(dateValue) : undefined} onSelect={onChange} captionLayout="dropdown-buttons" fromYear={1990} toYear={2050} initialFocus={dateValue} />
+                <Calendar mode="single" selected={dateValue ? new Date(dateValue) : undefined} onSelect={onChange} captionLayout="dropdown-buttons" fromYear={1990} toYear={2050} initialFocus={dateValue ? new Date(dateValue) : undefined} />
             </PopoverContent>
         </Popover>
     );
@@ -265,7 +265,7 @@ export default function RatesPage() {
                     </Link>
                 </Button>
                 <h1 className="font-headline text-4xl md:text-5xl font-bold text-primary text-center mt-4">
-                    Allowance Rate Configuration
+                    Allowances Rate Configuration
                 </h1>
                 <p className="text-muted-foreground mt-2 text-lg text-center">
                     Define the applicable rates for various allowances. These rates are saved in your browser for future use.

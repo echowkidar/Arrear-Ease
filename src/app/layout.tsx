@@ -4,7 +4,7 @@ import { Toaster } from "@/components/ui/toaster"
 import { RatesProvider } from '@/context/rates-context';
 
 export const metadata: Metadata = {
-  title: 'ArrearEase: Salary Arrear Calculator',
+  title: 'Arrear Ease: Salary Arrear Calculator',
   description: 'Easily calculate salary arrears with month-wise breakdowns, pay fixation, and dynamic allowance rates.',
 };
 

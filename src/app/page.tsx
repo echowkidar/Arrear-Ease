@@ -329,30 +329,42 @@ export default function Home() {
                 let newBasic = currentBasic;
                 
                 let incrementTriggerDate: Date;
+                let annualTrigger = false;
+
                 if (firstIncrementDate) {
-                    // If a specific date is given for the *first* increment
+                    // Check if current date is the first increment date
                     if (currentYear === firstIncrementDate.getFullYear() && currentMonth === firstIncrementDate.getMonth() + 1) {
-                        incrementTriggerDate = firstIncrementDate;
+                         incrementTriggerDate = firstIncrementDate;
+                    // Check for subsequent annual increments
                     } else if (currentDate > firstIncrementDate && currentMonth === incrementMonthValue) {
-                        // For subsequent years, increment on the 1st of the month
-                        incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
+                         incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
+                         annualTrigger = true;
                     } else {
                         return { newMonthlyBasic: currentBasic, newTrackerBasic: currentBasic };
                     }
                 } else {
-                    // If no specific date, increment on the 1st of the increment month annually
+                     // If no specific date, increment on the 1st of the increment month annually
                     if (currentMonth === incrementMonthValue) {
                         incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
+                        annualTrigger = true;
                     } else {
                         return { newMonthlyBasic: currentBasic, newTrackerBasic: currentBasic };
                     }
                 }
+                
+                // For annual triggers, make sure we are not before the start date of arrears
+                if(annualTrigger && incrementTriggerDate < arrearFromDate) {
+                    return { newMonthlyBasic: currentBasic, newTrackerBasic: currentBasic };
+                }
 
                 // Check if the trigger date is within the overall arrear period
                 if (!isWithinInterval(incrementTriggerDate, { start: arrearFromDate, end: arrearToDate })) {
-                    // Also check if we are in the starting month of arrears, if the trigger is before the arrear start
+                    // This handles cases where the trigger date is valid but outside the arrear calculation window
                     if (startOfMonth(incrementTriggerDate).getTime() === startOfMonth(arrearFromDate).getTime() && incrementTriggerDate < arrearFromDate) {
-                        // do nothing, let it fall through
+                       // This means the increment happened before the arrear starts, but in the same month.
+                       // We should consider the basic pay already incremented.
+                       // This is complex, for now we will assume increment date inside arrear period is the norm.
+                       // A better way is to calculate the basic on a given date from a start point.
                     } else {
                        return { newMonthlyBasic: currentBasic, newTrackerBasic: currentBasic };
                     }
@@ -376,9 +388,10 @@ export default function Home() {
                 if (!didIncrement) {
                     return { newMonthlyBasic: currentBasic, newTrackerBasic: currentBasic };
                 }
-
+                
                 const incrementDay = incrementTriggerDate.getDate();
-                if (incrementDay > 1) {
+                
+                if (incrementDay > 1 && isWithinInterval(incrementTriggerDate, {start: monthStart, end: monthEnd})) {
                    const daysBefore = incrementDay - 1;
                    const daysAfter = daysInMonth - daysBefore;
                    return { 
@@ -399,9 +412,10 @@ export default function Home() {
             dueBasicTracker = dueIncrementResult.newTrackerBasic;
 
             // --- PAY REFIXATION LOGIC (Due Side) ---
-            if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPayDate) {
+            if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPay > 0 && data.toBePaid.refixedBasicPayDate) {
                 const refixDate = data.toBePaid.refixedBasicPayDate;
-                if (isWithinInterval(currentDate, { start: startOfMonth(refixDate), end: arrearToDate })) {
+                 // Apply refixation if the current calculation month is on or after the refixation month
+                 if (currentDate >= startOfMonth(refixDate)) {
                      // If the current month IS the refixation month (handle proration)
                     if (currentYear === refixDate.getFullYear() && currentMonth === refixDate.getMonth() + 1) {
                         const refixDay = refixDate.getDate();
@@ -417,7 +431,7 @@ export default function Home() {
                         dueBasicTracker = data.toBePaid.refixedBasicPay;
                     } 
                     // If the current month is after the refixation month
-                    else if (currentDate > startOfMonth(refixDate)) {
+                    else if (currentDate > refixDate) {
                         dueBasicForMonth = data.toBePaid.refixedBasicPay;
                         dueBasicTracker = data.toBePaid.refixedBasicPay;
                     }
@@ -788,8 +802,9 @@ export default function Home() {
     <div className="min-h-screen bg-background">
       <main className="container mx-auto px-4 py-8 md:py-12">
         <header className="text-center mb-8 no-print">
-          <h1 className="font-headline text-4xl md:text-5xl font-bold text-primary">ArrearEase</h1>
+          <h1 className="font-headline text-4xl md:text-5xl font-bold text-primary">Arrear Ease</h1>
           <p className="text-muted-foreground mt-2 text-lg">A Simple Tool for Complex Salary Arrear Calculations</p>
+          <p className="text-muted-foreground mt-1 text-sm">Dedicated to AMU by Zafar Ali Khan</p>
         </header>
 
         <div className="flex flex-col sm:flex-row justify-end gap-2 mb-4 no-print">
