@@ -321,42 +321,36 @@ export default function Home() {
             let dueBasicForMonth = dueBasicTracker;
             
             // --- INCREMENT LOGIC ---
-            const handleIncrement = (side: 'paid' | 'toBePaid', currentBasic: number, initialBasic: number) => {
+            const handleIncrement = (side: 'paid' | 'toBePaid', currentBasic: number) => {
               const sideData = data[side];
               const incrementMonthValue = parseInt(sideData.incrementMonth, 10);
               const firstIncrementDate = sideData.incrementDate;
-            
+
               let newBasic = currentBasic;
-              let didIncrementThisMonth = false;
               let incrementTriggerDate: Date | null = null;
             
               // Determine if an increment should trigger in the current month
               if (firstIncrementDate) {
-                  // This is the first ever increment for this pay scale
-                  if (currentYear === firstIncrementDate.getFullYear() && currentMonth === firstIncrementDate.getMonth() + 1) {
-                      incrementTriggerDate = firstIncrementDate;
-                  } 
-                  // Subsequent annual increments
-                  else if (currentDate > firstIncrementDate && currentMonth === incrementMonthValue) {
-                      incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
+                  // If the current month is on or after the first increment...
+                  if (currentDate >= startOfMonth(firstIncrementDate)) {
+                      // ...and the month matches the recurring increment month.
+                      if (currentMonth === firstIncrementDate.getMonth() + 1 && currentYear > firstIncrementDate.getFullYear()) {
+                          incrementTriggerDate = new Date(currentYear, currentMonth - 1, 1);
+                      }
+                      // ... or it's the very first increment.
+                      else if (currentYear === firstIncrementDate.getFullYear() && currentMonth === firstIncrementDate.getMonth() + 1) {
+                         incrementTriggerDate = firstIncrementDate;
+                      }
                   }
               } else {
                   // Fallback to annual increment month if no specific date is given
-                  if (currentMonth === incrementMonthValue && currentDate >= arrearFromDate) {
-                      const firstPossibleIncrementYear = arrearFromDate.getMonth() + 1 > incrementMonthValue ? arrearFromDate.getFullYear() + 1 : arrearFromDate.getFullYear();
-                      if(currentYear >= firstPossibleIncrementYear) {
-                           incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
-                      }
+                  const firstPossibleIncrementYear = arrearFromDate.getMonth() + 1 > incrementMonthValue ? arrearFromDate.getFullYear() + 1 : arrearFromDate.getFullYear();
+                  if(currentYear >= firstPossibleIncrementYear && currentMonth === incrementMonthValue) {
+                     incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
                   }
               }
               
-              if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd })) {
-                 if (isWithinInterval(incrementTriggerDate, { start: arrearFromDate, end: arrearToDate })) {
-                    didIncrementThisMonth = true;
-                 }
-              }
-            
-              if (didIncrementThisMonth && incrementTriggerDate) {
+              if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd }) && isWithinInterval(incrementTriggerDate, { start: arrearFromDate, end: arrearToDate })) {
                   let incrementedBasic: number;
                   if (cpc === '7th') {
                       const levelData = cpcData['7th'].payLevels.find(l => l.level === sideData.payLevel);
@@ -365,10 +359,10 @@ export default function Home() {
                           if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
                             incrementedBasic = levelData.values[currentBasicIndex + 1];
                           } else {
-                            incrementedBasic = currentBasic;
+                            incrementedBasic = currentBasic; // already at max
                           }
                       } else {
-                        incrementedBasic = currentBasic;
+                        incrementedBasic = currentBasic; // level not found
                       }
                   } else { // 6th CPC
                       incrementedBasic = Math.round(currentBasic * 1.03);
@@ -378,8 +372,8 @@ export default function Home() {
                   if (incrementDay > 1) {
                       const daysBefore = incrementDay - 1;
                       const daysAfter = daysInMonth - daysBefore;
-                      const monthlyBasic = ((currentBasic * daysBefore) + (incrementedBasic * daysAfter)) / daysInMonth;
-                      return { newMonthlyBasic: monthlyBasic, newTrackerBasic: incrementedBasic };
+                      const proratedMonthlyBasic = ((currentBasic * daysBefore) + (incrementedBasic * daysAfter)) / daysInMonth;
+                      return { newMonthlyBasic: proratedMonthlyBasic, newTrackerBasic: incrementedBasic };
                   } else {
                       return { newMonthlyBasic: incrementedBasic, newTrackerBasic: incrementedBasic };
                   }
@@ -387,12 +381,12 @@ export default function Home() {
             
               return { newMonthlyBasic: currentBasic, newTrackerBasic: currentBasic };
             };
-            
-            const drawnIncrementResult = handleIncrement('paid', drawnBasicTracker, data.paid.basicPay);
+
+            const drawnIncrementResult = handleIncrement('paid', drawnBasicTracker);
             drawnBasicForMonth = drawnIncrementResult.newMonthlyBasic;
             drawnBasicTracker = drawnIncrementResult.newTrackerBasic;
 
-            const dueIncrementResult = handleIncrement('toBePaid', dueBasicTracker, data.toBePaid.basicPay);
+            const dueIncrementResult = handleIncrement('toBePaid', dueBasicTracker);
             dueBasicForMonth = dueIncrementResult.newMonthlyBasic;
             dueBasicTracker = dueIncrementResult.newTrackerBasic;
 
@@ -418,7 +412,7 @@ export default function Home() {
                     } 
                     // If the current month is after the refixation month
                     else if (currentDate > refixDate) {
-                        dueBasicForMonth = data.toBePaid.refixedBasicPay;
+                        dueBasicForMonth = data.toBePaid.refixedBasicPay; // The new basic is now the tracked basic
                         dueBasicTracker = data.toBePaid.refixedBasicPay;
                     }
                 }
@@ -851,10 +845,10 @@ export default function Home() {
                 <Card>
                   <CardHeader><CardTitle className="flex items-center gap-2"><User /> Employee Details</CardTitle></CardHeader>
                   <CardContent className="space-y-4">
-                    <FormField control={form.control} name="employeeId" render={({ field }) => ( <FormItem> <FormLabel>Employee ID</FormLabel> <FormControl><Input placeholder="e.g., E12345" {...field} /></FormControl> <FormMessage /> </FormItem> )} />
-                    <FormField control={form.control} name="employeeName" render={({ field }) => ( <FormItem> <FormLabel>Employee Name</FormLabel> <FormControl><Input placeholder="e.g., A. K. Sharma" {...field} /></FormControl> <FormMessage /> </FormItem> )} />
-                    <FormField control={form.control} name="designation" render={({ field }) => ( <FormItem> <FormLabel>Designation</FormLabel> <FormControl><Input placeholder="e.g., Senior Officer" {...field} /></FormControl> <FormMessage /> </FormItem> )} />
-                    <FormField control={form.control} name="department" render={({ field }) => ( <FormItem> <FormLabel>Department</FormLabel> <FormControl><Input placeholder="e.g., Accounts" {...field} /></FormControl> <FormMessage /> </FormItem> )} />
+                    <FormField control={form.control} name="employeeId" render={({ field }) => ( <FormItem> <FormLabel>Employee ID</FormLabel> <FormControl><Input placeholder="Employee ID" {...field} /></FormControl> <FormMessage /> </FormItem> )} />
+                    <FormField control={form.control} name="employeeName" render={({ field }) => ( <FormItem> <FormLabel>Employee Name</FormLabel> <FormControl><Input placeholder="Full Name" {...field} /></FormControl> <FormMessage /> </FormItem> )} />
+                    <FormField control={form.control} name="designation" render={({ field }) => ( <FormItem> <FormLabel>Designation</FormLabel> <FormControl><Input placeholder="Designation" {...field} /></FormControl> <FormMessage /> </FormItem> )} />
+                    <FormField control={form.control} name="department" render={({ field }) => ( <FormItem> <FormLabel>Department</FormLabel> <FormControl><Input placeholder="Department" {...field} /></FormControl> <FormMessage /> </FormItem> )} />
                     <FormField control={form.control} name="cpc" render={({ field }) => (
                       <FormItem>
                         <FormLabel>CPC</FormLabel>
