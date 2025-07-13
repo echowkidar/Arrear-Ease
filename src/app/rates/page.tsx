@@ -42,7 +42,7 @@ import { useRates, Rate } from "@/context/rates-context";
 import { useToast } from "@/hooks/use-toast";
 
 
-const DateInput = ({ value, onChange }: { value: Date; onChange: (date?: Date) => void }) => (
+const DateInput = ({ value, onChange }: { value: Date | undefined; onChange: (date?: Date) => void }) => (
     <Popover>
         <PopoverTrigger asChild>
             <Button variant={"outline"} className={cn("w-full md:w-[240px] pl-3 text-left font-normal", !value && "text-muted-foreground")}>
@@ -51,7 +51,7 @@ const DateInput = ({ value, onChange }: { value: Date; onChange: (date?: Date) =
             </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="start">
-            <Calendar mode="single" selected={new Date(value)} onSelect={onChange} captionLayout="dropdown-buttons" fromYear={1990} toYear={2050} initialFocus />
+            <Calendar mode="single" selected={value} onSelect={onChange} captionLayout="dropdown-buttons" fromYear={1990} toYear={2050} initialFocus />
         </PopoverContent>
     </Popover>
 );
@@ -232,3 +232,5 @@ export default function RatesPage() {
         </main>
     );
 }
+
+    

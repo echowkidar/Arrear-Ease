@@ -321,12 +321,14 @@ export default function Home() {
         const drawnNpaRate = drawnNpaFactor > 0 ? getRateForDate(npaRates, currentDate) : 0;
         const drawnTaAmount = drawnTaFactor > 0 ? getRateForDate(taRates, currentDate, drawnBasicTracker) * drawnTaFactor : 0;
         const drawnOtherAmount = drawnOtherFactor > 0 ? (data.paid.otherAllowance || 0) * drawnOtherFactor : 0;
-
+        
         const drawnNPA = drawnBasicTracker * (drawnNpaRate / 100) * drawnNpaFactor;
-        const dueBasicForDrawnDA = drawnNpaFactor > 0 ? drawnBasicTracker + (drawnBasicTracker * (drawnNpaRate / 100)) : drawnBasicTracker;
-        const drawnDaRate = data.paid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
-        const drawnDA = dueBasicForDrawnDA * (drawnDaRate / 100) * basicProRataFactor;
         const drawnHRA = drawnBasicTracker * (drawnHraRate / 100) * drawnHraFactor;
+        
+        // Correct DA calculation base: Prorated Basic + Prorated NPA
+        const drawnBaseForDA = proratedDrawnBasic + drawnNPA;
+        const drawnDaRate = data.paid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
+        const drawnDA = drawnBaseForDA * (drawnDaRate / 100);
         
         // --- DUE CALCULATION ---
         const dueHraFactor = data.toBePaid.hraApplicable ? getProratedFactorForAllowance(currentDate, data.toBePaid.hraFromDate, data.toBePaid.hraToDate) : 0;
@@ -340,10 +342,12 @@ export default function Home() {
         const dueOtherAmount = dueOtherFactor > 0 ? (data.toBePaid.otherAllowance || 0) * dueOtherFactor : 0;
 
         const dueNPA = dueBasicTracker * (dueNpaRate / 100) * dueNpaFactor;
-        const dueBasicForDueDA = dueNpaFactor > 0 ? dueBasicTracker + (dueBasicTracker * (dueNpaRate / 100)) : dueBasicTracker;
-        const dueDaRate = data.toBePaid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
-        const dueDA = dueBasicForDueDA * (dueDaRate / 100) * basicProRataFactor;
         const dueHRA = dueBasicTracker * (dueHraRate / 100) * dueHraFactor;
+        
+        // Correct DA calculation base: Prorated Basic + Prorated NPA
+        const dueBaseForDA = proratedDueBasic + dueNPA;
+        const dueDaRate = data.toBePaid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
+        const dueDA = dueBaseForDA * (dueDaRate / 100);
 
 
         const drawnTotal = proratedDrawnBasic + drawnDA + drawnHRA + drawnNPA + drawnTaAmount + drawnOtherAmount;
@@ -816,3 +820,4 @@ export default function Home() {
   );
 }
 
+    
