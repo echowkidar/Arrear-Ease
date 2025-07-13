@@ -98,7 +98,6 @@ const salaryComponentSchema = z.object({
   otherAllowance: z.coerce.number().min(0).optional().default(0),
   otherAllowanceFromDate: z.date().optional(),
   otherAllowanceToDate: z.date().optional(),
-  // New fields for refixation on "To be Paid" side
   refixedBasicPay: z.coerce.number().min(0).optional(),
   refixedBasicPayDate: z.date().optional(),
 });
@@ -264,9 +263,13 @@ export default function Home() {
     const monthEnd = endOfMonth(calculationMonth);
     const daysInMonth = getDaysInMonth(calculationMonth);
     
-    // An allowance can't be applied outside the main arrear period
-    const effectiveAllowanceFrom = max([allowanceFromDate || arrearStartDate, arrearStartDate]);
-    const effectiveAllowanceTo = min([allowanceToDate || arrearEndDate, arrearEndDate]);
+    // The main arrear period is the absolute boundary
+    const effectiveArrearStart = max([arrearStartDate, monthStart]);
+    const effectiveArrearEnd = min([arrearEndDate, monthEnd]);
+
+    // An allowance can't be applied outside its own period OR the main arrear period
+    const effectiveAllowanceFrom = max([allowanceFromDate || arrearStartDate, effectiveArrearStart]);
+    const effectiveAllowanceTo = min([allowanceToDate || arrearEndDate, effectiveArrearEnd]);
     
     const intersectionStart = max([monthStart, effectiveAllowanceFrom]);
     const intersectionEnd = min([monthEnd, effectiveAllowanceTo]);
@@ -292,23 +295,15 @@ export default function Home() {
 
       let drawnBasicTracker = data.paid.basicPay;
       let dueBasicTracker = data.toBePaid.basicPay;
-      let isPayRefixed = false;
+      let dueBasicBeforeRefix = data.toBePaid.basicPay; // Store the original "due" basic pay for refixation month
 
       for (let i = 0; i <= monthCount; i++) {
         const currentDate = addMonths(firstMonth, i);
         const currentMonth = currentDate.getMonth() + 1;
         
-        // Handle pay refixation on the "Due" side
-        if (
-          !isPayRefixed &&
-          data.toBePaid.refixedBasicPay &&
-          data.toBePaid.refixedBasicPayDate &&
-          currentDate >= startOfMonth(data.toBePaid.refixedBasicPayDate)
-        ) {
-          dueBasicTracker = data.toBePaid.refixedBasicPay;
-          isPayRefixed = true; // Mark as refixed to prevent re-applying
-        }
+        let dueBasicForMonth = dueBasicTracker; // Use this variable for calculations within the month
 
+        // Handle increment before refixation check
         const incrementMonthValue = parseInt(data.incrementMonth);
         if (i > 0 && incrementMonthValue === currentMonth) {
             if(cpc === '7th') {
@@ -324,57 +319,63 @@ export default function Home() {
                 if (data.toBePaid.payLevel) {
                     const levelData = cpcData['7th'].payLevels.find(l => l.level === data.toBePaid.payLevel);
                     if (levelData) {
-                        const currentBasicIndex = levelData.values.indexOf(dueBasicTracker);
+                        // Apply increment to the correct base (before or after refixation)
+                        const baseForIncrement = dueBasicTracker;
+                        const currentBasicIndex = levelData.values.indexOf(baseForIncrement);
                         if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
-                            dueBasicTracker = levelData.values[currentBasicIndex + 1];
+                            const newBasic = levelData.values[currentBasicIndex + 1];
+                            dueBasicTracker = newBasic;
+                            dueBasicForMonth = newBasic; // Update for current month
+                            dueBasicBeforeRefix = newBasic; // Update this as well in case refix happens after increment
                         }
                     }
                 }
             } else if (cpc === '6th') {
                  drawnBasicTracker = Math.round(drawnBasicTracker * 1.03);
-                 dueBasicTracker = Math.round(dueBasicTracker * 1.03);
+                 const newDueBasic = Math.round(dueBasicTracker * 1.03);
+                 dueBasicTracker = newDueBasic;
+                 dueBasicForMonth = newDueBasic;
+                 dueBasicBeforeRefix = newDueBasic;
             }
         }
-
-        const daysInMonth = getDaysInMonth(currentDate);
         
+        const daysInMonth = getDaysInMonth(currentDate);
         const monthStart = startOfMonth(currentDate);
         const monthEnd = endOfMonth(currentDate);
 
-        const effectiveBasicStart = max([monthStart, arrearFromDate]);
-        const effectiveBasicEnd = min([monthEnd, arrearToDate]);
+        // This determines how many days of the month are part of the arrear period
+        const effectiveMonthStart = max([monthStart, arrearFromDate]);
+        const effectiveMonthEnd = min([monthEnd, arrearToDate]);
+        const daysForBasic = differenceInDays(effectiveMonthEnd, effectiveMonthStart) + 1;
+        const basicProRataFactor = daysForBasic > 0 ? daysForBasic / daysInMonth : 0;
 
-        let daysForBasic = differenceInDays(effectiveBasicEnd, effectiveBasicStart) + 1;
-
-        // Special handling for the month of refixation
+        // Handle pay refixation on the "Due" side with proration
         if (
             data.toBePaid.refixedBasicPay &&
             data.toBePaid.refixedBasicPayDate &&
             currentDate.getFullYear() === data.toBePaid.refixedBasicPayDate.getFullYear() &&
             currentDate.getMonth() === data.toBePaid.refixedBasicPayDate.getMonth()
         ) {
-            const refixDate = data.toBePaid.refixedBasicPayDate.getDate();
-            const daysBeforeRefix = refixDate - 1;
-            const daysAfterRefix = daysInMonth - daysBeforeRefix;
+            const refixDate = data.toBePaid.refixedBasicPayDate;
+            // Ensure refix date is within the arrear period for this month
+            if (isWithinInterval(refixDate, { start: effectiveMonthStart, end: effectiveMonthEnd })) {
+                const dayOfRefix = refixDate.getDate();
+                const daysBeforeRefix = dayOfRefix - 1;
+                const daysOnAndAfterRefix = daysInMonth - daysBeforeRefix;
 
-            const basicBeforeRefix = data.toBePaid.basicPay * (daysBeforeRefix / daysInMonth);
-            const basicAfterRefix = data.toBePaid.refixedBasicPay * (daysAfterRefix / daysInMonth);
-            
-            const proratedDueBasic = (basicBeforeRefix + basicAfterRefix) * (daysForBasic / daysInMonth);
-            
-            // This proratedDueBasic is already calculated for the whole month, so we handle it separately
-             const proratedDrawnBasic = drawnBasicTracker * (daysForBasic / daysInMonth);
-
-             // --- Due NPA/HRA/TA would also be complex here, assuming full month for simplicity of refix month for now
-             // Or we apply the same proration logic
-             
-             // For now, let's keep it simpler and just refix the basic for the whole month for calculation
-             // A more complex implementation would be needed for day-by-day proration of all allowances
+                const basicBefore = dueBasicBeforeRefix * (daysBeforeRefix / daysInMonth);
+                const basicAfter = data.toBePaid.refixedBasicPay * (daysOnAndAfterRefix / daysInMonth);
+                
+                dueBasicForMonth = basicBefore + basicAfter;
+            }
+            // Update the main tracker for subsequent months
+            if (currentDate >= startOfMonth(data.toBePaid.refixedBasicPayDate)) {
+                 dueBasicTracker = data.toBePaid.refixedBasicPay;
+            }
         }
-
-        const basicProRataFactor = daysForBasic > 0 ? daysForBasic / daysInMonth : 0;
+        
         const proratedDrawnBasic = drawnBasicTracker * basicProRataFactor;
-        const proratedDueBasic = dueBasicTracker * basicProRataFactor;
+        const proratedDueBasic = dueBasicForMonth * basicProRataFactor;
 
 
         // --- DRAWN CALCULATION ---
@@ -406,12 +407,12 @@ export default function Home() {
         const dueTaFactor = data.toBePaid.taApplicable ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data.toBePaid.taFromDate, data.toBePaid.taToDate) : 0;
         const dueOtherFactor = (data.toBePaid.otherAllowance || 0) > 0 ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data.toBePaid.otherAllowanceFromDate, data.toBePaid.otherAllowanceToDate) : 0;
 
-        const dueHraRate = dueHraFactor > 0 ? getRateForDate(hraRates, currentDate, dueBasicTracker) : 0;
+        const dueHraRate = dueHraFactor > 0 ? getRateForDate(hraRates, currentDate, dueBasicForMonth) : 0;
         const dueNpaRate = dueNpaFactor > 0 ? getRateForDate(npaRates, currentDate) : 0;
-        const dueTaBaseAmount = dueTaFactor > 0 ? getRateForDate(taRates, currentDate, dueBasicTracker, data.toBePaid.payLevel) : 0;
+        const dueTaBaseAmount = dueTaFactor > 0 ? getRateForDate(taRates, currentDate, dueBasicForMonth, data.toBePaid.payLevel) : 0;
         
-        const dueNPA = dueBasicTracker * (dueNpaRate / 100) * dueNpaFactor;
-        const dueHRA = dueBasicTracker * (dueHraRate / 100) * dueHraFactor;
+        const dueNPA = dueBasicForMonth * (dueNpaRate / 100) * dueNpaFactor;
+        const dueHRA = dueBasicForMonth * (dueHraRate / 100) * dueHraFactor;
         const dueTaWithDA = dueTaBaseAmount * (1 + (dueDaRate / 100));
         const dueTA = dueTaWithDA * dueTaFactor;
         const dueOtherAmount = (data.toBePaid.otherAllowance || 0) * dueOtherFactor;
