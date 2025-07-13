@@ -226,26 +226,34 @@ export default function Home() {
     window.print();
   };
 
-  const getProratedFactorForAllowance = (calculationMonth: Date, fromDate?: Date, toDate?: Date): number => {
+  const getProratedFactorForAllowance = (
+      calculationMonth: Date, 
+      arrearStartDate: Date, 
+      arrearEndDate: Date, 
+      allowanceFromDate?: Date, 
+      allowanceToDate?: Date
+    ): number => {
+    
     const monthStart = startOfMonth(calculationMonth);
     const monthEnd = endOfMonth(calculationMonth);
     const daysInMonth = getDaysInMonth(calculationMonth);
 
-    if (!fromDate && !toDate) {
-      return 1; // No specific range, full month is applicable
-    }
+    // If no specific allowance dates, default to arrear period boundaries for this month
+    const effectiveAllowanceFrom = allowanceFromDate || arrearStartDate;
+    const effectiveAllowanceTo = allowanceToDate || arrearEndDate;
 
-    const effectiveFrom = fromDate || new Date(-8640000000000000); // Distant past
-    const effectiveTo = toDate || new Date(8640000000000000); // Distant future
+    // Determine the intersection of three periods:
+    // 1. The current month being calculated (monthStart to monthEnd)
+    // 2. The overall arrear period (arrearStartDate to arrearEndDate)
+    // 3. The specific allowance applicability period (effectiveAllowanceFrom to effectiveAllowanceTo)
     
-    // Check for overlap between the calculation month and the allowance period.
-    if (monthStart > effectiveTo || monthEnd < effectiveFrom) {
-        return 0; // No overlap
-    }
+    const intersectionStart = max([monthStart, arrearStartDate, effectiveAllowanceFrom]);
+    const intersectionEnd = min([monthEnd, arrearEndDate, effectiveAllowanceTo]);
 
-    // Determine the start and end of the intersection period
-    const intersectionStart = max([monthStart, effectiveFrom]);
-    const intersectionEnd = min([monthEnd, effectiveTo]);
+    // If the intersection is not valid (e.g., start is after end), there are no applicable days.
+    if (intersectionStart > intersectionEnd) {
+      return 0;
+    }
 
     const daysToCalculate = differenceInDays(intersectionEnd, intersectionStart) + 1;
     
@@ -312,10 +320,10 @@ export default function Home() {
         const proratedDueBasic = dueBasicTracker * basicProRataFactor;
 
         // --- DRAWN CALCULATION ---
-        const drawnHraFactor = data.paid.hraApplicable ? getProratedFactorForAllowance(currentDate, data.paid.hraFromDate, data.paid.hraToDate) : 0;
-        const drawnNpaFactor = data.paid.npaApplicable ? getProratedFactorForAllowance(currentDate, data.paid.npaFromDate, data.paid.npaToDate) : 0;
-        const drawnTaFactor = data.paid.taApplicable ? getProratedFactorForAllowance(currentDate, data.paid.taFromDate, data.paid.taToDate) : 0;
-        const drawnOtherFactor = (data.paid.otherAllowance || 0) > 0 ? getProratedFactorForAllowance(currentDate, data.paid.otherAllowanceFromDate, data.paid.otherAllowanceToDate) : 0;
+        const drawnHraFactor = data.paid.hraApplicable ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data.paid.hraFromDate, data.paid.hraToDate) : 0;
+        const drawnNpaFactor = data.paid.npaApplicable ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data.paid.npaFromDate, data.paid.npaToDate) : 0;
+        const drawnTaFactor = data.paid.taApplicable ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data.paid.taFromDate, data.paid.taToDate) : 0;
+        const drawnOtherFactor = (data.paid.otherAllowance || 0) > 0 ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data.paid.otherAllowanceFromDate, data.paid.otherAllowanceToDate) : 0;
         
         const drawnHraRate = drawnHraFactor > 0 ? getRateForDate(hraRates, currentDate, drawnBasicTracker) : 0;
         const drawnNpaRate = drawnNpaFactor > 0 ? getRateForDate(npaRates, currentDate) : 0;
@@ -331,10 +339,10 @@ export default function Home() {
         const drawnDA = drawnBaseForDA * (drawnDaRate / 100);
         
         // --- DUE CALCULATION ---
-        const dueHraFactor = data.toBePaid.hraApplicable ? getProratedFactorForAllowance(currentDate, data.toBePaid.hraFromDate, data.toBePaid.hraToDate) : 0;
-        const dueNpaFactor = data.toBePaid.npaApplicable ? getProratedFactorForAllowance(currentDate, data.toBePaid.npaFromDate, data.toBePaid.npaToDate) : 0;
-        const dueTaFactor = data.toBePaid.taApplicable ? getProratedFactorForAllowance(currentDate, data.toBePaid.taFromDate, data.toBePaid.taToDate) : 0;
-        const dueOtherFactor = (data.toBePaid.otherAllowance || 0) > 0 ? getProratedFactorForAllowance(currentDate, data.toBePaid.otherAllowanceFromDate, data.toBePaid.otherAllowanceToDate) : 0;
+        const dueHraFactor = data.toBePaid.hraApplicable ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data.toBePaid.hraFromDate, data.toBePaid.hraToDate) : 0;
+        const dueNpaFactor = data.toBePaid.npaApplicable ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data.toBePaid.npaFromDate, data.toBePaid.npaToDate) : 0;
+        const dueTaFactor = data.toBePaid.taApplicable ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data.toBePaid.taFromDate, data.toBePaid.taToDate) : 0;
+        const dueOtherFactor = (data.toBePaid.otherAllowance || 0) > 0 ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data.toBePaid.otherAllowanceFromDate, data.toBePaid.otherAllowanceToDate) : 0;
 
         const dueHraRate = dueHraFactor > 0 ? getRateForDate(hraRates, currentDate, dueBasicTracker) : 0;
         const dueNpaRate = dueNpaFactor > 0 ? getRateForDate(npaRates, currentDate) : 0;
@@ -820,4 +828,3 @@ export default function Home() {
   );
 }
 
-    
