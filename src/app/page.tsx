@@ -498,7 +498,7 @@ export default function Home() {
               </FormControl>
           </PopoverTrigger>
           <PopoverContent className="w-auto p-0" align="start">
-              <Calendar mode="single" selected={field.value} onSelect={field.onChange} captionLayout="dropdown-buttons" fromYear={1990} toYear={2050} initialFocus={field.value} />
+              <Calendar mode="single" selected={field.value} onSelect={field.onChange} captionLayout="dropdown-buttons" fromYear={1990} toYear={2050} initialFocus />
           </PopoverContent>
       </Popover>
   );
@@ -835,6 +835,5 @@ export default function Home() {
       </main>
     </div>
   );
-}
 
-
+    
