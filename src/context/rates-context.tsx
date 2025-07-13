@@ -3,6 +3,8 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import * as z from "zod";
+import { db } from '@/lib/firebase';
+import { doc, getDoc, setDoc } from "firebase/firestore"; 
 
 const rateSchema = z.object({
   id: z.string(),
@@ -33,14 +35,15 @@ interface RatesContextType {
 
 const RatesContext = createContext<RatesContextType | undefined>(undefined);
 
-const LOCAL_STORAGE_RATES_KEY = "arrearEaseRates";
+const FIRESTORE_RATES_DOC_ID = "allRates";
+const FIRESTORE_RATES_COLLECTION_ID = "configurations";
 
-// Helper to deserialize dates from strings
-const parseDates = (rates: any[]): Rate[] => {
+// Helper to deserialize dates from Firestore Timestamps
+const parseTimestamps = (rates: any[]): Rate[] => {
     return rates.map(rate => ({
         ...rate,
-        fromDate: new Date(rate.fromDate),
-        toDate: new Date(rate.toDate)
+        fromDate: rate.fromDate.toDate(),
+        toDate: rate.toDate.toDate()
     }));
 }
 
@@ -51,32 +54,50 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
   const [taRates, setTaRates] = useState<Rate[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Load from localStorage on initial mount
+  // Load from Firestore on initial mount
   useEffect(() => {
-    try {
-        const savedData = localStorage.getItem(LOCAL_STORAGE_RATES_KEY);
-        if (savedData) {
-            const { daRates, hraRates, npaRates, taRates } = JSON.parse(savedData);
-            if (daRates) setDaRates(parseDates(daRates));
-            if (hraRates) setHraRates(parseDates(hraRates));
-            if (npaRates) setNpaRates(parseDates(npaRates));
-            if (taRates) setTaRates(parseDates(taRates));
+    const loadRates = async () => {
+        try {
+            const ratesDocRef = doc(db, FIRESTORE_RATES_COLLECTION_ID, FIRESTORE_RATES_DOC_ID);
+            const docSnap = await getDoc(ratesDocRef);
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                if (data.daRates) setDaRates(parseTimestamps(data.daRates));
+                if (data.hraRates) setHraRates(parseTimestamps(data.hraRates));
+                if (data.npaRates) setNpaRates(parseTimestamps(data.npaRates));
+                if (data.taRates) setTaRates(parseTimestamps(data.taRates));
+            }
+        } catch(error) {
+            console.error("Could not load rates from Firestore:", error);
         }
-    } catch(error) {
-        console.error("Could not load rates from local storage:", error);
-    }
-    setIsLoaded(true);
+        setIsLoaded(true);
+    };
+    loadRates();
   }, []);
 
-  // Save to localStorage whenever rates change
+  // Save to Firestore whenever rates change
   useEffect(() => {
     if (!isLoaded) return; // Don't save until we've loaded initial state
-    try {
-        const dataToSave = JSON.stringify({ daRates, hraRates, npaRates, taRates });
-        localStorage.setItem(LOCAL_STORAGE_RATES_KEY, dataToSave);
-    } catch (error) {
-        console.error("Could not save rates to local storage:", error);
-    }
+    
+    const saveRates = async () => {
+        try {
+            const ratesDocRef = doc(db, FIRESTORE_RATES_COLLECTION_ID, FIRESTORE_RATES_DOC_ID);
+            const dataToSave = { daRates, hraRates, npaRates, taRates };
+            await setDoc(ratesDocRef, dataToSave);
+        } catch (error) {
+            console.error("Could not save rates to Firestore:", error);
+        }
+    };
+
+    // Debounce saving to avoid excessive writes
+    const handler = setTimeout(() => {
+      saveRates();
+    }, 1000);
+
+    return () => {
+      clearTimeout(handler);
+    };
+
   }, [daRates, hraRates, npaRates, taRates, isLoaded]);
 
   return (

@@ -19,7 +19,10 @@ import {
   Save,
   FolderOpen,
   Trash2,
+  Loader2,
 } from "lucide-react";
+import { db } from "@/lib/firebase";
+import { collection, addDoc, getDocs, doc, deleteDoc, Timestamp } from "firebase/firestore";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -145,7 +148,7 @@ type StatementTotals = {
 
 type SavedStatement = {
   id: string;
-  savedAt: string;
+  savedAt: string; // Keep as ISO string for simplicity across environments
   rows: StatementRow[];
   totals: StatementTotals;
   employeeInfo: Partial<ArrearFormData>;
@@ -156,25 +159,53 @@ const INCREMENT_MONTHS = [
   { value: "7", label: "July" },
 ];
 
-const LOCAL_STORAGE_KEY = "arrearEaseSavedStatements";
+const FIRESTORE_STATEMENTS_COLLECTION = "savedStatements";
 
 export default function Home() {
   const [statement, setStatement] = React.useState<Omit<SavedStatement, 'id' | 'savedAt'> | null>(null);
   const [savedStatements, setSavedStatements] = React.useState<SavedStatement[]>([]);
   const [isLoadDialogOpen, setLoadDialogOpen] = React.useState(false);
+  const [isLoading, setIsLoading] = React.useState(false);
   const { toast } = useToast();
   const { daRates, hraRates, npaRates, taRates } = useRates();
 
-  React.useEffect(() => {
+  const fetchSavedStatements = async () => {
+    setIsLoading(true);
     try {
-        const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
-        if (savedData) {
-            setSavedStatements(JSON.parse(savedData));
-        }
+        const querySnapshot = await getDocs(collection(db, FIRESTORE_STATEMENTS_COLLECTION));
+        const statements: SavedStatement[] = [];
+        querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            // Convert Firestore Timestamps back to JS Dates
+            const employeeInfo = data.employeeInfo;
+            if (employeeInfo.fromDate) employeeInfo.fromDate = (employeeInfo.fromDate as Timestamp).toDate();
+            if (employeeInfo.toDate) employeeInfo.toDate = (employeeInfo.toDate as Timestamp).toDate();
+
+            statements.push({
+                id: doc.id,
+                savedAt: new Date(data.savedAt.seconds * 1000).toISOString(),
+                rows: data.rows,
+                totals: data.totals,
+                employeeInfo,
+            });
+        });
+        setSavedStatements(statements.sort((a,b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()));
     } catch (error) {
         console.error("Could not load saved statements:", error);
+        toast({
+            variant: "destructive",
+            title: "Load Failed",
+            description: "Could not fetch saved statements from the database.",
+        });
     }
-  }, []);
+    setIsLoading(false);
+  };
+
+  React.useEffect(() => {
+    if(isLoadDialogOpen) {
+      fetchSavedStatements();
+    }
+  }, [isLoadDialogOpen]);
   
   const form = useForm<ArrearFormData>({
     resolver: zodResolver(formSchema),
@@ -321,35 +352,38 @@ export default function Home() {
             let dueBasicForMonth = dueBasicTracker;
             
             // --- INCREMENT LOGIC ---
-            const handleIncrement = (side: 'paid' | 'toBePaid', currentBasic: number) => {
+            const handleIncrement = (side: 'paid' | 'toBePaid', currentBasic: number, lastIncrementYear: number) => {
               const sideData = data[side];
               const incrementMonthValue = parseInt(sideData.incrementMonth, 10);
               const firstIncrementDate = sideData.incrementDate;
-
+          
               let newBasic = currentBasic;
               let incrementTriggerDate: Date | null = null;
-            
-              // Determine if an increment should trigger in the current month
-              if (firstIncrementDate) {
-                  // If the current month is on or after the first increment...
-                  if (currentDate >= startOfMonth(firstIncrementDate)) {
-                      // ...and the month matches the recurring increment month.
-                      if (currentMonth === firstIncrementDate.getMonth() + 1 && currentYear > firstIncrementDate.getFullYear()) {
-                          incrementTriggerDate = new Date(currentYear, currentMonth - 1, 1);
-                      }
-                      // ... or it's the very first increment.
-                      else if (currentYear === firstIncrementDate.getFullYear() && currentMonth === firstIncrementDate.getMonth() + 1) {
-                         incrementTriggerDate = firstIncrementDate;
-                      }
-                  }
-              } else {
-                  // Fallback to annual increment month if no specific date is given
-                  const firstPossibleIncrementYear = arrearFromDate.getMonth() + 1 > incrementMonthValue ? arrearFromDate.getFullYear() + 1 : arrearFromDate.getFullYear();
-                  if(currentYear >= firstPossibleIncrementYear && currentMonth === incrementMonthValue) {
-                     incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
+          
+              // Scenario 1: Specific "Date of Next Increment" is provided
+              if (firstIncrementDate && currentYear >= firstIncrementDate.getFullYear() && lastIncrementYear < firstIncrementDate.getFullYear()) {
+                  if (currentYear === firstIncrementDate.getFullYear() && currentMonth === firstIncrementDate.getMonth() + 1) {
+                      incrementTriggerDate = firstIncrementDate;
                   }
               }
               
+              // Scenario 2: No specific date, or for subsequent annual increments
+              if (currentMonth === incrementMonthValue) {
+                  // If a specific date was given, subsequent increments are on the 1st of that month, in subsequent years
+                  if (firstIncrementDate && currentYear > firstIncrementDate.getFullYear() && lastIncrementYear < currentYear) {
+                       incrementTriggerDate = new Date(currentYear, currentMonth - 1, 1);
+                  } 
+                  // If no specific date was ever given
+                  else if (!firstIncrementDate && lastIncrementYear < currentYear) {
+                      const firstPossibleIncrementYear = arrearFromDate.getMonth() + 1 > incrementMonthValue && arrearFromDate.getFullYear() === currentYear 
+                                                        ? currentYear + 1 
+                                                        : currentYear;
+                      if(currentYear >= firstPossibleIncrementYear) {
+                          incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
+                      }
+                  }
+              }
+          
               if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd }) && isWithinInterval(incrementTriggerDate, { start: arrearFromDate, end: arrearToDate })) {
                   let incrementedBasic: number;
                   if (cpc === '7th') {
@@ -357,38 +391,43 @@ export default function Home() {
                       if (levelData) {
                           const currentBasicIndex = levelData.values.indexOf(currentBasic);
                           if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
-                            incrementedBasic = levelData.values[currentBasicIndex + 1];
+                              incrementedBasic = levelData.values[currentBasicIndex + 1];
                           } else {
-                            incrementedBasic = currentBasic; // already at max
+                              incrementedBasic = currentBasic; // already at max
                           }
                       } else {
-                        incrementedBasic = currentBasic; // level not found
+                          incrementedBasic = currentBasic; // level not found
                       }
                   } else { // 6th CPC
                       incrementedBasic = Math.round(currentBasic * 1.03);
                   }
-            
+          
                   const incrementDay = incrementTriggerDate.getDate();
                   if (incrementDay > 1) {
                       const daysBefore = incrementDay - 1;
                       const daysAfter = daysInMonth - daysBefore;
                       const proratedMonthlyBasic = ((currentBasic * daysBefore) + (incrementedBasic * daysAfter)) / daysInMonth;
-                      return { newMonthlyBasic: proratedMonthlyBasic, newTrackerBasic: incrementedBasic };
+                      return { newMonthlyBasic: proratedMonthlyBasic, newTrackerBasic: incrementedBasic, incrementedThisRun: true };
                   } else {
-                      return { newMonthlyBasic: incrementedBasic, newTrackerBasic: incrementedBasic };
+                      return { newMonthlyBasic: incrementedBasic, newTrackerBasic: incrementedBasic, incrementedThisRun: true };
                   }
               }
-            
-              return { newMonthlyBasic: currentBasic, newTrackerBasic: currentBasic };
+          
+              return { newMonthlyBasic: currentBasic, newTrackerBasic: currentBasic, incrementedThisRun: false };
             };
 
-            const drawnIncrementResult = handleIncrement('paid', drawnBasicTracker);
-            drawnBasicForMonth = drawnIncrementResult.newMonthlyBasic;
-            drawnBasicTracker = drawnIncrementResult.newTrackerBasic;
+            const drawnIncrementResult = handleIncrement('paid', drawnBasicTracker, i === 0 ? arrearFromDate.getFullYear() - 1 : currentDate.getFullYear() - 1);
+            if(drawnIncrementResult.incrementedThisRun) {
+                drawnBasicForMonth = drawnIncrementResult.newMonthlyBasic;
+                drawnBasicTracker = drawnIncrementResult.newTrackerBasic;
+            }
 
-            const dueIncrementResult = handleIncrement('toBePaid', dueBasicTracker);
-            dueBasicForMonth = dueIncrementResult.newMonthlyBasic;
-            dueBasicTracker = dueIncrementResult.newTrackerBasic;
+
+            const dueIncrementResult = handleIncrement('toBePaid', dueBasicTracker, i === 0 ? arrearFromDate.getFullYear() - 1 : currentDate.getFullYear() - 1);
+             if(dueIncrementResult.incrementedThisRun) {
+                dueBasicForMonth = dueIncrementResult.newMonthlyBasic;
+                dueBasicTracker = dueIncrementResult.newTrackerBasic;
+            }
 
 
             // --- PAY REFIXATION LOGIC (Due Side) ---
@@ -555,29 +594,31 @@ export default function Home() {
     }
 };
   
-  const saveStatement = () => {
+  const saveStatement = async () => {
     if (!statement) return;
+    setIsLoading(true);
     try {
-      const newSavedStatement: SavedStatement = {
+      const docToSave = {
         ...statement,
-        id: crypto.randomUUID(),
-        savedAt: new Date().toISOString()
+        savedAt: new Date()
       };
-      const updatedStatements = [...savedStatements, newSavedStatement];
-      setSavedStatements(updatedStatements);
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedStatements));
+
+      await addDoc(collection(db, FIRESTORE_STATEMENTS_COLLECTION), docToSave);
+      
       toast({
         title: "Arrear Saved",
-        description: "The current arrear statement has been saved.",
+        description: "The current arrear statement has been saved to the database.",
       });
+      fetchSavedStatements(); // Refresh the list
     } catch(error) {
       console.error("Failed to save statement:", error);
       toast({
         variant: "destructive",
         title: "Save Failed",
-        description: "Could not save the arrear statement.",
+        description: "Could not save the arrear statement to the database.",
       });
     }
+    setIsLoading(false);
   };
   
   const loadStatement = (statementToLoad: SavedStatement) => {
@@ -588,15 +629,15 @@ export default function Home() {
       }, 100);
   }
 
-  const deleteStatement = (id: string) => {
+  const deleteStatement = async (id: string) => {
+    setIsLoading(true);
     try {
-        const updatedStatements = savedStatements.filter(s => s.id !== id);
-        setSavedStatements(updatedStatements);
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedStatements));
+        await deleteDoc(doc(db, FIRESTORE_STATEMENTS_COLLECTION, id));
         toast({
             title: "Arrear Deleted",
             description: "The saved arrear statement has been removed.",
         });
+        fetchSavedStatements(); // Refresh the list
     } catch (error) {
         console.error("Failed to delete statement:", error);
         toast({
@@ -605,6 +646,7 @@ export default function Home() {
             description: "Could not delete the arrear statement.",
         });
     }
+    setIsLoading(false);
   }
 
   const FormDateInput = ({ field, label, calendarProps }: { field: any, label?: string, calendarProps?: any }) => (
@@ -803,7 +845,9 @@ export default function Home() {
                         <DialogDescription>Select a previously saved statement to view or print it again.</DialogDescription>
                     </DialogHeader>
                     <div className="max-h-[60vh] overflow-y-auto">
-                        {savedStatements.length > 0 ? (
+                        {isLoading ? (
+                           <div className="flex justify-center items-center py-8"><Loader2 className="h-8 w-8 animate-spin" /></div>
+                        ) : savedStatements.length > 0 ? (
                             <Table>
                                 <TableHeader>
                                     <TableRow>
@@ -818,8 +862,8 @@ export default function Home() {
                                             <TableCell className="font-medium">{s.employeeInfo.employeeName} <span className="text-muted-foreground">({s.employeeInfo.employeeId})</span></TableCell>
                                             <TableCell className="hidden sm:table-cell">{format(new Date(s.savedAt), "PPP p")}</TableCell>
                                             <TableCell className="text-right">
-                                                <Button size="sm" onClick={() => loadStatement(s)} className="mr-2">Load</Button>
-                                                <Button size="sm" variant="destructive" onClick={() => deleteStatement(s.id)}><Trash2 className="h-4 w-4"/></Button>
+                                                <Button size="sm" onClick={() => loadStatement(s)} className="mr-2" disabled={isLoading}>Load</Button>
+                                                <Button size="sm" variant="destructive" onClick={() => deleteStatement(s.id)} disabled={isLoading}><Trash2 className="h-4 w-4"/></Button>
                                             </TableCell>
                                         </TableRow>
                                     ))}
@@ -916,8 +960,9 @@ export default function Home() {
                    </CardDescription>
                 </div>
                 <div className="flex flex-wrap gap-2 no-print">
-                   <Button onClick={saveStatement} variant="outline">
-                      <Save className="mr-2 h-4 w-4" /> Save Arrear
+                   <Button onClick={saveStatement} variant="outline" disabled={isLoading}>
+                      {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                      Save Arrear
                    </Button>
                    <Button onClick={handlePrint} variant="outline">
                      <Download className="mr-2 h-4 w-4" /> Download PDF
