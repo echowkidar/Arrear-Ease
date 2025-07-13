@@ -48,6 +48,7 @@ import {
 import { useRates, Rate } from "@/context/rates-context";
 import { useToast } from "@/hooks/use-toast";
 import { cpcData } from "@/lib/cpc-data";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 
 const allPayLevels = [
@@ -259,11 +260,14 @@ export default function RatesPage() {
     return (
         <main className="container mx-auto px-4 py-8 md:py-12">
             <header className="mb-8">
+              <div className="flex justify-between items-center">
                 <Button asChild variant="outline">
                     <Link href="/">
                         <ArrowLeft className="mr-2" /> Back to Calculator
                     </Link>
                 </Button>
+                <ThemeToggle />
+              </div>
                 <h1 className="font-headline text-4xl md:text-5xl font-bold text-primary text-center mt-4">
                     Allowances Rate Configuration
                 </h1>
@@ -281,5 +285,3 @@ export default function RatesPage() {
         </main>
     );
 }
-
-    

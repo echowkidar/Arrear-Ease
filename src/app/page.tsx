@@ -79,6 +79,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { cpcData } from "@/lib/cpc-data";
 import { Rate, useRates } from "@/context/rates-context";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const salaryComponentSchema = z.object({
   basicPay: z.coerce.number({ required_error: "Basic Pay is required." }).min(0, "Cannot be negative"),
@@ -320,96 +321,81 @@ export default function Home() {
             let dueBasicForMonth = dueBasicTracker;
             
             // --- INCREMENT LOGIC ---
-            const handleIncrement = (side: 'paid' | 'toBePaid', currentBasic: number) => {
-                const sideData = data[side];
-                const incrementMonthValue = parseInt(sideData.incrementMonth, 10);
-                const firstIncrementDate = sideData.incrementDate;
-
-                let didIncrement = false;
-                let newBasic = currentBasic;
-                
-                let incrementTriggerDate: Date;
-                let annualTrigger = false;
-
-                if (firstIncrementDate) {
-                    // Check if current date is the first increment date
-                    if (currentYear === firstIncrementDate.getFullYear() && currentMonth === firstIncrementDate.getMonth() + 1) {
-                         incrementTriggerDate = firstIncrementDate;
-                    // Check for subsequent annual increments
-                    } else if (currentDate > firstIncrementDate && currentMonth === incrementMonthValue) {
-                         incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
-                         annualTrigger = true;
-                    } else {
-                        return { newMonthlyBasic: currentBasic, newTrackerBasic: currentBasic };
-                    }
-                } else {
-                     // If no specific date, increment on the 1st of the increment month annually
-                    if (currentMonth === incrementMonthValue) {
-                        incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
-                        annualTrigger = true;
-                    } else {
-                        return { newMonthlyBasic: currentBasic, newTrackerBasic: currentBasic };
-                    }
-                }
-                
-                // For annual triggers, make sure we are not before the start date of arrears
-                if(annualTrigger && incrementTriggerDate < arrearFromDate) {
-                    return { newMonthlyBasic: currentBasic, newTrackerBasic: currentBasic };
-                }
-
-                // Check if the trigger date is within the overall arrear period
-                if (!isWithinInterval(incrementTriggerDate, { start: arrearFromDate, end: arrearToDate })) {
-                    // This handles cases where the trigger date is valid but outside the arrear calculation window
-                    if (startOfMonth(incrementTriggerDate).getTime() === startOfMonth(arrearFromDate).getTime() && incrementTriggerDate < arrearFromDate) {
-                       // This means the increment happened before the arrear starts, but in the same month.
-                       // We should consider the basic pay already incremented.
-                       // This is complex, for now we will assume increment date inside arrear period is the norm.
-                       // A better way is to calculate the basic on a given date from a start point.
-                    } else {
-                       return { newMonthlyBasic: currentBasic, newTrackerBasic: currentBasic };
-                    }
-                }
-
-                // Calculate the new basic pay after increment
-                if (cpc === '7th') {
-                    const levelData = cpcData['7th'].payLevels.find(l => l.level === sideData.payLevel);
-                    if (levelData) {
-                        const currentBasicIndex = levelData.values.indexOf(currentBasic);
-                        if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
-                            newBasic = levelData.values[currentBasicIndex + 1];
-                            didIncrement = true;
-                        }
-                    }
-                } else if (cpc === '6th') {
-                    newBasic = Math.round(currentBasic * 1.03);
-                    didIncrement = true;
-                }
-
-                if (!didIncrement) {
-                    return { newMonthlyBasic: currentBasic, newTrackerBasic: currentBasic };
-                }
-                
-                const incrementDay = incrementTriggerDate.getDate();
-                
-                if (incrementDay > 1 && isWithinInterval(incrementTriggerDate, {start: monthStart, end: monthEnd})) {
-                   const daysBefore = incrementDay - 1;
-                   const daysAfter = daysInMonth - daysBefore;
-                   return { 
-                       newMonthlyBasic: ((currentBasic * daysBefore) + (newBasic * daysAfter)) / daysInMonth,
-                       newTrackerBasic: newBasic
-                   };
-                } else {
-                   return { newMonthlyBasic: newBasic, newTrackerBasic: newBasic };
-                }
+            const handleIncrement = (side: 'paid' | 'toBePaid', currentBasic: number, initialBasic: number) => {
+              const sideData = data[side];
+              const incrementMonthValue = parseInt(sideData.incrementMonth, 10);
+              const firstIncrementDate = sideData.incrementDate;
+            
+              let newBasic = currentBasic;
+              let didIncrementThisMonth = false;
+              let incrementTriggerDate: Date | null = null;
+            
+              // Determine if an increment should trigger in the current month
+              if (firstIncrementDate) {
+                  // This is the first ever increment for this pay scale
+                  if (currentYear === firstIncrementDate.getFullYear() && currentMonth === firstIncrementDate.getMonth() + 1) {
+                      incrementTriggerDate = firstIncrementDate;
+                  } 
+                  // Subsequent annual increments
+                  else if (currentDate > firstIncrementDate && currentMonth === incrementMonthValue) {
+                      incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
+                  }
+              } else {
+                  // Fallback to annual increment month if no specific date is given
+                  if (currentMonth === incrementMonthValue && currentDate >= arrearFromDate) {
+                      const firstPossibleIncrementYear = arrearFromDate.getMonth() + 1 > incrementMonthValue ? arrearFromDate.getFullYear() + 1 : arrearFromDate.getFullYear();
+                      if(currentYear >= firstPossibleIncrementYear) {
+                           incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
+                      }
+                  }
+              }
+              
+              if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd })) {
+                 if (isWithinInterval(incrementTriggerDate, { start: arrearFromDate, end: arrearToDate })) {
+                    didIncrementThisMonth = true;
+                 }
+              }
+            
+              if (didIncrementThisMonth && incrementTriggerDate) {
+                  let incrementedBasic: number;
+                  if (cpc === '7th') {
+                      const levelData = cpcData['7th'].payLevels.find(l => l.level === sideData.payLevel);
+                      if (levelData) {
+                          const currentBasicIndex = levelData.values.indexOf(currentBasic);
+                          if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
+                            incrementedBasic = levelData.values[currentBasicIndex + 1];
+                          } else {
+                            incrementedBasic = currentBasic;
+                          }
+                      } else {
+                        incrementedBasic = currentBasic;
+                      }
+                  } else { // 6th CPC
+                      incrementedBasic = Math.round(currentBasic * 1.03);
+                  }
+            
+                  const incrementDay = incrementTriggerDate.getDate();
+                  if (incrementDay > 1) {
+                      const daysBefore = incrementDay - 1;
+                      const daysAfter = daysInMonth - daysBefore;
+                      const monthlyBasic = ((currentBasic * daysBefore) + (incrementedBasic * daysAfter)) / daysInMonth;
+                      return { newMonthlyBasic: monthlyBasic, newTrackerBasic: incrementedBasic };
+                  } else {
+                      return { newMonthlyBasic: incrementedBasic, newTrackerBasic: incrementedBasic };
+                  }
+              }
+            
+              return { newMonthlyBasic: currentBasic, newTrackerBasic: currentBasic };
             };
             
-            const drawnIncrementResult = handleIncrement('paid', drawnBasicTracker);
+            const drawnIncrementResult = handleIncrement('paid', drawnBasicTracker, data.paid.basicPay);
             drawnBasicForMonth = drawnIncrementResult.newMonthlyBasic;
             drawnBasicTracker = drawnIncrementResult.newTrackerBasic;
 
-            const dueIncrementResult = handleIncrement('toBePaid', dueBasicTracker);
+            const dueIncrementResult = handleIncrement('toBePaid', dueBasicTracker, data.toBePaid.basicPay);
             dueBasicForMonth = dueIncrementResult.newMonthlyBasic;
             dueBasicTracker = dueIncrementResult.newTrackerBasic;
+
 
             // --- PAY REFIXATION LOGIC (Due Side) ---
             if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPay > 0 && data.toBePaid.refixedBasicPayDate) {
@@ -638,7 +624,7 @@ export default function Home() {
               </FormControl>
           </PopoverTrigger>
           <PopoverContent className="w-auto p-0" align="start">
-              <Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus={field.value ? field.value : new Date()} captionLayout="dropdown-buttons" fromYear={1990} toYear={2050} {...calendarProps} />
+              <Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus={field.value ? new Date(field.value) : new Date()} captionLayout="dropdown-buttons" fromYear={1990} toYear={2050} {...calendarProps} />
           </PopoverContent>
       </Popover>
   );
@@ -802,6 +788,9 @@ export default function Home() {
     <div className="min-h-screen bg-background">
       <main className="container mx-auto px-4 py-8 md:py-12">
         <header className="text-center mb-8 no-print">
+          <div className="flex justify-end">
+            <ThemeToggle />
+          </div>
           <h1 className="font-headline text-4xl md:text-5xl font-bold text-primary">Arrear Ease</h1>
           <p className="text-muted-foreground mt-2 text-lg">A Simple Tool for Complex Salary Arrear Calculations</p>
           <p className="text-muted-foreground mt-1 text-sm">Dedicated to AMU by Zafar Ali Khan</p>
@@ -1016,5 +1005,3 @@ export default function Home() {
       </main>
     </div>
   );
-
-    
