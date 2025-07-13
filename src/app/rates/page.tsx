@@ -64,7 +64,7 @@ const DateInput = ({ value, onChange }: { value: Date | undefined; onChange: (da
     );
 };
 
-const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevel, initialRates, setGlobalRates }: { title: string, description?: string, withBasicRange?: boolean, isAmount?: boolean, withPayLevel?: boolean, initialRates: Rate[], setGlobalRates: React.Dispatch<React.SetStateAction<Rate[]>> }) => {
+const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevelRange, initialRates, setGlobalRates }: { title: string, description?: string, withBasicRange?: boolean, isAmount?: boolean, withPayLevelRange?: boolean, initialRates: Rate[], setGlobalRates: React.Dispatch<React.SetStateAction<Rate[]>> }) => {
     const { toast } = useToast();
     const [localRates, setLocalRates] = React.useState<Rate[]>(initialRates);
 
@@ -81,7 +81,8 @@ const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevel,
                 rate: parseFloat(r.rate as any),
                 basicFrom: r.basicFrom ? parseFloat(r.basicFrom as any) : '',
                 basicTo: r.basicTo ? parseFloat(r.basicTo as any) : '',
-                payLevel: r.payLevel ?? '',
+                payLevelFrom: r.payLevelFrom ?? '',
+                payLevelTo: r.payLevelTo ?? '',
             }));
         
         if (validRates.length < localRates.length) {
@@ -100,7 +101,7 @@ const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevel,
     };
     
     const append = () => {
-        const newRate: Rate = { id: crypto.randomUUID(), fromDate: new Date(), toDate: new Date(), rate: '', basicFrom: '', basicTo: '', payLevel: '' };
+        const newRate: Rate = { id: crypto.randomUUID(), fromDate: new Date(), toDate: new Date(), rate: '', basicFrom: '', basicTo: '', payLevelFrom: '', payLevelTo: '' };
         setLocalRates(prev => [...prev, newRate]);
     }
 
@@ -152,7 +153,7 @@ const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevel,
                                 <TableHead>From Date</TableHead>
                                 <TableHead>To Date</TableHead>
                                 {withBasicRange && <><TableHead>Basic From</TableHead><TableHead>Basic To</TableHead></>}
-                                {withPayLevel && <TableHead>Pay Level</TableHead>}
+                                {withPayLevelRange && <><TableHead>From Pay Level</TableHead><TableHead>To Pay Level</TableHead></>}
                                 <TableHead>{isAmount ? 'Amount' : 'Rate (%)'}</TableHead>
                                 <TableHead className="text-right">Action</TableHead>
                             </TableRow>
@@ -176,8 +177,9 @@ const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevel,
                                         <TableCell className="min-w-[120px]"><Input type="number" value={field.basicFrom ?? ''} onChange={e => handleInputChange(field.id, 'basicFrom', e)} onBlur={() => handleBlur(field.id, 'basicFrom')}/></TableCell>
                                         <TableCell className="min-w-[120px]"><Input type="number" value={field.basicTo ?? ''} onChange={e => handleInputChange(field.id, 'basicTo', e)} onBlur={() => handleBlur(field.id, 'basicTo')}/></TableCell>
                                     </>}
-                                    {withPayLevel && <>
-                                        <TableCell className="min-w-[120px]"><Input value={field.payLevel ?? ''} onChange={e => handleInputChange(field.id, 'payLevel', e)} /></TableCell>
+                                    {withPayLevelRange && <>
+                                        <TableCell className="min-w-[120px]"><Input value={field.payLevelFrom ?? ''} onChange={e => handleInputChange(field.id, 'payLevelFrom', e)} /></TableCell>
+                                        <TableCell className="min-w-[120px]"><Input value={field.payLevelTo ?? ''} onChange={e => handleInputChange(field.id, 'payLevelTo', e)} /></TableCell>
                                     </>}
                                     <TableCell className="min-w-[120px]">
                                         <Input type="number" value={field.rate ?? ''} onChange={e => handleInputChange(field.id, 'rate', e)} onBlur={() => handleBlur(field.id, 'rate')}/>
@@ -191,7 +193,7 @@ const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevel,
                             ))}
                             {localRates.length === 0 && (
                                 <TableRow>
-                                    <TableCell colSpan={withBasicRange ? (withPayLevel ? 7 : 6) : (withPayLevel ? 5: 4)} className="text-center text-muted-foreground py-4">
+                                    <TableCell colSpan={withBasicRange ? (withPayLevelRange ? 7 : 5) : (withPayLevelRange ? 6: 4)} className="text-center text-muted-foreground py-4">
                                         No rates defined. Click 'Add Row' to start.
                                     </TableCell>
                                 </TableRow>
@@ -239,7 +241,7 @@ export default function RatesPage() {
                 <RateTable title="DA Rate Master" initialRates={daRates} setGlobalRates={setDaRates} />
                 <RateTable title="HRA Rate Master" withBasicRange initialRates={hraRates} setGlobalRates={setHraRates} />
                 <RateTable title="NPA Rate Master" initialRates={npaRates} setGlobalRates={setNpaRates} />
-                <RateTable title="TA Master" description="Define fixed transport allowance amounts." withBasicRange withPayLevel isAmount initialRates={taRates} setGlobalRates={setTaRates} />
+                <RateTable title="TA Master" description="Define fixed transport allowance amounts." withBasicRange withPayLevelRange isAmount initialRates={taRates} setGlobalRates={setTaRates} />
             </div>
         </main>
     );

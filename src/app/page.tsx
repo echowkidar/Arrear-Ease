@@ -220,8 +220,15 @@ export default function Home() {
       }
 
       let isPayLevelMatch = true;
-      if (payLevel !== undefined && r.payLevel !== undefined && r.payLevel !== '') {
-          isPayLevelMatch = r.payLevel === payLevel;
+      if (payLevel !== undefined && r.payLevelFrom !== undefined && r.payLevelTo !== undefined && r.payLevelFrom !== '' && r.payLevelTo !== '') {
+          const numericPayLevel = parseInt(payLevel, 10);
+          const numericFrom = parseInt(r.payLevelFrom as string, 10);
+          const numericTo = parseInt(r.payLevelTo as string, 10);
+          if(!isNaN(numericPayLevel) && !isNaN(numericFrom) && !isNaN(numericTo)) {
+            isPayLevelMatch = numericPayLevel >= numericFrom && numericPayLevel <= numericTo;
+          } else {
+            isPayLevelMatch = false; // Or handle non-numeric levels if necessary
+          }
       }
 
       return isDateMatch && isBasicMatch && isPayLevelMatch;
@@ -245,11 +252,11 @@ export default function Home() {
     const monthEnd = endOfMonth(calculationMonth);
     const daysInMonth = getDaysInMonth(calculationMonth);
 
-    const effectiveAllowanceFrom = allowanceFromDate || arrearStartDate;
-    const effectiveAllowanceTo = allowanceToDate || arrearEndDate;
+    const effectiveAllowanceFrom = max([allowanceFromDate || arrearStartDate, arrearStartDate]);
+    const effectiveAllowanceTo = min([allowanceToDate || arrearEndDate, arrearEndDate]);
     
-    const intersectionStart = max([monthStart, arrearStartDate, effectiveAllowanceFrom]);
-    const intersectionEnd = min([monthEnd, arrearEndDate, effectiveAllowanceTo]);
+    const intersectionStart = max([monthStart, effectiveAllowanceFrom]);
+    const intersectionEnd = min([monthEnd, effectiveAllowanceTo]);
 
     if (intersectionStart > intersectionEnd) {
       return 0;
@@ -829,4 +836,5 @@ export default function Home() {
     </div>
   );
 }
+
 
