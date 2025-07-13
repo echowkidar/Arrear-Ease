@@ -264,269 +264,281 @@ export default function Home() {
     const monthEnd = endOfMonth(calculationMonth);
     const daysInMonth = getDaysInMonth(calculationMonth);
     
-    // An allowance can't be applied outside its own period OR the main arrear period
-    const effectiveAllowanceFrom = max([allowanceFromDate || arrearStartDate, arrearStartDate]);
-    const effectiveAllowanceTo = min([allowanceToDate || arrearEndDate, arrearEndDate]);
+    const effectiveAllowanceFrom = allowanceFromDate ? max([allowanceFromDate, arrearStartDate]) : arrearStartDate;
+    const effectiveAllowanceTo = allowanceToDate ? min([allowanceToDate, arrearEndDate]) : arrearEndDate;
     
-    // Find the intersection of the allowance period and the current month
     const intersectionStart = max([monthStart, effectiveAllowanceFrom]);
     const intersectionEnd = min([monthEnd, effectiveAllowanceTo]);
 
-    // Ensure the intersection is within the overall arrear period as well
-    const finalStart = max([intersectionStart, arrearStartDate]);
-    const finalEnd = min([intersectionEnd, arrearEndDate]);
-
-
-    if (finalStart > finalEnd) {
+    if (intersectionStart > intersectionEnd) {
       return 0;
     }
 
-    const daysToCalculate = differenceInDays(finalEnd, finalStart) + 1;
+    const daysToCalculate = differenceInDays(intersectionEnd, intersectionStart) + 1;
     
     return daysToCalculate > 0 ? daysToCalculate / daysInMonth : 0;
   };
-
+  
   const onSubmit = (data: ArrearFormData) => {
     try {
-      const rows: StatementRow[] = [];
-      const totals: StatementTotals = { drawn: { total: 0 }, due: { total: 0 }, difference: 0 };
-      
-      const arrearFromDate = data.fromDate;
-      const arrearToDate = data.toDate;
-      const firstMonth = startOfMonth(arrearFromDate);
-      const monthCount = differenceInCalendarMonths(arrearToDate, arrearFromDate);
+        const rows: StatementRow[] = [];
+        const totals: StatementTotals = { drawn: { total: 0 }, due: { total: 0 }, difference: 0 };
 
-      let drawnBasicTracker = data.paid.basicPay;
-      let dueBasicTracker = data.toBePaid.basicPay;
-      
-      for (let i = 0; i <= monthCount; i++) {
-        const currentDate = addMonths(firstMonth, i);
-        const currentMonth = currentDate.getMonth() + 1;
-        const daysInMonth = getDaysInMonth(currentDate);
+        const arrearFromDate = data.fromDate;
+        const arrearToDate = data.toDate;
+        const firstMonth = startOfMonth(arrearFromDate);
+        const monthCount = differenceInCalendarMonths(arrearToDate, arrearFromDate);
 
-        let drawnBasicForMonth = drawnBasicTracker;
-        let dueBasicForMonth = dueBasicTracker;
-        
-        let drawnBasicAfterIncrement = drawnBasicTracker;
-        let dueBasicAfterIncrement = dueBasicTracker;
+        let drawnBasicTracker = data.paid.basicPay;
+        let dueBasicTracker = data.toBePaid.basicPay;
 
-        // --- DRAWN SIDE INCREMENT ---
-        const drawnIncrementMonthValue = parseInt(data.paid.incrementMonth);
-        if (drawnIncrementMonthValue === currentMonth) {
-            const incrementDate = data.paid.incrementDate ? new Date(data.paid.incrementDate) : startOfMonth(currentDate);
-            const effectiveIncrementDate = max([incrementDate, startOfMonth(currentDate)]); // Cannot be before start of month
-            const incrementDay = effectiveIncrementDate.getDate();
+        for (let i = 0; i <= monthCount; i++) {
+            const currentDate = addMonths(firstMonth, i);
+            const currentMonth = currentDate.getMonth() + 1;
+            const currentYear = currentDate.getFullYear();
+            const daysInMonth = getDaysInMonth(currentDate);
 
-            let newDrawnBasic = drawnBasicTracker;
-            if (cpc === '7th') {
-                const levelData = cpcData['7th'].payLevels.find(l => l.level === data.paid.payLevel);
-                if (levelData) {
-                    const currentBasicIndex = levelData.values.indexOf(drawnBasicTracker);
-                    if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
-                        newDrawnBasic = levelData.values[currentBasicIndex + 1];
+            // Determine effective period for the current month
+            const monthStart = startOfMonth(currentDate);
+            const monthEnd = endOfMonth(currentDate);
+            const effectiveMonthStart = max([monthStart, arrearFromDate]);
+            const effectiveMonthEnd = min([monthEnd, arrearToDate]);
+            
+            if (effectiveMonthStart > effectiveMonthEnd) continue;
+
+            const daysToCalculateForMonth = differenceInDays(effectiveMonthEnd, effectiveMonthStart) + 1;
+            const monthProRataFactor = daysToCalculateForMonth / daysInMonth;
+
+            // --- PAY STATE FOR THE MONTH (before proration within the month) ---
+            let drawnBasicForMonth = drawnBasicTracker;
+            let dueBasicForMonth = dueBasicTracker;
+
+            // --- INCREMENT LOGIC ---
+            // Drawn Side Increment
+            const drawnIncrementMonthValue = parseInt(data.paid.incrementMonth);
+            if (drawnIncrementMonthValue === currentMonth) {
+                const baseForIncrement = drawnBasicTracker;
+                let newDrawnBasic = baseForIncrement;
+                if (cpc === '7th') {
+                    const levelData = cpcData['7th'].payLevels.find(l => l.level === data.paid.payLevel);
+                    if (levelData) {
+                        const currentBasicIndex = levelData.values.indexOf(baseForIncrement);
+                        if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
+                            newDrawnBasic = levelData.values[currentBasicIndex + 1];
+                        }
                     }
+                } else if (cpc === '6th') {
+                    newDrawnBasic = Math.round(baseForIncrement * 1.03);
                 }
-            } else if (cpc === '6th') {
-                newDrawnBasic = Math.round(drawnBasicTracker * 1.03);
-            }
-            drawnBasicAfterIncrement = newDrawnBasic;
 
-            if (data.paid.incrementDate && incrementDate.getMonth() === currentDate.getMonth() && incrementDate.getFullYear() === currentDate.getFullYear() && incrementDay > 1) {
-                const daysBefore = incrementDay - 1;
-                const daysAfter = daysInMonth - daysBefore;
-                drawnBasicForMonth = (drawnBasicTracker * (daysBefore / daysInMonth)) + (newDrawnBasic * (daysAfter / daysInMonth));
-            } else {
-                drawnBasicForMonth = newDrawnBasic;
-            }
-            drawnBasicTracker = newDrawnBasic;
-        }
-        
-        // --- DUE SIDE REFIXATION & INCREMENT LOGIC ---
-        // First, check for refixation as it takes precedence
-        if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPayDate && currentDate >= startOfMonth(data.toBePaid.refixedBasicPayDate)) {
-             dueBasicTracker = data.toBePaid.refixedBasicPay;
-        }
-
-        // Now, apply increment on the potentially refixed basic
-        const dueIncrementMonthValue = parseInt(data.toBePaid.incrementMonth);
-        if (dueIncrementMonthValue === currentMonth) {
-            const incrementDate = data.toBePaid.incrementDate ? new Date(data.toBePaid.incrementDate) : startOfMonth(currentDate);
-            const effectiveIncrementDate = max([incrementDate, startOfMonth(currentDate)]);
-            const incrementDay = effectiveIncrementDate.getDate();
-
-            const baseForDueIncrement = dueBasicTracker; 
-            let newDueBasic = baseForDueIncrement;
-
-            if (cpc === '7th') {
-                const levelData = cpcData['7th'].payLevels.find(l => l.level === data.toBePaid.payLevel);
-                if (levelData) {
-                    const currentBasicIndex = levelData.values.indexOf(baseForDueIncrement);
-                    if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
-                        newDueBasic = levelData.values[currentBasicIndex + 1];
+                if (data.paid.incrementDate && data.paid.incrementDate.getMonth() + 1 === currentMonth && data.paid.incrementDate.getFullYear() === currentYear) {
+                    const incrementDay = data.paid.incrementDate.getDate();
+                    if (incrementDay > 1) {
+                       const daysBefore = incrementDay - 1;
+                       const daysAfter = daysInMonth - daysBefore;
+                       drawnBasicForMonth = ((baseForIncrement * daysBefore) + (newDrawnBasic * daysAfter)) / daysInMonth;
+                    } else {
+                       drawnBasicForMonth = newDrawnBasic;
                     }
+                } else {
+                    drawnBasicForMonth = newDrawnBasic;
                 }
-            } else if (cpc === '6th') {
-                newDueBasic = Math.round(baseForDueIncrement * 1.03);
+                drawnBasicTracker = newDrawnBasic;
             }
-            dueBasicAfterIncrement = newDueBasic;
 
-            if (data.toBePaid.incrementDate && incrementDate.getMonth() === currentDate.getMonth() && incrementDate.getFullYear() === currentDate.getFullYear() && incrementDay > 1) {
-                const daysBefore = incrementDay - 1;
-                const daysAfter = daysInMonth - daysBefore;
-                dueBasicForMonth = (baseForDueIncrement * (daysBefore / daysInMonth)) + (newDueBasic * (daysAfter / daysInMonth));
-            } else {
-                dueBasicForMonth = newDueBasic;
+            // Due Side: Check for refixation first as it might override the base for increment
+            if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPayDate && isWithinInterval(currentDate, { start: startOfMonth(data.toBePaid.refixedBasicPayDate), end: arrearToDate })) {
+                if(startOfMonth(currentDate) >= startOfMonth(data.toBePaid.refixedBasicPayDate)){
+                    dueBasicTracker = data.toBePaid.refixedBasicPay;
+                    dueBasicForMonth = data.toBePaid.refixedBasicPay;
+                }
             }
-            dueBasicTracker = newDueBasic;
-        }
-        
-        const monthStart = startOfMonth(currentDate);
-        const monthEnd = endOfMonth(currentDate);
-        const effectiveMonthStart = max([monthStart, arrearFromDate]);
-        const effectiveMonthEnd = min([monthEnd, arrearToDate]);
-        
-        if (effectiveMonthStart > effectiveMonthEnd) continue;
+            
+            // Due Side Increment
+            const dueIncrementMonthValue = parseInt(data.toBePaid.incrementMonth);
+            if (dueIncrementMonthValue === currentMonth) {
+                const baseForIncrement = dueBasicTracker;
+                let newDueBasic = baseForIncrement;
+                if (cpc === '7th') {
+                    const levelData = cpcData['7th'].payLevels.find(l => l.level === data.toBePaid.payLevel);
+                    if (levelData) {
+                        const currentBasicIndex = levelData.values.indexOf(baseForIncrement);
+                        if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
+                            newDueBasic = levelData.values[currentBasicIndex + 1];
+                        }
+                    }
+                } else if (cpc === '6th') {
+                    newDueBasic = Math.round(baseForIncrement * 1.03);
+                }
 
-        const daysForBasic = differenceInDays(effectiveMonthEnd, effectiveMonthStart) + 1;
-        const basicProRataFactor = daysForBasic > 0 ? daysForBasic / daysInMonth : 0;
+                if (data.toBePaid.incrementDate && data.toBePaid.incrementDate.getMonth() + 1 === currentMonth && data.toBePaid.incrementDate.getFullYear() === currentYear) {
+                    const incrementDay = data.toBePaid.incrementDate.getDate();
+                     if (incrementDay > 1) {
+                       const daysBefore = incrementDay - 1;
+                       const daysAfter = daysInMonth - daysBefore;
+                       dueBasicForMonth = ((baseForIncrement * daysBefore) + (newDueBasic * daysAfter)) / daysInMonth;
+                    } else {
+                        dueBasicForMonth = newDueBasic;
+                    }
+                } else {
+                    dueBasicForMonth = newDueBasic;
+                }
+                dueBasicTracker = newDueBasic;
+            }
 
-        // Handle pay refixation on the "Due" side with proration *within* the month
-        let dueBasicBeforeRefix = dueBasicForMonth;
-        if (
-            data.toBePaid.refixedBasicPay &&
-            data.toBePaid.refixedBasicPayDate &&
-            currentDate.getFullYear() === data.toBePaid.refixedBasicPayDate.getFullYear() &&
-            currentDate.getMonth() === data.toBePaid.refixedBasicPayDate.getMonth()
-        ) {
-            const refixDate = data.toBePaid.refixedBasicPayDate;
-            if (isWithinInterval(refixDate, { start: effectiveMonthStart, end: effectiveMonthEnd })) {
-                const dayOfRefix = refixDate.getDate();
-                const daysBeforeRefix = dayOfRefix - 1;
-                const daysOnAndAfterRefix = daysInMonth - daysBeforeRefix;
+            // --- INTRA-MONTH REFIXATION PRORATION (Due Side) ---
+            if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPayDate &&
+                currentYear === data.toBePaid.refixedBasicPayDate.getFullYear() &&
+                currentMonth === data.toBePaid.refixedBasicPayDate.getMonth() + 1)
+            {
+                const refixDay = data.toBePaid.refixedBasicPayDate.getDate();
+                if (refixDay > 1) {
+                    const daysBefore = refixDay - 1;
+                    const daysAfter = daysInMonth - daysBefore;
+                    // The basic *before* refixation is whatever was calculated including any increment for the month
+                    const basicBeforeRefix = dueBasicForMonth; 
+                    dueBasicForMonth = ((basicBeforeRefix * daysBefore) + (data.toBePaid.refixedBasicPay * daysAfter)) / daysInMonth;
+                } else {
+                     dueBasicForMonth = data.toBePaid.refixedBasicPay;
+                }
+                dueBasicTracker = data.toBePaid.refixedBasicPay;
+            }
+           
+            const proratedDrawnBasic = drawnBasicForMonth * monthProRataFactor;
+            const proratedDueBasic = dueBasicForMonth * monthProRataFactor;
 
-                // Base basic before refixation is the one after any increment in the same month
-                const basicBefore = dueBasicForMonth * (daysBeforeRefix / daysInMonth);
-                const basicAfter = data.toBePaid.refixedBasicPay * (daysOnAndAfterRefix / daysInMonth);
+            // --- ALLOWANCE CALCULATIONS ---
+            const getProratedAmount = (allowanceType: 'hra' | 'npa' | 'ta' | 'otherAllowance', side: 'paid' | 'toBePaid') => {
+                const sideData = data[side];
+                const isApplicable = sideData[`${allowanceType}Applicable`];
+                const fromDate = sideData[`${allowanceType}FromDate`];
+                const toDate = sideData[`${allowanceType}ToDate`];
+                const otherAllowanceAmount = sideData.otherAllowance || 0;
+
+                if (allowanceType !== 'otherAllowance' && !isApplicable) return 0;
+                if (allowanceType === 'otherAllowance' && otherAllowanceAmount <= 0) return 0;
                 
-                dueBasicForMonth = basicBefore + basicAfter;
-                dueBasicAfterIncrement = data.toBePaid.refixedBasicPay; // Update this for TA calc
+                const prorationFactor = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fromDate, toDate);
+                if (prorationFactor === 0) return 0;
+                
+                const baseBasic = side === 'paid' ? drawnBasicTracker : dueBasicTracker;
+                const basePayLevel = side === 'paid' ? data.paid.payLevel : data.toBePaid.payLevel;
+
+                let rate = 0;
+                let amount = 0;
+                
+                switch(allowanceType) {
+                    case 'hra':
+                        rate = getRateForDate(hraRates, currentDate, baseBasic);
+                        amount = (side === 'paid' ? drawnBasicForMonth : dueBasicForMonth) * (rate / 100);
+                        break;
+                    case 'npa':
+                        rate = getRateForDate(npaRates, currentDate);
+                        amount = (side === 'paid' ? drawnBasicForMonth : dueBasicForMonth) * (rate / 100);
+                        break;
+                    case 'ta':
+                        const daRateForTa = getRateForDate(daRates, currentDate) / 100;
+                        const taBaseAmount = getRateForDate(taRates, currentDate, baseBasic, basePayLevel);
+                        amount = taBaseAmount * (1 + daRateForTa);
+                        break;
+                    case 'otherAllowance':
+                        amount = otherAllowanceAmount;
+                        break;
+                }
+                return amount * prorationFactor;
+            };
+
+            const drawnHRA = getProratedAmount('hra', 'paid');
+            const drawnNPA = getProratedAmount('npa', 'paid');
+            const drawnTA = getProratedAmount('ta', 'paid');
+            const drawnOther = getProratedAmount('otherAllowance', 'paid');
+            
+            const dueHRA = getProratedAmount('hra', 'toBePaid');
+            const dueNPA = getProratedAmount('npa', 'toBePaid');
+            const dueTA = getProratedAmount('ta', 'toBePaid');
+            const dueOther = getProratedAmount('otherAllowance', 'toBePaid');
+
+            // --- DA CALCULATION ---
+            let drawnDA = 0;
+            if (data.paid.daApplicable) {
+                const daRate = getRateForDate(daRates, currentDate);
+                const drawnBaseForDA = proratedDrawnBasic + drawnNPA;
+                drawnDA = drawnBaseForDA * (daRate / 100);
             }
+            
+            let dueDA = 0;
+            if (data.toBePaid.daApplicable) {
+                const daRate = getRateForDate(daRates, currentDate);
+                const dueBaseForDA = proratedDueBasic + dueNPA;
+                dueDA = dueBaseForDA * (daRate / 100);
+            }
+
+            const drawnTotal = proratedDrawnBasic + drawnDA + drawnHRA + drawnNPA + drawnTA + drawnOther;
+            const dueTotal = proratedDueBasic + dueDA + dueHRA + dueNPA + dueTA + dueOther;
+            const difference = dueTotal - drawnTotal;
+
+            rows.push({
+                month: format(currentDate, "MMM yyyy"),
+                drawn: {
+                    basic: Math.round(proratedDrawnBasic),
+                    da: Math.round(drawnDA),
+                    hra: Math.round(drawnHRA),
+                    npa: Math.round(drawnNPA),
+                    ta: Math.round(drawnTA),
+                    other: Math.round(drawnOther),
+                    total: Math.round(drawnTotal)
+                },
+                due: {
+                    basic: Math.round(proratedDueBasic),
+                    da: Math.round(dueDA),
+                    hra: Math.round(dueHRA),
+                    npa: Math.round(dueNPA),
+                    ta: Math.round(dueTA),
+                    other: Math.round(dueOther),
+                    total: Math.round(dueTotal)
+                },
+                difference: Math.round(difference),
+            });
+
+            totals.drawn.total += drawnTotal;
+            totals.due.total += dueTotal;
+            totals.difference += difference;
         }
-       
-        const proratedDrawnBasic = drawnBasicForMonth * basicProRataFactor;
-        const proratedDueBasic = dueBasicForMonth * basicProRataFactor;
 
-        // --- DRAWN CALCULATION ---
-        const drawnDaRate = data.paid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
-        
-        const drawnHraFactor = data.paid.hraApplicable ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data.paid.hraFromDate, data.paid.hraToDate) : 0;
-        const drawnNpaFactor = data.paid.npaApplicable ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data.paid.npaFromDate, data.paid.npaToDate) : 0;
-        const drawnTaFactor = data.paid.taApplicable ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data.paid.taFromDate, data.paid.taToDate) : 0;
-        const drawnOtherFactor = (data.paid.otherAllowance || 0) > 0 ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data.paid.otherAllowanceFromDate, data.paid.otherAllowanceToDate) : 0;
-        
-        const drawnHraRate = drawnHraFactor > 0 ? getRateForDate(hraRates, currentDate, drawnBasicAfterIncrement) : 0;
-        const drawnNpaRate = drawnNpaFactor > 0 ? getRateForDate(npaRates, currentDate) : 0;
-        const drawnTaBaseAmount = drawnTaFactor > 0 ? getRateForDate(taRates, currentDate, drawnBasicAfterIncrement, data.paid.payLevel) : 0;
+        totals.drawn.total = Math.round(totals.drawn.total);
+        totals.due.total = Math.round(totals.due.total);
+        totals.difference = Math.round(totals.difference);
 
-        const drawnNPA = (drawnBasicForMonth * basicProRataFactor) * (drawnNpaRate / 100) * drawnNpaFactor * daysInMonth; // NPA is on prorated basic
-        const drawnHRA = (drawnBasicForMonth * basicProRataFactor) * (drawnHraRate / 100) * drawnHraFactor * daysInMonth; // HRA is on prorated basic
-        
-        const drawnTaWithDA = drawnTaBaseAmount * (1 + (drawnDaRate / 100));
-        const drawnTA = drawnTaWithDA * drawnTaFactor;
-        const drawnOtherAmount = (data.paid.otherAllowance || 0) * drawnOtherFactor;
-        
-        const drawnBaseForDA = proratedDrawnBasic + (drawnNPA / basicProRataFactor * drawnTaFactor); // Use prorated NPA
-        const drawnDA = drawnBaseForDA * (drawnDaRate / 100);
-        
-        // --- DUE CALCULATION ---
-        const dueDaRate = data.toBePaid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
-
-        const dueHraFactor = data.toBePaid.hraApplicable ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data.toBePaid.hraFromDate, data.toBePaid.hraToDate) : 0;
-        const dueNpaFactor = data.toBePaid.npaApplicable ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data.toBePaid.npaFromDate, data.toBePaid.npaToDate) : 0;
-        const dueTaFactor = data.toBePaid.taApplicable ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data.toBePaid.taFromDate, data.toBePaid.taToDate) : 0;
-        const dueOtherFactor = (data.toBePaid.otherAllowance || 0) > 0 ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data.toBePaid.otherAllowanceFromDate, data.toBePaid.otherAllowanceToDate) : 0;
-
-        const dueHraRate = dueHraFactor > 0 ? getRateForDate(hraRates, currentDate, dueBasicAfterIncrement) : 0;
-        const dueNpaRate = dueNpaFactor > 0 ? getRateForDate(npaRates, currentDate) : 0;
-        const dueTaBaseAmount = dueTaFactor > 0 ? getRateForDate(taRates, currentDate, dueBasicAfterIncrement, data.toBePaid.payLevel) : 0;
-        
-        const dueNPA = (dueBasicForMonth * basicProRataFactor) * (dueNpaRate / 100) * dueNpaFactor * daysInMonth;
-        const dueHRA = (dueBasicForMonth * basicProRataFactor) * (dueHraRate / 100) * dueHraFactor * daysInMonth;
-        
-        const dueTaWithDA = dueTaBaseAmount * (1 + (dueDaRate / 100));
-        const dueTA = dueTaWithDA * dueTaFactor;
-        const dueOtherAmount = (data.toBePaid.otherAllowance || 0) * dueOtherFactor;
-
-        const dueBaseForDA = proratedDueBasic + (dueNPA / basicProRataFactor * dueTaFactor); // Use prorated NPA
-        const dueDA = dueBaseForDA * (dueDaRate / 100);
-
-        const drawnTotal = proratedDrawnBasic + drawnDA + drawnHRA + drawnNPA + drawnTA + drawnOtherAmount;
-        const dueTotal = proratedDueBasic + dueDA + dueHRA + dueNPA + dueTA + dueOtherAmount;
-        
-        const difference = dueTotal - drawnTotal;
-
-        rows.push({
-          month: format(currentDate, "MMM yyyy"),
-          drawn: { 
-            basic: Math.round(proratedDrawnBasic), 
-            da: Math.round(drawnDA), 
-            hra: Math.round(drawnHRA), 
-            npa: Math.round(drawnNPA), 
-            ta: Math.round(drawnTA), 
-            other: Math.round(drawnOtherAmount), 
-            total: Math.round(drawnTotal) 
-          },
-          due: { 
-            basic: Math.round(proratedDueBasic), 
-            da: Math.round(dueDA), 
-            hra: Math.round(dueHRA), 
-            npa: Math.round(dueNPA), 
-            ta: Math.round(dueTA), 
-            other: Math.round(dueOtherAmount), 
-            total: Math.round(dueTotal) 
-          },
-          difference: Math.round(difference),
+        setStatement({
+            rows,
+            totals,
+            employeeInfo: {
+                employeeName: data.employeeName,
+                designation: data.designation,
+                employeeId: data.employeeId,
+                department: data.department,
+                payFixationRef: data.payFixationRef,
+                fromDate: data.fromDate,
+                toDate: data.toDate,
+            }
         });
-
-        totals.drawn.total += drawnTotal;
-        totals.due.total += dueTotal;
-        totals.difference += difference;
-      }
-      
-      totals.drawn.total = Math.round(totals.drawn.total);
-      totals.due.total = Math.round(totals.due.total);
-      totals.difference = Math.round(totals.difference);
-
-      setStatement({ 
-        rows, 
-        totals, 
-        employeeInfo: { 
-          employeeName: data.employeeName, 
-          designation: data.designation, 
-          employeeId: data.employeeId, 
-          department: data.department, 
-          payFixationRef: data.payFixationRef,
-          fromDate: data.fromDate,
-          toDate: data.toDate,
-        } 
-      });
-      toast({
-        title: "Calculation Complete",
-        description: "Arrear statement has been generated below.",
-      });
-      setTimeout(() => {
-        document.getElementById("statement-section")?.scrollIntoView({ behavior: 'smooth' });
-      }, 100);
+        toast({
+            title: "Calculation Complete",
+            description: "Arrear statement has been generated below.",
+        });
+        setTimeout(() => {
+            document.getElementById("statement-section")?.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
 
     } catch (error) {
-      console.error(error);
-      toast({
-        variant: "destructive",
-        title: "Calculation Failed",
-        description: "An unexpected error occurred. Please check your inputs.",
-      });
+        console.error(error);
+        toast({
+            variant: "destructive",
+            title: "Calculation Failed",
+            description: "An unexpected error occurred. Please check your inputs.",
+        });
     }
-  };
+};
   
   const saveStatement = () => {
     if (!statement) return;
@@ -969,7 +981,5 @@ export default function Home() {
       </main>
     </div>
   );
-
-    
 
     
