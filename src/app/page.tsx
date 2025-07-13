@@ -118,7 +118,7 @@ const formSchema = z.object({
     message: "To Date cannot be before From Date.",
     path: ["toDate"],
   }).refine(data => {
-      if (data.toBePaid.refixedBasicPay && !data.toBePaid.refixedBasicPayDate) {
+      if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPay > 0 && !data.toBePaid.refixedBasicPayDate) {
           return false;
       }
       return true;
@@ -264,22 +264,24 @@ export default function Home() {
     const monthEnd = endOfMonth(calculationMonth);
     const daysInMonth = getDaysInMonth(calculationMonth);
     
-    // The main arrear period is the absolute boundary
-    const effectiveArrearStart = max([arrearStartDate, monthStart]);
-    const effectiveArrearEnd = min([arrearEndDate, monthEnd]);
-
     // An allowance can't be applied outside its own period OR the main arrear period
-    const effectiveAllowanceFrom = max([allowanceFromDate || arrearStartDate, effectiveArrearStart]);
-    const effectiveAllowanceTo = min([allowanceToDate || arrearEndDate, effectiveArrearEnd]);
+    const effectiveAllowanceFrom = max([allowanceFromDate || arrearStartDate, arrearStartDate]);
+    const effectiveAllowanceTo = min([allowanceToDate || arrearEndDate, arrearEndDate]);
     
+    // Find the intersection of the allowance period and the current month
     const intersectionStart = max([monthStart, effectiveAllowanceFrom]);
     const intersectionEnd = min([monthEnd, effectiveAllowanceTo]);
 
-    if (intersectionStart > intersectionEnd) {
+    // Ensure the intersection is within the overall arrear period as well
+    const finalStart = max([intersectionStart, arrearStartDate]);
+    const finalEnd = min([intersectionEnd, arrearEndDate]);
+
+
+    if (finalStart > finalEnd) {
       return 0;
     }
 
-    const daysToCalculate = differenceInDays(intersectionEnd, intersectionStart) + 1;
+    const daysToCalculate = differenceInDays(finalEnd, finalStart) + 1;
     
     return daysToCalculate > 0 ? daysToCalculate / daysInMonth : 0;
   };
@@ -304,14 +306,16 @@ export default function Home() {
 
         let drawnBasicForMonth = drawnBasicTracker;
         let dueBasicForMonth = dueBasicTracker;
-        let drawnBasicAfterIncrement = drawnBasicTracker; // For DA on TA
-        let dueBasicAfterIncrement = dueBasicTracker; // For DA on TA
+        
+        let drawnBasicAfterIncrement = drawnBasicTracker;
+        let dueBasicAfterIncrement = dueBasicTracker;
 
         // --- DRAWN SIDE INCREMENT ---
         const drawnIncrementMonthValue = parseInt(data.paid.incrementMonth);
         if (drawnIncrementMonthValue === currentMonth) {
             const incrementDate = data.paid.incrementDate ? new Date(data.paid.incrementDate) : startOfMonth(currentDate);
-            const incrementDay = incrementDate.getDate();
+            const effectiveIncrementDate = max([incrementDate, startOfMonth(currentDate)]); // Cannot be before start of month
+            const incrementDay = effectiveIncrementDate.getDate();
 
             let newDrawnBasic = drawnBasicTracker;
             if (cpc === '7th') {
@@ -325,7 +329,7 @@ export default function Home() {
             } else if (cpc === '6th') {
                 newDrawnBasic = Math.round(drawnBasicTracker * 1.03);
             }
-            drawnBasicAfterIncrement = newDrawnBasic; // Store for other calcs
+            drawnBasicAfterIncrement = newDrawnBasic;
 
             if (data.paid.incrementDate && incrementDate.getMonth() === currentDate.getMonth() && incrementDate.getFullYear() === currentDate.getFullYear() && incrementDay > 1) {
                 const daysBefore = incrementDay - 1;
@@ -334,18 +338,22 @@ export default function Home() {
             } else {
                 drawnBasicForMonth = newDrawnBasic;
             }
-            if(currentDate >= startOfMonth(incrementDate)) {
-                 drawnBasicTracker = newDrawnBasic;
-            }
+            drawnBasicTracker = newDrawnBasic;
+        }
+        
+        // --- DUE SIDE REFIXATION & INCREMENT LOGIC ---
+        // First, check for refixation as it takes precedence
+        if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPayDate && currentDate >= startOfMonth(data.toBePaid.refixedBasicPayDate)) {
+             dueBasicTracker = data.toBePaid.refixedBasicPay;
         }
 
-        // --- DUE SIDE INCREMENT ---
+        // Now, apply increment on the potentially refixed basic
         const dueIncrementMonthValue = parseInt(data.toBePaid.incrementMonth);
         if (dueIncrementMonthValue === currentMonth) {
             const incrementDate = data.toBePaid.incrementDate ? new Date(data.toBePaid.incrementDate) : startOfMonth(currentDate);
-            const incrementDay = incrementDate.getDate();
+            const effectiveIncrementDate = max([incrementDate, startOfMonth(currentDate)]);
+            const incrementDay = effectiveIncrementDate.getDate();
 
-            // The base for the increment depends on whether a refixation has happened
             const baseForDueIncrement = dueBasicTracker; 
             let newDueBasic = baseForDueIncrement;
 
@@ -369,19 +377,20 @@ export default function Home() {
             } else {
                 dueBasicForMonth = newDueBasic;
             }
-            if(currentDate >= startOfMonth(incrementDate)) {
-                 dueBasicTracker = newDueBasic;
-            }
+            dueBasicTracker = newDueBasic;
         }
-
+        
         const monthStart = startOfMonth(currentDate);
         const monthEnd = endOfMonth(currentDate);
         const effectiveMonthStart = max([monthStart, arrearFromDate]);
         const effectiveMonthEnd = min([monthEnd, arrearToDate]);
+        
+        if (effectiveMonthStart > effectiveMonthEnd) continue;
+
         const daysForBasic = differenceInDays(effectiveMonthEnd, effectiveMonthStart) + 1;
         const basicProRataFactor = daysForBasic > 0 ? daysForBasic / daysInMonth : 0;
 
-        // Handle pay refixation on the "Due" side with proration
+        // Handle pay refixation on the "Due" side with proration *within* the month
         let dueBasicBeforeRefix = dueBasicForMonth;
         if (
             data.toBePaid.refixedBasicPay &&
@@ -395,6 +404,7 @@ export default function Home() {
                 const daysBeforeRefix = dayOfRefix - 1;
                 const daysOnAndAfterRefix = daysInMonth - daysBeforeRefix;
 
+                // Base basic before refixation is the one after any increment in the same month
                 const basicBefore = dueBasicForMonth * (daysBeforeRefix / daysInMonth);
                 const basicAfter = data.toBePaid.refixedBasicPay * (daysOnAndAfterRefix / daysInMonth);
                 
@@ -402,13 +412,9 @@ export default function Home() {
                 dueBasicAfterIncrement = data.toBePaid.refixedBasicPay; // Update this for TA calc
             }
         }
-        if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPayDate && currentDate >= startOfMonth(data.toBePaid.refixedBasicPayDate)) {
-             dueBasicTracker = data.toBePaid.refixedBasicPay;
-        }
-        
+       
         const proratedDrawnBasic = drawnBasicForMonth * basicProRataFactor;
         const proratedDueBasic = dueBasicForMonth * basicProRataFactor;
-
 
         // --- DRAWN CALCULATION ---
         const drawnDaRate = data.paid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
@@ -422,13 +428,14 @@ export default function Home() {
         const drawnNpaRate = drawnNpaFactor > 0 ? getRateForDate(npaRates, currentDate) : 0;
         const drawnTaBaseAmount = drawnTaFactor > 0 ? getRateForDate(taRates, currentDate, drawnBasicAfterIncrement, data.paid.payLevel) : 0;
 
-        const drawnNPA = drawnBasicForMonth * (drawnNpaRate / 100) * drawnNpaFactor;
-        const drawnHRA = drawnBasicForMonth * (drawnHraRate / 100) * drawnHraFactor;
+        const drawnNPA = (drawnBasicForMonth * basicProRataFactor) * (drawnNpaRate / 100) * drawnNpaFactor * daysInMonth; // NPA is on prorated basic
+        const drawnHRA = (drawnBasicForMonth * basicProRataFactor) * (drawnHraRate / 100) * drawnHraFactor * daysInMonth; // HRA is on prorated basic
+        
         const drawnTaWithDA = drawnTaBaseAmount * (1 + (drawnDaRate / 100));
         const drawnTA = drawnTaWithDA * drawnTaFactor;
         const drawnOtherAmount = (data.paid.otherAllowance || 0) * drawnOtherFactor;
         
-        const drawnBaseForDA = proratedDrawnBasic + drawnNPA;
+        const drawnBaseForDA = proratedDrawnBasic + (drawnNPA / basicProRataFactor * drawnTaFactor); // Use prorated NPA
         const drawnDA = drawnBaseForDA * (drawnDaRate / 100);
         
         // --- DUE CALCULATION ---
@@ -443,13 +450,14 @@ export default function Home() {
         const dueNpaRate = dueNpaFactor > 0 ? getRateForDate(npaRates, currentDate) : 0;
         const dueTaBaseAmount = dueTaFactor > 0 ? getRateForDate(taRates, currentDate, dueBasicAfterIncrement, data.toBePaid.payLevel) : 0;
         
-        const dueNPA = dueBasicForMonth * (dueNpaRate / 100) * dueNpaFactor;
-        const dueHRA = dueBasicForMonth * (dueHraRate / 100) * dueHraFactor;
+        const dueNPA = (dueBasicForMonth * basicProRataFactor) * (dueNpaRate / 100) * dueNpaFactor * daysInMonth;
+        const dueHRA = (dueBasicForMonth * basicProRataFactor) * (dueHraRate / 100) * dueHraFactor * daysInMonth;
+        
         const dueTaWithDA = dueTaBaseAmount * (1 + (dueDaRate / 100));
         const dueTA = dueTaWithDA * dueTaFactor;
         const dueOtherAmount = (data.toBePaid.otherAllowance || 0) * dueOtherFactor;
 
-        const dueBaseForDA = proratedDueBasic + dueNPA;
+        const dueBaseForDA = proratedDueBasic + (dueNPA / basicProRataFactor * dueTaFactor); // Use prorated NPA
         const dueDA = dueBaseForDA * (dueDaRate / 100);
 
         const drawnTotal = proratedDrawnBasic + drawnDA + drawnHRA + drawnNPA + drawnTA + drawnOtherAmount;
@@ -682,7 +690,7 @@ export default function Home() {
                   <FormField control={form.control} name="toBePaid.refixedBasicPay" render={({ field }) => (
                       <FormItem>
                           <FormLabel>Refixed Basic Pay</FormLabel>
-                          <FormControl><Input type="number" placeholder="New basic pay" {...field} /></FormControl>
+                          <FormControl><Input type="number" placeholder="New basic pay" {...field} value={field.value ?? ''} /></FormControl>
                           <FormMessage />
                       </FormItem>
                   )} />
@@ -718,7 +726,7 @@ export default function Home() {
           <FormField control={form.control} name={`${type}.otherAllowance`} render={({ field }) => (
             <FormItem>
               <FormLabel>Other Allowance Amount</FormLabel>
-              <FormControl><Input type="number" placeholder="e.g., 1500" {...field} /></FormControl>
+              <FormControl><Input type="number" placeholder="e.g., 1500" {...field} value={field.value ?? ''} /></FormControl>
               <FormMessage />
             </FormItem>
           )} />
@@ -961,5 +969,7 @@ export default function Home() {
       </main>
     </div>
   );
+
+    
 
     
