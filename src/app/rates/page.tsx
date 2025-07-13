@@ -51,8 +51,8 @@ import { cpcData } from "@/lib/cpc-data";
 
 
 const allPayLevels = [
-    ...cpcData['6th'].payLevels.map(pl => ({ value: pl.level, label: `6th CPC: GP ${pl.gradePay} (${pl.payBand})`})),
-    ...cpcData['7th'].payLevels.map(pl => ({ value: pl.level, label: `7th CPC: Level ${pl.level}`}))
+    ...cpcData['6th'].payLevels.map(pl => ({ key: `6th-${pl.level}`, value: pl.level, label: `6th CPC: GP ${pl.gradePay} (${pl.payBand})`})),
+    ...cpcData['7th'].payLevels.map(pl => ({ key: `7th-${pl.level}`, value: pl.level, label: `7th CPC: Level ${pl.level}`}))
 ];
 
 
@@ -157,7 +157,7 @@ const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevelR
             </SelectTrigger>
             <SelectContent>
                 {allPayLevels.map(level => (
-                    <SelectItem key={level.value} value={level.value}>{level.label}</SelectItem>
+                    <SelectItem key={level.key} value={level.value}>{level.label}</SelectItem>
                 ))}
             </SelectContent>
         </Select>
