@@ -20,9 +20,12 @@ import {
   FolderOpen,
   Trash2,
   Loader2,
+  Wifi,
+  WifiOff,
+  CloudUpload,
 } from "lucide-react";
-import { db } from "@/lib/firebase";
-import { collection, addDoc, getDocs, doc, deleteDoc, Timestamp } from "firebase/firestore";
+import { db, isFirebaseConfigured } from "@/lib/firebase";
+import { collection, addDoc, getDocs, doc, deleteDoc, Timestamp, writeBatch } from "firebase/firestore";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -83,6 +86,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cpcData } from "@/lib/cpc-data";
 import { Rate, useRates } from "@/context/rates-context";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const salaryComponentSchema = z.object({
   basicPay: z.coerce.number({ required_error: "Basic Pay is required." }).min(0, "Cannot be negative"),
@@ -147,7 +151,8 @@ type StatementTotals = {
 };
 
 type SavedStatement = {
-  id: string;
+  id: string; // This will be doc ID from firestore or a UUID for local
+  isLocal?: boolean;
   savedAt: string; // Keep as ISO string for simplicity across environments
   rows: StatementRow[];
   totals: StatementTotals;
@@ -160,44 +165,124 @@ const INCREMENT_MONTHS = [
 ];
 
 const FIRESTORE_STATEMENTS_COLLECTION = "savedStatements";
+const LOCALSTORAGE_STATEMENTS_KEY = "arrearEase_savedStatements";
+
 
 export default function Home() {
   const [statement, setStatement] = React.useState<Omit<SavedStatement, 'id' | 'savedAt'> | null>(null);
   const [savedStatements, setSavedStatements] = React.useState<SavedStatement[]>([]);
   const [isLoadDialogOpen, setLoadDialogOpen] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
+  const [isOnline, setIsOnline] = React.useState(true);
+  const [dbConfigured] = React.useState(isFirebaseConfigured());
+
   const { toast } = useToast();
   const { daRates, hraRates, npaRates, taRates } = useRates();
 
+  React.useEffect(() => {
+    const updateOnlineStatus = () => setIsOnline(navigator.onLine);
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+    updateOnlineStatus();
+    return () => {
+      window.removeEventListener('online', updateOnlineStatus);
+      window.removeEventListener('offline', updateOnlineStatus);
+    };
+  }, []);
+  
+  const getLocalStatements = (): SavedStatement[] => {
+    try {
+      const localData = localStorage.getItem(LOCALSTORAGE_STATEMENTS_KEY);
+      return localData ? JSON.parse(localData) : [];
+    } catch (error) {
+      console.error("Failed to read local statements:", error);
+      return [];
+    }
+  }
+
+  const saveLocalStatements = (statements: SavedStatement[]) => {
+    try {
+      localStorage.setItem(LOCALSTORAGE_STATEMENTS_KEY, JSON.stringify(statements));
+    } catch(error) {
+       console.error("Failed to save local statements:", error);
+    }
+  }
+
+  const syncLocalToServer = async () => {
+      if (!isOnline || !dbConfigured) return;
+      
+      const localStatements = getLocalStatements();
+      const localOnly = localStatements.filter(s => s.isLocal);
+
+      if (localOnly.length === 0) return;
+
+      setIsLoading(true);
+      try {
+        const batch = writeBatch(db);
+        localOnly.forEach(stmt => {
+          const { isLocal, ...serverStmt } = stmt; // remove isLocal flag
+          const docRef = doc(db, FIRESTORE_STATEMENTS_COLLECTION, stmt.id);
+          batch.set(docRef, serverStmt);
+        });
+        await batch.commit();
+
+        // Update local statements to remove isLocal flag
+        const updatedLocalStatements = localStatements.map(s => s.isLocal ? { ...s, isLocal: false } : s);
+        saveLocalStatements(updatedLocalStatements);
+
+        toast({
+            title: "Sync Complete",
+            description: `${localOnly.length} locally saved statement(s) have been synced to the database.`
+        });
+        await fetchSavedStatements(); // refresh list
+      } catch (error) {
+          console.error("Failed to sync statements:", error);
+          toast({ variant: "destructive", title: "Sync Failed", description: "Could not sync local changes to the database." });
+      }
+      setIsLoading(false);
+  };
+
+
   const fetchSavedStatements = async () => {
     setIsLoading(true);
-    try {
-        const querySnapshot = await getDocs(collection(db, FIRESTORE_STATEMENTS_COLLECTION));
-        const statements: SavedStatement[] = [];
-        querySnapshot.forEach((doc) => {
-            const data = doc.data();
-            // Convert Firestore Timestamps back to JS Dates
-            const employeeInfo = data.employeeInfo;
-            if (employeeInfo.fromDate) employeeInfo.fromDate = (employeeInfo.fromDate as Timestamp).toDate();
-            if (employeeInfo.toDate) employeeInfo.toDate = (employeeInfo.toDate as Timestamp).toDate();
-
-            statements.push({
-                id: doc.id,
-                savedAt: new Date(data.savedAt.seconds * 1000).toISOString(),
-                rows: data.rows,
-                totals: data.totals,
-                employeeInfo,
+    let allStatements: SavedStatement[] = [];
+    
+    if (isOnline && dbConfigured) {
+        try {
+            const querySnapshot = await getDocs(collection(db, FIRESTORE_STATEMENTS_COLLECTION));
+            querySnapshot.forEach((doc) => {
+                const data = doc.data();
+                const employeeInfo = data.employeeInfo;
+                if (employeeInfo.fromDate) employeeInfo.fromDate = (employeeInfo.fromDate as Timestamp).toDate();
+                if (employeeInfo.toDate) employeeInfo.toDate = (employeeInfo.toDate as Timestamp).toDate();
+                allStatements.push({
+                    id: doc.id,
+                    savedAt: new Date(data.savedAt.seconds * 1000).toISOString(),
+                    rows: data.rows,
+                    totals: data.totals,
+                    employeeInfo,
+                    isLocal: false
+                });
             });
-        });
-        setSavedStatements(statements.sort((a,b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()));
-    } catch (error) {
-        console.error("Could not load saved statements:", error);
-        toast({
-            variant: "destructive",
-            title: "Load Failed",
-            description: "Could not fetch saved statements from the database.",
-        });
+        } catch (error) {
+            console.error("Could not load saved statements from Firestore:", error);
+            toast({
+                variant: "destructive",
+                title: "Load Failed",
+                description: "Could not fetch statements from the database. Showing local data.",
+            });
+        }
     }
+    
+    // Merge with local statements, giving precedence to server version if IDs match
+    const localStatements = getLocalStatements();
+    localStatements.forEach(localStmt => {
+        if (!allStatements.some(serverStmt => serverStmt.id === localStmt.id)) {
+            allStatements.push(localStmt);
+        }
+    });
+
+    setSavedStatements(allStatements.sort((a,b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()));
     setIsLoading(false);
   };
 
@@ -206,6 +291,12 @@ export default function Home() {
       fetchSavedStatements();
     }
   }, [isLoadDialogOpen]);
+
+  React.useEffect(() => {
+    if (isOnline && dbConfigured) {
+        syncLocalToServer();
+    }
+  }, [isOnline, dbConfigured]);
   
   const form = useForm<ArrearFormData>({
     resolver: zodResolver(formSchema),
@@ -296,15 +387,12 @@ export default function Home() {
     const monthEnd = endOfMonth(calculationMonth);
     const daysInMonth = getDaysInMonth(calculationMonth);
 
-    // Effective start/end for the entire arrear calculation
     const effectiveArrearStart = arrearStartDate;
     const effectiveArrearEnd = arrearEndDate;
     
-    // Effective start/end for the specific allowance, capped by the arrear period
     const effectiveAllowanceFrom = allowanceFromDate ? max([allowanceFromDate, effectiveArrearStart]) : effectiveArrearStart;
     const effectiveAllowanceTo = allowanceToDate ? min([allowanceToDate, effectiveArrearEnd]) : effectiveArrearEnd;
 
-    // Intersection of the allowance period and the current month being calculated
     const intersectionStart = max([monthStart, effectiveAllowanceFrom]);
     const intersectionEnd = min([monthEnd, effectiveAllowanceTo]);
 
@@ -329,6 +417,9 @@ export default function Home() {
 
         let drawnBasicTracker = data.paid.basicPay;
         let dueBasicTracker = data.toBePaid.basicPay;
+        
+        let lastDrawnIncrementYear = -1;
+        let lastDueIncrementYear = -1;
 
         for (let i = 0; i <= monthCount; i++) {
             const currentDate = addMonths(firstMonth, i);
@@ -336,7 +427,6 @@ export default function Home() {
             const currentYear = currentDate.getFullYear();
             const daysInMonth = getDaysInMonth(currentDate);
 
-            // Determine effective period for the current month
             const monthStart = startOfMonth(currentDate);
             const monthEnd = endOfMonth(currentDate);
             const effectiveMonthStart = max([monthStart, arrearFromDate]);
@@ -347,38 +437,30 @@ export default function Home() {
             const daysToCalculateForMonth = differenceInDays(effectiveMonthEnd, effectiveMonthStart) + 1;
             const monthProRataFactor = daysToCalculateForMonth / daysInMonth;
 
-            // --- PAY STATE FOR THE MONTH (before proration within the month) ---
             let drawnBasicForMonth = drawnBasicTracker;
             let dueBasicForMonth = dueBasicTracker;
             
-            // --- INCREMENT LOGIC ---
             const handleIncrement = (side: 'paid' | 'toBePaid', currentBasic: number, lastIncrementYear: number) => {
               const sideData = data[side];
               const incrementMonthValue = parseInt(sideData.incrementMonth, 10);
               const firstIncrementDate = sideData.incrementDate;
           
-              let newBasic = currentBasic;
               let incrementTriggerDate: Date | null = null;
           
-              // Scenario 1: Specific "Date of Next Increment" is provided
               if (firstIncrementDate && currentYear >= firstIncrementDate.getFullYear() && lastIncrementYear < firstIncrementDate.getFullYear()) {
                   if (currentYear === firstIncrementDate.getFullYear() && currentMonth === firstIncrementDate.getMonth() + 1) {
                       incrementTriggerDate = firstIncrementDate;
                   }
-              }
-              
-              // Scenario 2: No specific date, or for subsequent annual increments
-              if (currentMonth === incrementMonthValue) {
-                  // If a specific date was given, subsequent increments are on the 1st of that month, in subsequent years
-                  if (firstIncrementDate && currentYear > firstIncrementDate.getFullYear() && lastIncrementYear < currentYear) {
-                       incrementTriggerDate = new Date(currentYear, currentMonth - 1, 1);
-                  } 
-                  // If no specific date was ever given
-                  else if (!firstIncrementDate && lastIncrementYear < currentYear) {
-                      const firstPossibleIncrementYear = arrearFromDate.getMonth() + 1 > incrementMonthValue && arrearFromDate.getFullYear() === currentYear 
-                                                        ? currentYear + 1 
-                                                        : currentYear;
-                      if(currentYear >= firstPossibleIncrementYear) {
+              } else if (currentMonth === incrementMonthValue) {
+                  if (firstIncrementDate) {
+                      if (currentYear > firstIncrementDate.getFullYear() && lastIncrementYear < currentYear) {
+                           incrementTriggerDate = new Date(currentYear, currentMonth - 1, 1);
+                      }
+                  } else {
+                       const firstPossibleIncrementYear = (arrearFromDate.getFullYear() === currentYear && arrearFromDate.getMonth() + 1 > incrementMonthValue)
+                                                          ? currentYear + 1
+                                                          : currentYear;
+                      if(currentYear >= firstPossibleIncrementYear && lastIncrementYear < currentYear) {
                           incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
                       }
                   }
@@ -393,12 +475,12 @@ export default function Home() {
                           if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
                               incrementedBasic = levelData.values[currentBasicIndex + 1];
                           } else {
-                              incrementedBasic = currentBasic; // already at max
+                              incrementedBasic = currentBasic;
                           }
                       } else {
-                          incrementedBasic = currentBasic; // level not found
+                          incrementedBasic = currentBasic;
                       }
-                  } else { // 6th CPC
+                  } else {
                       incrementedBasic = Math.round(currentBasic * 1.03);
                   }
           
@@ -407,38 +489,35 @@ export default function Home() {
                       const daysBefore = incrementDay - 1;
                       const daysAfter = daysInMonth - daysBefore;
                       const proratedMonthlyBasic = ((currentBasic * daysBefore) + (incrementedBasic * daysAfter)) / daysInMonth;
-                      return { newMonthlyBasic: proratedMonthlyBasic, newTrackerBasic: incrementedBasic, incrementedThisRun: true };
+                      return { newMonthlyBasic: proratedMonthlyBasic, newTrackerBasic: incrementedBasic, incrementedThisRun: true, incrementYear: currentYear };
                   } else {
-                      return { newMonthlyBasic: incrementedBasic, newTrackerBasic: incrementedBasic, incrementedThisRun: true };
+                      return { newMonthlyBasic: incrementedBasic, newTrackerBasic: incrementedBasic, incrementedThisRun: true, incrementYear: currentYear };
                   }
               }
           
-              return { newMonthlyBasic: currentBasic, newTrackerBasic: currentBasic, incrementedThisRun: false };
+              return { newMonthlyBasic: currentBasic, newTrackerBasic: currentBasic, incrementedThisRun: false, incrementYear: lastIncrementYear };
             };
 
-            const drawnIncrementResult = handleIncrement('paid', drawnBasicTracker, i === 0 ? arrearFromDate.getFullYear() - 1 : currentDate.getFullYear() - 1);
+            const drawnIncrementResult = handleIncrement('paid', drawnBasicTracker, lastDrawnIncrementYear);
             if(drawnIncrementResult.incrementedThisRun) {
                 drawnBasicForMonth = drawnIncrementResult.newMonthlyBasic;
                 drawnBasicTracker = drawnIncrementResult.newTrackerBasic;
+                lastDrawnIncrementYear = drawnIncrementResult.incrementYear;
             }
 
-
-            const dueIncrementResult = handleIncrement('toBePaid', dueBasicTracker, i === 0 ? arrearFromDate.getFullYear() - 1 : currentDate.getFullYear() - 1);
+            const dueIncrementResult = handleIncrement('toBePaid', dueBasicTracker, lastDueIncrementYear);
              if(dueIncrementResult.incrementedThisRun) {
                 dueBasicForMonth = dueIncrementResult.newMonthlyBasic;
                 dueBasicTracker = dueIncrementResult.newTrackerBasic;
+                lastDueIncrementYear = dueIncrementResult.incrementYear;
             }
-
-
-            // --- PAY REFIXATION LOGIC (Due Side) ---
+            
             if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPay > 0 && data.toBePaid.refixedBasicPayDate) {
                 const refixDate = data.toBePaid.refixedBasicPayDate;
-                 // Apply refixation if the current calculation month is on or after the refixation month
                  if (currentDate >= startOfMonth(refixDate)) {
-                     // If the current month IS the refixation month (handle proration)
                     if (currentYear === refixDate.getFullYear() && currentMonth === refixDate.getMonth() + 1) {
                         const refixDay = refixDate.getDate();
-                        const basicBeforeRefix = dueBasicForMonth; // This already includes any potential increment for the month
+                        const basicBeforeRefix = dueBasicForMonth; 
                         
                         if (refixDay > 1) {
                             const daysBefore = refixDay - 1;
@@ -449,18 +528,15 @@ export default function Home() {
                         }
                         dueBasicTracker = data.toBePaid.refixedBasicPay;
                     } 
-                    // If the current month is after the refixation month
                     else if (currentDate > refixDate) {
-                        dueBasicForMonth = data.toBePaid.refixedBasicPay; // The new basic is now the tracked basic
-                        dueBasicTracker = data.toBePaid.refixedBasicPay;
+                        dueBasicForMonth = dueBasicTracker;
                     }
                 }
             }
            
             const proratedDrawnBasic = drawnBasicForMonth * monthProRataFactor;
             const proratedDueBasic = dueBasicForMonth * monthProRataFactor;
-
-            // --- ALLOWANCE CALCULATIONS ---
+            
             const getProratedAmount = (allowanceType: 'hra' | 'npa' | 'ta' | 'otherAllowance', side: 'paid' | 'toBePaid') => {
                 const sideData = data[side];
                 const isApplicable = sideData[`${allowanceType}Applicable`];
@@ -512,7 +588,6 @@ export default function Home() {
             const dueTA = getProratedAmount('ta', 'toBePaid');
             const dueOther = getProratedAmount('otherAllowance', 'toBePaid');
 
-            // --- DA CALCULATION ---
             let drawnDA = 0;
             if (data.paid.daApplicable) {
                 const daRate = getRateForDate(daRates, currentDate);
@@ -592,60 +667,101 @@ export default function Home() {
             description: "An unexpected error occurred. Please check your inputs.",
         });
     }
-};
+  };
   
   const saveStatement = async () => {
     if (!statement) return;
     setIsLoading(true);
-    try {
-      const docToSave = {
-        ...statement,
-        savedAt: new Date()
-      };
 
-      await addDoc(collection(db, FIRESTORE_STATEMENTS_COLLECTION), docToSave);
-      
-      toast({
-        title: "Arrear Saved",
-        description: "The current arrear statement has been saved to the database.",
-      });
-      fetchSavedStatements(); // Refresh the list
-    } catch(error) {
-      console.error("Failed to save statement:", error);
-      toast({
-        variant: "destructive",
-        title: "Save Failed",
-        description: "Could not save the arrear statement to the database.",
-      });
+    const docId = crypto.randomUUID();
+    const docToSave: SavedStatement = {
+        ...statement,
+        id: docId,
+        savedAt: new Date().toISOString(),
+        isLocal: true
+    };
+    
+    // Always save locally first
+    const localStatements = getLocalStatements();
+    saveLocalStatements([...localStatements, docToSave]);
+
+    if (isOnline && dbConfigured) {
+        try {
+            const { isLocal, ...serverStmt } = docToSave;
+            await setDoc(doc(db, FIRESTORE_STATEMENTS_COLLECTION, docId), serverStmt);
+            
+            // Update local copy to remove isLocal flag
+            const updatedLocalStatements = getLocalStatements().map(s => s.id === docId ? { ...s, isLocal: false } : s);
+            saveLocalStatements(updatedLocalStatements);
+
+            toast({
+                title: "Arrear Saved",
+                description: "The statement has been saved to your browser and the database.",
+            });
+            fetchSavedStatements();
+        } catch (error) {
+            console.error("Failed to save statement to Firestore:", error);
+            toast({
+                title: "Saved Locally",
+                description: "The statement has been saved to your browser. It will sync to the database when online.",
+            });
+        }
+    } else {
+        toast({
+            title: "Saved Locally",
+            description: "The statement has been saved to your browser. It will sync to the database when online.",
+        });
     }
+
     setIsLoading(false);
   };
   
   const loadStatement = (statementToLoad: SavedStatement) => {
-     setStatement(statementToLoad);
+     const sanitizedStatement = {
+         ...statementToLoad,
+         employeeInfo: {
+             ...statementToLoad.employeeInfo,
+             fromDate: statementToLoad.employeeInfo.fromDate ? new Date(statementToLoad.employeeInfo.fromDate) : undefined,
+             toDate: statementToLoad.employeeInfo.toDate ? new Date(statementToLoad.employeeInfo.toDate) : undefined,
+         }
+     }
+     setStatement(sanitizedStatement);
      setLoadDialogOpen(false);
      setTimeout(() => {
         document.getElementById("statement-section")?.scrollIntoView({ behavior: 'smooth' });
       }, 100);
   }
 
-  const deleteStatement = async (id: string) => {
+  const deleteStatement = async (id: string, isLocal: boolean | undefined) => {
     setIsLoading(true);
-    try {
-        await deleteDoc(doc(db, FIRESTORE_STATEMENTS_COLLECTION, id));
+    
+    // Always remove from local storage first
+    const localStatements = getLocalStatements();
+    saveLocalStatements(localStatements.filter(s => s.id !== id));
+
+    if (isOnline && dbConfigured && !isLocal) {
+        try {
+            await deleteDoc(doc(db, FIRESTORE_STATEMENTS_COLLECTION, id));
+            toast({
+                title: "Arrear Deleted",
+                description: "The statement has been removed from the database and local storage.",
+            });
+        } catch (error) {
+            console.error("Failed to delete statement from Firestore:", error);
+            toast({
+                variant: "destructive",
+                title: "Delete Failed",
+                description: "Could not delete from database, but removed locally.",
+            });
+        }
+    } else {
         toast({
             title: "Arrear Deleted",
-            description: "The saved arrear statement has been removed.",
-        });
-        fetchSavedStatements(); // Refresh the list
-    } catch (error) {
-        console.error("Failed to delete statement:", error);
-        toast({
-            variant: "destructive",
-            title: "Delete Failed",
-            description: "Could not delete the arrear statement.",
+            description: "The saved arrear statement has been removed from local storage.",
         });
     }
+
+    fetchSavedStatements(); // Refresh list
     setIsLoading(false);
   }
 
@@ -824,7 +940,25 @@ export default function Home() {
     <div className="min-h-screen bg-background">
       <main className="container mx-auto px-4 py-8 md:py-12">
         <header className="text-center mb-8 no-print">
-          <div className="flex justify-end">
+          <div className="flex justify-end items-center gap-4">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger>
+                  {dbConfigured ? (
+                    isOnline ? <Wifi className="text-green-500" /> : <WifiOff className="text-red-500"/>
+                  ) : (
+                    <WifiOff className="text-yellow-500"/>
+                  )}
+                </TooltipTrigger>
+                <TooltipContent>
+                  {dbConfigured ? (
+                    isOnline ? <p>Online: Connected to database</p> : <p>Offline: Changes will be saved locally and synced later.</p>
+                  ) : (
+                    <p>Database not configured. All data is being saved in your browser only.</p>
+                  )}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             <ThemeToggle />
           </div>
           <h1 className="font-headline text-4xl md:text-5xl font-bold text-primary">Arrear Ease</h1>
@@ -859,11 +993,14 @@ export default function Home() {
                                 <TableBody>
                                     {savedStatements.map(s => (
                                         <TableRow key={s.id}>
-                                            <TableCell className="font-medium">{s.employeeInfo.employeeName} <span className="text-muted-foreground">({s.employeeInfo.employeeId})</span></TableCell>
+                                            <TableCell className="font-medium">
+                                                {s.isLocal && <TooltipProvider><Tooltip><TooltipTrigger asChild><span className="inline-block mr-2"><CloudUpload className="h-4 w-4 text-muted-foreground"/></span></TooltipTrigger><TooltipContent><p>Saved locally. Will sync when online.</p></TooltipContent></Tooltip></TooltipProvider>}
+                                                {s.employeeInfo.employeeName} <span className="text-muted-foreground">({s.employeeInfo.employeeId})</span>
+                                            </TableCell>
                                             <TableCell className="hidden sm:table-cell">{format(new Date(s.savedAt), "PPP p")}</TableCell>
                                             <TableCell className="text-right">
                                                 <Button size="sm" onClick={() => loadStatement(s)} className="mr-2" disabled={isLoading}>Load</Button>
-                                                <Button size="sm" variant="destructive" onClick={() => deleteStatement(s.id)} disabled={isLoading}><Trash2 className="h-4 w-4"/></Button>
+                                                <Button size="sm" variant="destructive" onClick={() => deleteStatement(s.id, s.isLocal)} disabled={isLoading}><Trash2 className="h-4 w-4"/></Button>
                                             </TableCell>
                                         </TableRow>
                                     ))}
@@ -1044,3 +1181,5 @@ export default function Home() {
       </main>
     </div>
   );
+
+    

@@ -3,8 +3,9 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import * as z from "zod";
-import { db } from '@/lib/firebase';
+import { db, isFirebaseConfigured } from '@/lib/firebase';
 import { doc, getDoc, setDoc } from "firebase/firestore"; 
+import { useToast } from '@/hooks/use-toast';
 
 const rateSchema = z.object({
   id: z.string(),
@@ -37,13 +38,14 @@ const RatesContext = createContext<RatesContextType | undefined>(undefined);
 
 const FIRESTORE_RATES_DOC_ID = "allRates";
 const FIRESTORE_RATES_COLLECTION_ID = "configurations";
+const LOCALSTORAGE_RATES_KEY = "arrearEase_rates";
 
-// Helper to deserialize dates from Firestore Timestamps
 const parseTimestamps = (rates: any[]): Rate[] => {
+    if (!Array.isArray(rates)) return [];
     return rates.map(rate => ({
         ...rate,
-        fromDate: rate.fromDate.toDate(),
-        toDate: rate.toDate.toDate()
+        fromDate: rate.fromDate?.toDate ? rate.fromDate.toDate() : new Date(rate.fromDate),
+        toDate: rate.toDate?.toDate ? rate.toDate.toDate() : new Date(rate.toDate)
     }));
 }
 
@@ -53,10 +55,39 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
   const [npaRates, setNpaRates] = useState<Rate[]>([]);
   const [taRates, setTaRates] = useState<Rate[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
+  const [dbConfigured] = useState(isFirebaseConfigured());
+  const { toast } = useToast();
 
-  // Load from Firestore on initial mount
   useEffect(() => {
-    const loadRates = async () => {
+    const updateOnlineStatus = () => setIsOnline(navigator.onLine);
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+    updateOnlineStatus();
+    return () => {
+      window.removeEventListener('online', updateOnlineStatus);
+      window.removeEventListener('offline', updateOnlineStatus);
+    };
+  }, []);
+
+  const loadRatesFromLocal = useCallback(() => {
+    try {
+      const localData = localStorage.getItem(LOCALSTORAGE_RATES_KEY);
+      if (localData) {
+          const data = JSON.parse(localData);
+          if (data.daRates) setDaRates(parseTimestamps(data.daRates));
+          if (data.hraRates) setHraRates(parseTimestamps(data.hraRates));
+          if (data.npaRates) setNpaRates(parseTimestamps(data.npaRates));
+          if (data.taRates) setTaRates(parseTimestamps(data.taRates));
+      }
+    } catch (error) {
+      console.error("Could not load rates from localStorage:", error);
+    }
+    setIsLoaded(true);
+  }, []);
+
+  const loadRates = useCallback(async () => {
+    if (isOnline && dbConfigured && db) {
         try {
             const ratesDocRef = doc(db, FIRESTORE_RATES_COLLECTION_ID, FIRESTORE_RATES_DOC_ID);
             const docSnap = await getDoc(ratesDocRef);
@@ -66,39 +97,55 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
                 if (data.hraRates) setHraRates(parseTimestamps(data.hraRates));
                 if (data.npaRates) setNpaRates(parseTimestamps(data.npaRates));
                 if (data.taRates) setTaRates(parseTimestamps(data.taRates));
+                setIsLoaded(true);
+                return;
             }
         } catch(error) {
-            console.error("Could not load rates from Firestore:", error);
+            console.error("Could not load rates from Firestore, falling back to local:", error);
         }
-        setIsLoaded(true);
-    };
-    loadRates();
-  }, []);
+    }
+    loadRatesFromLocal();
+  }, [isOnline, dbConfigured, loadRatesFromLocal]);
 
-  // Save to Firestore whenever rates change
   useEffect(() => {
-    if (!isLoaded) return; // Don't save until we've loaded initial state
+    loadRates();
+  }, [loadRates]);
+  
+  const saveRates = useCallback(async () => {
+    if (!isLoaded) return;
     
-    const saveRates = async () => {
+    const dataToSave = { daRates, hraRates, npaRates, taRates };
+    
+    // Always save to localStorage
+    try {
+      localStorage.setItem(LOCALSTORAGE_RATES_KEY, JSON.stringify(dataToSave));
+    } catch (error) {
+      console.error("Could not save rates to localStorage:", error);
+    }
+    
+    // Attempt to save to Firestore if online and configured
+    if (isOnline && dbConfigured && db) {
         try {
             const ratesDocRef = doc(db, FIRESTORE_RATES_COLLECTION_ID, FIRESTORE_RATES_DOC_ID);
-            const dataToSave = { daRates, hraRates, npaRates, taRates };
             await setDoc(ratesDocRef, dataToSave);
         } catch (error) {
             console.error("Could not save rates to Firestore:", error);
+            toast({
+                variant: 'destructive',
+                title: "Database Sync Failed",
+                description: "Rate changes have been saved locally but failed to sync to the database."
+            });
         }
-    };
-
-    // Debounce saving to avoid excessive writes
+    }
+  }, [isLoaded, daRates, hraRates, npaRates, taRates, isOnline, dbConfigured, toast]);
+  
+  useEffect(() => {
     const handler = setTimeout(() => {
       saveRates();
-    }, 1000);
+    }, 1500); // Debounce saving
 
-    return () => {
-      clearTimeout(handler);
-    };
-
-  }, [daRates, hraRates, npaRates, taRates, isLoaded]);
+    return () => clearTimeout(handler);
+  }, [saveRates]);
 
   return (
     <RatesContext.Provider value={{
@@ -119,3 +166,5 @@ export const useRates = (): RatesContextType => {
   }
   return context;
 };
+
+    

@@ -11,8 +11,15 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Initialize Firebase
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-const db = getFirestore(app);
+// Function to check if Firebase is configured
+export const isFirebaseConfigured = () => {
+    return firebaseConfig.apiKey && firebaseConfig.projectId;
+};
+
+// Initialize Firebase only if it's configured
+const app = isFirebaseConfigured() && !getApps().length ? initializeApp(firebaseConfig) : (getApps().length ? getApp() : null);
+const db = app ? getFirestore(app) : null;
 
 export { db };
+
+    
