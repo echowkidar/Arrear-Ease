@@ -239,7 +239,7 @@ export default function Home() {
           if(!isNaN(numericPayLevel) && !isNaN(numericFrom) && !isNaN(numericTo)) {
             isPayLevelMatch = numericPayLevel >= numericFrom && numericPayLevel <= numericTo;
           } else {
-            isPayLevelMatch = false; // Or handle non-numeric levels if necessary
+            isPayLevelMatch = false;
           }
       }
 
@@ -263,10 +263,16 @@ export default function Home() {
     const monthStart = startOfMonth(calculationMonth);
     const monthEnd = endOfMonth(calculationMonth);
     const daysInMonth = getDaysInMonth(calculationMonth);
+
+    // Effective start/end for the entire arrear calculation
+    const effectiveArrearStart = arrearStartDate;
+    const effectiveArrearEnd = arrearEndDate;
     
-    const effectiveAllowanceFrom = allowanceFromDate ? max([allowanceFromDate, arrearStartDate]) : arrearStartDate;
-    const effectiveAllowanceTo = allowanceToDate ? min([allowanceToDate, arrearEndDate]) : arrearEndDate;
-    
+    // Effective start/end for the specific allowance, capped by the arrear period
+    const effectiveAllowanceFrom = allowanceFromDate ? max([allowanceFromDate, effectiveArrearStart]) : effectiveArrearStart;
+    const effectiveAllowanceTo = allowanceToDate ? min([allowanceToDate, effectiveArrearEnd]) : effectiveArrearEnd;
+
+    // Intersection of the allowance period and the current month being calculated
     const intersectionStart = max([monthStart, effectiveAllowanceFrom]);
     const intersectionEnd = min([monthEnd, effectiveAllowanceTo]);
 
@@ -314,94 +320,80 @@ export default function Home() {
             let dueBasicForMonth = dueBasicTracker;
 
             // --- INCREMENT LOGIC ---
-            // Drawn Side Increment
-            const drawnIncrementMonthValue = parseInt(data.paid.incrementMonth);
-            if (drawnIncrementMonthValue === currentMonth) {
-                const baseForIncrement = drawnBasicTracker;
-                let newDrawnBasic = baseForIncrement;
-                if (cpc === '7th') {
-                    const levelData = cpcData['7th'].payLevels.find(l => l.level === data.paid.payLevel);
-                    if (levelData) {
-                        const currentBasicIndex = levelData.values.indexOf(baseForIncrement);
-                        if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
-                            newDrawnBasic = levelData.values[currentBasicIndex + 1];
-                        }
-                    }
-                } else if (cpc === '6th') {
-                    newDrawnBasic = Math.round(baseForIncrement * 1.03);
+            const handleIncrement = (side: 'paid' | 'toBePaid', baseBasic: number) => {
+                const sideData = data[side];
+                const incrementDate = sideData.incrementDate;
+                const incrementMonthValue = parseInt(sideData.incrementMonth, 10);
+                
+                let effectiveIncrementDate: Date;
+                if (incrementDate) {
+                    effectiveIncrementDate = incrementDate;
+                } else {
+                    // Default to 1st of the month if no specific date is given
+                    effectiveIncrementDate = new Date(currentYear, incrementMonthValue - 1, 1);
                 }
 
-                if (data.paid.incrementDate && data.paid.incrementDate.getMonth() + 1 === currentMonth && data.paid.incrementDate.getFullYear() === currentYear) {
-                    const incrementDay = data.paid.incrementDate.getDate();
+                if (currentYear === effectiveIncrementDate.getFullYear() && currentMonth === effectiveIncrementDate.getMonth() + 1) {
+                    let newBasic = baseBasic;
+                    if (cpc === '7th') {
+                        const levelData = cpcData['7th'].payLevels.find(l => l.level === sideData.payLevel);
+                        if (levelData) {
+                            const currentBasicIndex = levelData.values.indexOf(baseBasic);
+                            if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
+                                newBasic = levelData.values[currentBasicIndex + 1];
+                            }
+                        }
+                    } else if (cpc === '6th') {
+                        newBasic = Math.round(baseBasic * 1.03);
+                    }
+
+                    const incrementDay = effectiveIncrementDate.getDate();
                     if (incrementDay > 1) {
                        const daysBefore = incrementDay - 1;
                        const daysAfter = daysInMonth - daysBefore;
-                       drawnBasicForMonth = ((baseForIncrement * daysBefore) + (newDrawnBasic * daysAfter)) / daysInMonth;
+                       return { 
+                           newMonthlyBasic: ((baseBasic * daysBefore) + (newBasic * daysAfter)) / daysInMonth,
+                           newTrackerBasic: newBasic
+                       };
                     } else {
-                       drawnBasicForMonth = newDrawnBasic;
+                       return { newMonthlyBasic: newBasic, newTrackerBasic: newBasic };
                     }
-                } else {
-                    drawnBasicForMonth = newDrawnBasic;
                 }
-                drawnBasicTracker = newDrawnBasic;
-            }
-
-            // Due Side: Check for refixation first as it might override the base for increment
-            if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPayDate && isWithinInterval(currentDate, { start: startOfMonth(data.toBePaid.refixedBasicPayDate), end: arrearToDate })) {
-                if(startOfMonth(currentDate) >= startOfMonth(data.toBePaid.refixedBasicPayDate)){
-                    dueBasicTracker = data.toBePaid.refixedBasicPay;
-                    dueBasicForMonth = data.toBePaid.refixedBasicPay;
-                }
-            }
+                return { newMonthlyBasic: baseBasic, newTrackerBasic: baseBasic };
+            };
             
-            // Due Side Increment
-            const dueIncrementMonthValue = parseInt(data.toBePaid.incrementMonth);
-            if (dueIncrementMonthValue === currentMonth) {
-                const baseForIncrement = dueBasicTracker;
-                let newDueBasic = baseForIncrement;
-                if (cpc === '7th') {
-                    const levelData = cpcData['7th'].payLevels.find(l => l.level === data.toBePaid.payLevel);
-                    if (levelData) {
-                        const currentBasicIndex = levelData.values.indexOf(baseForIncrement);
-                        if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
-                            newDueBasic = levelData.values[currentBasicIndex + 1];
+            const drawnIncrementResult = handleIncrement('paid', drawnBasicTracker);
+            drawnBasicForMonth = drawnIncrementResult.newMonthlyBasic;
+            drawnBasicTracker = drawnIncrementResult.newTrackerBasic;
+
+            const dueIncrementResult = handleIncrement('toBePaid', dueBasicTracker);
+            dueBasicForMonth = dueIncrementResult.newMonthlyBasic;
+            dueBasicTracker = dueIncrementResult.newTrackerBasic;
+
+            // --- PAY REFIXATION LOGIC (Due Side) ---
+            if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPayDate) {
+                const refixDate = data.toBePaid.refixedBasicPayDate;
+                if (currentDate >= startOfMonth(refixDate)) {
+                    // If the current month is after the refixation month
+                    if (currentDate > startOfMonth(refixDate)) {
+                        dueBasicForMonth = data.toBePaid.refixedBasicPay;
+                        dueBasicTracker = data.toBePaid.refixedBasicPay;
+                    } 
+                    // If the current month IS the refixation month (handle proration)
+                    else if (currentYear === refixDate.getFullYear() && currentMonth === refixDate.getMonth() + 1) {
+                        const refixDay = refixDate.getDate();
+                        const basicBeforeRefix = dueBasicForMonth; // This already includes any potential increment for the month
+                        
+                        if (refixDay > 1) {
+                            const daysBefore = refixDay - 1;
+                            const daysAfter = daysInMonth - daysBefore;
+                            dueBasicForMonth = ((basicBeforeRefix * daysBefore) + (data.toBePaid.refixedBasicPay * daysAfter)) / daysInMonth;
+                        } else {
+                            dueBasicForMonth = data.toBePaid.refixedBasicPay;
                         }
+                        dueBasicTracker = data.toBePaid.refixedBasicPay;
                     }
-                } else if (cpc === '6th') {
-                    newDueBasic = Math.round(baseForIncrement * 1.03);
                 }
-
-                if (data.toBePaid.incrementDate && data.toBePaid.incrementDate.getMonth() + 1 === currentMonth && data.toBePaid.incrementDate.getFullYear() === currentYear) {
-                    const incrementDay = data.toBePaid.incrementDate.getDate();
-                     if (incrementDay > 1) {
-                       const daysBefore = incrementDay - 1;
-                       const daysAfter = daysInMonth - daysBefore;
-                       dueBasicForMonth = ((baseForIncrement * daysBefore) + (newDueBasic * daysAfter)) / daysInMonth;
-                    } else {
-                        dueBasicForMonth = newDueBasic;
-                    }
-                } else {
-                    dueBasicForMonth = newDueBasic;
-                }
-                dueBasicTracker = newDueBasic;
-            }
-
-            // --- INTRA-MONTH REFIXATION PRORATION (Due Side) ---
-            if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPayDate &&
-                currentYear === data.toBePaid.refixedBasicPayDate.getFullYear() &&
-                currentMonth === data.toBePaid.refixedBasicPayDate.getMonth() + 1)
-            {
-                const refixDay = data.toBePaid.refixedBasicPayDate.getDate();
-                if (refixDay > 1) {
-                    const daysBefore = refixDay - 1;
-                    const daysAfter = daysInMonth - daysBefore;
-                    // The basic *before* refixation is whatever was calculated including any increment for the month
-                    const basicBeforeRefix = dueBasicForMonth; 
-                    dueBasicForMonth = ((basicBeforeRefix * daysBefore) + (data.toBePaid.refixedBasicPay * daysAfter)) / daysInMonth;
-                } else {
-                     dueBasicForMonth = data.toBePaid.refixedBasicPay;
-                }
-                dueBasicTracker = data.toBePaid.refixedBasicPay;
             }
            
             const proratedDrawnBasic = drawnBasicForMonth * monthProRataFactor;
@@ -421,7 +413,8 @@ export default function Home() {
                 const prorationFactor = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fromDate, toDate);
                 if (prorationFactor === 0) return 0;
                 
-                const baseBasic = side === 'paid' ? drawnBasicTracker : dueBasicTracker;
+                const baseBasicForMonth = side === 'paid' ? drawnBasicForMonth : dueBasicForMonth;
+                const baseTrackerBasic = side === 'paid' ? drawnBasicTracker : dueBasicTracker;
                 const basePayLevel = side === 'paid' ? data.paid.payLevel : data.toBePaid.payLevel;
 
                 let rate = 0;
@@ -429,17 +422,17 @@ export default function Home() {
                 
                 switch(allowanceType) {
                     case 'hra':
-                        rate = getRateForDate(hraRates, currentDate, baseBasic);
-                        amount = (side === 'paid' ? drawnBasicForMonth : dueBasicForMonth) * (rate / 100);
+                        rate = getRateForDate(hraRates, currentDate, baseTrackerBasic);
+                        amount = baseBasicForMonth * (rate / 100);
                         break;
                     case 'npa':
                         rate = getRateForDate(npaRates, currentDate);
-                        amount = (side === 'paid' ? drawnBasicForMonth : dueBasicForMonth) * (rate / 100);
+                        amount = baseBasicForMonth * (rate / 100);
                         break;
                     case 'ta':
-                        const daRateForTa = getRateForDate(daRates, currentDate) / 100;
-                        const taBaseAmount = getRateForDate(taRates, currentDate, baseBasic, basePayLevel);
-                        amount = taBaseAmount * (1 + daRateForTa);
+                         const taBaseAmount = getRateForDate(taRates, currentDate, baseTrackerBasic, basePayLevel);
+                         const daRateForTa = getRateForDate(daRates, currentDate) / 100;
+                         amount = taBaseAmount * (1 + daRateForTa);
                         break;
                     case 'otherAllowance':
                         amount = otherAllowanceAmount;
@@ -462,14 +455,14 @@ export default function Home() {
             let drawnDA = 0;
             if (data.paid.daApplicable) {
                 const daRate = getRateForDate(daRates, currentDate);
-                const drawnBaseForDA = proratedDrawnBasic + drawnNPA;
+                const drawnBaseForDA = (drawnBasicForMonth * monthProRataFactor) + drawnNPA;
                 drawnDA = drawnBaseForDA * (daRate / 100);
             }
             
             let dueDA = 0;
             if (data.toBePaid.daApplicable) {
                 const daRate = getRateForDate(daRates, currentDate);
-                const dueBaseForDA = proratedDueBasic + dueNPA;
+                const dueBaseForDA = (dueBasicForMonth * monthProRataFactor) + dueNPA;
                 dueDA = dueBaseForDA * (daRate / 100);
             }
 
@@ -603,7 +596,7 @@ export default function Home() {
               </FormControl>
           </PopoverTrigger>
           <PopoverContent className="w-auto p-0" align="start">
-              <Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus={field.value} captionLayout="dropdown-buttons" fromYear={1990} toYear={2050} {...calendarProps} />
+              <Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus={field.value ? field.value : new Date()} captionLayout="dropdown-buttons" fromYear={1990} toYear={2050} {...calendarProps} />
           </PopoverContent>
       </Popover>
   );
@@ -677,7 +670,6 @@ export default function Home() {
                     <FormLabel>Increment Month</FormLabel>
                     <Select onValueChange={(value) => {
                         field.onChange(value);
-                        // Reset date if month changes
                         form.setValue(`${type}.incrementDate`, undefined);
                     }} value={field.value}>
                       <FormControl><SelectTrigger><SelectValue placeholder="Select a month" /></SelectTrigger></FormControl>
@@ -688,7 +680,7 @@ export default function Home() {
                 )} />
                 <FormField control={form.control} name={`${type}.incrementDate`} render={({ field }) => (
                   <FormItem className="flex flex-col">
-                      <FormLabel>Increment Date (Optional)</FormLabel>
+                      <FormLabel>Date of next Increment (Optional)</FormLabel>
                       <FormDateInput field={field} label="Prorate Date" calendarProps={calendarProps} />
                       <FormMessage />
                   </FormItem>
