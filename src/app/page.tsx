@@ -86,10 +86,18 @@ const salaryComponentSchema = z.object({
   payLevel: z.string({ required_error: "Pay Level is required." }),
   daApplicable: z.boolean().default(false),
   hraApplicable: z.boolean().default(false),
+  hraFromDate: z.date().optional(),
+  hraToDate: z.date().optional(),
   npaApplicable: z.boolean().default(false),
+  npaFromDate: z.date().optional(),
+  npaToDate: z.date().optional(),
   taApplicable: z.boolean().default(false),
+  taFromDate: z.date().optional(),
+  taToDate: z.date().optional(),
   otherAllowanceName: z.string().optional(),
   otherAllowance: z.coerce.number().min(0).optional().default(0),
+  otherAllowanceFromDate: z.date().optional(),
+  otherAllowanceToDate: z.date().optional(),
 });
 
 const formSchema = z.object({
@@ -193,6 +201,9 @@ export default function Home() {
   });
 
   const cpc = form.watch("cpc");
+  const paidWatch = form.watch("paid");
+  const toBePaidWatch = form.watch("toBePaid");
+
   const payLevels = cpc ? cpcData[cpc].payLevels.map(pl => ({ value: pl.level, label: cpc === '6th' ? `GP ${pl.gradePay} (${pl.payBand})` : `Level ${pl.level}`})) : [];
 
   const getRateForDate = (rates: Rate[], date: Date, basicPay?: number) => {
@@ -215,6 +226,18 @@ export default function Home() {
     window.print();
   };
   
+  const isDateInRange = (date: Date, fromDate?: Date, toDate?: Date) => {
+    if (!fromDate && !toDate) return true; // No range specified, so it's always applicable
+    const checkDate = startOfMonth(date);
+    const start = fromDate ? startOfMonth(fromDate) : null;
+    const end = toDate ? endOfMonth(toDate) : null;
+    
+    if (start && end) return checkDate >= start && checkDate <= end;
+    if (start) return checkDate >= start;
+    if (end) return checkDate <= end;
+    return true;
+  };
+
   const onSubmit = (data: ArrearFormData) => {
     try {
       const rows: StatementRow[] = [];
@@ -274,21 +297,29 @@ export default function Home() {
         const proratedDrawnBasic = drawnBasicTracker * proRataFactor;
         const proratedDueBasic = dueBasicTracker * proRataFactor;
         
-        const drawnHraRate = data.paid.hraApplicable ? getRateForDate(hraRates, currentDate, drawnBasicTracker) : 0;
-        const drawnNpaRate = data.paid.npaApplicable ? getRateForDate(npaRates, currentDate) : 0;
-        const drawnTaAmount = data.paid.taApplicable ? getRateForDate(taRates, currentDate, drawnBasicTracker) * proRataFactor : 0;
-        const drawnOtherAmount = (data.paid.otherAllowance || 0) * proRataFactor;
+        const drawnHraApplicable = data.paid.hraApplicable && isDateInRange(currentDate, data.paid.hraFromDate, data.paid.hraToDate);
+        const drawnNpaApplicable = data.paid.npaApplicable && isDateInRange(currentDate, data.paid.npaFromDate, data.paid.npaToDate);
+        const drawnTaApplicable = data.paid.taApplicable && isDateInRange(currentDate, data.paid.taFromDate, data.paid.taToDate);
+        const drawnOtherApplicable = (data.paid.otherAllowance || 0) > 0 && isDateInRange(currentDate, data.paid.otherAllowanceFromDate, data.paid.otherAllowanceToDate);
 
-        const dueHraRate = data.toBePaid.hraApplicable ? getRateForDate(hraRates, currentDate, dueBasicTracker) : 0;
-        const dueNpaRate = data.toBePaid.npaApplicable ? getRateForDate(npaRates, currentDate) : 0;
-        const dueTaAmount = data.toBePaid.taApplicable ? getRateForDate(taRates, currentDate, dueBasicTracker) * proRataFactor : 0;
-        const dueOtherAmount = (data.toBePaid.otherAllowance || 0) * proRataFactor;
+        const dueHraApplicable = data.toBePaid.hraApplicable && isDateInRange(currentDate, data.toBePaid.hraFromDate, data.toBePaid.hraToDate);
+        const dueNpaApplicable = data.toBePaid.npaApplicable && isDateInRange(currentDate, data.toBePaid.npaFromDate, data.toBePaid.npaToDate);
+        const dueTaApplicable = data.toBePaid.taApplicable && isDateInRange(currentDate, data.toBePaid.taFromDate, data.toBePaid.taToDate);
+        const dueOtherApplicable = (data.toBePaid.otherAllowance || 0) > 0 && isDateInRange(currentDate, data.toBePaid.otherAllowanceFromDate, data.toBePaid.otherAllowanceToDate);
 
-        // Calculate NPA first as it affects DA
+        const drawnHraRate = drawnHraApplicable ? getRateForDate(hraRates, currentDate, drawnBasicTracker) : 0;
+        const drawnNpaRate = drawnNpaApplicable ? getRateForDate(npaRates, currentDate) : 0;
+        const drawnTaAmount = drawnTaApplicable ? getRateForDate(taRates, currentDate, drawnBasicTracker) * proRataFactor : 0;
+        const drawnOtherAmount = drawnOtherApplicable ? (data.paid.otherAllowance || 0) * proRataFactor : 0;
+
+        const dueHraRate = dueHraApplicable ? getRateForDate(hraRates, currentDate, dueBasicTracker) : 0;
+        const dueNpaRate = dueNpaApplicable ? getRateForDate(npaRates, currentDate) : 0;
+        const dueTaAmount = dueTaApplicable ? getRateForDate(taRates, currentDate, dueBasicTracker) * proRataFactor : 0;
+        const dueOtherAmount = dueOtherApplicable ? (data.toBePaid.otherAllowance || 0) * proRataFactor : 0;
+
         const drawnNPA = proratedDrawnBasic * (drawnNpaRate / 100);
         const dueNPA = proratedDueBasic * (dueNpaRate / 100);
 
-        // Calculate DA base
         const drawnDaRate = data.paid.daApplicable ? getRateForDate(daRates, currentDate) : 0;
         const drawnDaBase = data.paid.npaApplicable ? proratedDrawnBasic + drawnNPA : proratedDrawnBasic;
         const drawnDA = drawnDaBase * (drawnDaRate / 100);
@@ -297,7 +328,6 @@ export default function Home() {
         const dueDaBase = data.toBePaid.npaApplicable ? proratedDueBasic + dueNPA : proratedDueBasic;
         const dueDA = dueDaBase * (dueDaRate / 100);
 
-        // Calculate other allowances
         const drawnHRA = proratedDrawnBasic * (drawnHraRate / 100);
         const dueHRA = proratedDueBasic * (dueHraRate / 100);
 
@@ -421,78 +451,12 @@ export default function Home() {
     }
   }
 
-
-  const renderSalaryFields = (type: "paid" | "toBePaid") => (
-    <div className="space-y-4">
-       <FormField control={form.control} name={`${type}.payLevel`} render={({ field }) => (
-        <FormItem>
-            <FormLabel>Pay Level</FormLabel>
-            <Select onValueChange={field.onChange} value={field.value} disabled={!cpc}>
-                <FormControl><SelectTrigger><SelectValue placeholder={cpc ? "Select a level" : "Select CPC first"} /></SelectTrigger></FormControl>
-                <SelectContent>
-                {payLevels.map(level => <SelectItem key={level.value} value={level.value}>{level.label}</SelectItem>)}
-                </SelectContent>
-            </Select>
-            <FormMessage />
-        </FormItem>
-       )} />
-      <FormField control={form.control} name={`${type}.basicPay`} render={({ field }) => (
-        <FormItem>
-          <FormLabel>Basic Pay</FormLabel>
-          <FormControl><Input type="number" placeholder="e.g., 50000" {...field} /></FormControl>
-          <FormMessage />
-        </FormItem>
-      )} />
-      <div className="space-y-4 rounded-md border p-4">
-          <h4 className="font-medium">Applicable Allowances</h4>
-          <FormField control={form.control} name={`${type}.daApplicable`} render={({ field }) => (
-            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                <FormLabel className="font-normal">DA (Dearness Allowance)</FormLabel>
-            </FormItem>
-          )} />
-          <FormField control={form.control} name={`${type}.hraApplicable`} render={({ field }) => (
-            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                <FormLabel className="font-normal">HRA (House Rent Allowance)</FormLabel>
-            </FormItem>
-          )} />
-          <FormField control={form.control} name={`${type}.npaApplicable`} render={({ field }) => (
-            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                <FormLabel className="font-normal">NPA (Non-Practicing Allowance)</FormLabel>
-            </FormItem>
-          )} />
-          <FormField control={form.control} name={`${type}.taApplicable`} render={({ field }) => (
-            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                <FormLabel className="font-normal">TA (Transport Allowance)</FormLabel>
-            </FormItem>
-          )} />
-      </div>
-       <FormField control={form.control} name={`${type}.otherAllowanceName`} render={({ field }) => (
-        <FormItem>
-            <FormLabel>Other Allowance Name</FormLabel>
-            <FormControl><Input placeholder="e.g., Special Duty Allowance" {...field} /></FormControl>
-            <FormMessage />
-        </FormItem>
-        )} />
-      <FormField control={form.control} name={`${type}.otherAllowance`} render={({ field }) => (
-        <FormItem>
-          <FormLabel>Other Allowance Amount</FormLabel>
-          <FormControl><Input type="number" placeholder="e.g., 1500" {...field} /></FormControl>
-          <FormMessage />
-        </FormItem>
-      )} />
-    </div>
-  );
-
-  const FormDateInput = ({ field }: { field: any }) => (
+  const FormDateInput = ({ field, label }: { field: any, label?: string }) => (
       <Popover>
           <PopoverTrigger asChild>
               <FormControl>
                   <Button variant={"outline"} className={cn("w-full pl-3 text-left font-normal", !field.value && "text-muted-foreground")}>
-                      {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
+                      {field.value ? format(field.value, "PPP") : <span>{label || 'Pick a date'}</span>}
                       <CalendarDays className="ml-auto h-4 w-4 opacity-50" />
                   </Button>
               </FormControl>
@@ -502,6 +466,111 @@ export default function Home() {
           </PopoverContent>
       </Popover>
   );
+
+  const AllowanceField = ({ type, name, label, watchValues }: { type: 'paid' | 'toBePaid', name: 'hra' | 'npa' | 'ta' | 'otherAllowance', label: string, watchValues: any }) => (
+    <>
+      <FormField
+        control={form.control}
+        name={`${type}.${name}Applicable`}
+        render={({ field }) => (
+          <FormItem className="flex flex-row items-center space-x-3 space-y-0">
+            <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+            <FormLabel className="font-normal">{label}</FormLabel>
+          </FormItem>
+        )}
+      />
+      {watchValues[`${name}Applicable`] && (
+        <div className="grid grid-cols-2 gap-2 pl-7 pt-2">
+            <FormField
+              control={form.control}
+              name={`${type}.${name}FromDate`}
+              render={({ field }) => (
+                <FormItem><FormDateInput field={field} label="From Date"/></FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name={`${type}.${name}ToDate`}
+              render={({ field }) => (
+                <FormItem><FormDateInput field={field} label="To Date" /></FormItem>
+              )}
+            />
+        </div>
+      )}
+    </>
+  );
+
+  const renderSalaryFields = (type: "paid" | "toBePaid") => {
+      const currentWatchValues = type === 'paid' ? paidWatch : toBePaidWatch;
+      return (
+        <div className="space-y-4">
+           <FormField control={form.control} name={`${type}.payLevel`} render={({ field }) => (
+            <FormItem>
+                <FormLabel>Pay Level</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value} disabled={!cpc}>
+                    <FormControl><SelectTrigger><SelectValue placeholder={cpc ? "Select a level" : "Select CPC first"} /></SelectTrigger></FormControl>
+                    <SelectContent>
+                    {payLevels.map(level => <SelectItem key={level.value} value={level.value}>{level.label}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+                <FormMessage />
+            </FormItem>
+           )} />
+          <FormField control={form.control} name={`${type}.basicPay`} render={({ field }) => (
+            <FormItem>
+              <FormLabel>Basic Pay</FormLabel>
+              <FormControl><Input type="number" placeholder="e.g., 50000" {...field} /></FormControl>
+              <FormMessage />
+            </FormItem>
+          )} />
+          <div className="space-y-4 rounded-md border p-4">
+              <h4 className="font-medium">Applicable Allowances</h4>
+              <FormField control={form.control} name={`${type}.daApplicable`} render={({ field }) => (
+                <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                    <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                    <FormLabel className="font-normal">DA (Dearness Allowance)</FormLabel>
+                </FormItem>
+              )} />
+              <AllowanceField type={type} name="hra" label="HRA (House Rent Allowance)" watchValues={currentWatchValues}/>
+              <AllowanceField type={type} name="npa" label="NPA (Non-Practicing Allowance)" watchValues={currentWatchValues}/>
+              <AllowanceField type={type} name="ta" label="TA (Transport Allowance)" watchValues={currentWatchValues}/>
+
+          </div>
+           <FormField control={form.control} name={`${type}.otherAllowanceName`} render={({ field }) => (
+            <FormItem>
+                <FormLabel>Other Allowance Name</FormLabel>
+                <FormControl><Input placeholder="e.g., Special Duty Allowance" {...field} /></FormControl>
+                <FormMessage />
+            </FormItem>
+            )} />
+          <FormField control={form.control} name={`${type}.otherAllowance`} render={({ field }) => (
+            <FormItem>
+              <FormLabel>Other Allowance Amount</FormLabel>
+              <FormControl><Input type="number" placeholder="e.g., 1500" {...field} /></FormControl>
+              <FormMessage />
+            </FormItem>
+          )} />
+          {currentWatchValues.otherAllowance > 0 && (
+            <div className="grid grid-cols-2 gap-2 pt-2">
+                <FormField
+                  control={form.control}
+                  name={`${type}.otherAllowanceFromDate`}
+                  render={({ field }) => (
+                    <FormItem><FormDateInput field={field} label="From Date"/></FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name={`${type}.otherAllowanceToDate`}
+                  render={({ field }) => (
+                    <FormItem><FormDateInput field={field} label="To Date" /></FormItem>
+                  )}
+                />
+            </div>
+          )}
+        </div>
+      );
+  }
 
   return (
     <div className="min-h-screen bg-background">
