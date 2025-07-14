@@ -277,27 +277,27 @@ export default function Home() {
 
   const processFirestoreDataRecursive = (data: any): any => {
     if (!data) return data;
+
     if (Array.isArray(data)) {
         return data.map(item => processFirestoreDataRecursive(item));
     }
-    if (typeof data === 'object') {
-        // Check for Firestore Timestamp-like objects (from JSON serialization)
-        if (data.seconds !== undefined && data.nanoseconds !== undefined) {
-             try {
-                return new Timestamp(data.seconds, data.nanoseconds).toDate();
-             } catch (e) {
-                return data; // Not a valid timestamp, return as is
-             }
+    
+    // Check for Firestore Timestamp objects (from server) or serialized objects (from local)
+    if (typeof data === 'object' && (data instanceof Timestamp || (data.seconds !== undefined && data.nanoseconds !== undefined))) {
+        try {
+            return data instanceof Timestamp ? data.toDate() : new Timestamp(data.seconds, data.nanoseconds).toDate();
+        } catch (e) {
+            return data; // Not a valid timestamp, return as is
         }
-        // Check for actual Firestore Timestamp objects
-        if (data instanceof Timestamp) {
-            return data.toDate();
-        }
-        // Check for ISO date strings
-        if (typeof data === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/.test(data)) {
-            return new Date(data);
-        }
+    }
+    
+    // Check for ISO date strings
+    if (typeof data === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/.test(data)) {
+        const d = new Date(data);
+        if(!isNaN(d.getTime())) return d;
+    }
 
+    if (typeof data === 'object') {
         const newObj: { [key: string]: any } = {};
         for (const key in data) {
             if (Object.prototype.hasOwnProperty.call(data, key)) {
@@ -306,6 +306,7 @@ export default function Home() {
         }
         return newObj;
     }
+
     return data;
   };
 
@@ -527,6 +528,8 @@ export default function Home() {
                 let newBasicTracker = currentBasic;
             
                 const sideData = data[side];
+                if (!sideData.incrementMonth) return [newBasicForMonth, newBasicTracker];
+
                 const incrementMonthValue = parseInt(sideData.incrementMonth, 10);
                 const firstIncrementDate = sideData.incrementDate;
 
@@ -549,7 +552,7 @@ export default function Home() {
 
                 if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd })) {
                     let incrementedBasicValue: number;
-                    if (sideData.cpc === '7th') {
+                    if (sideData.cpc === '7th' && sideData.payLevel) {
                         const levelData = cpcData['7th'].payLevels.find(l => l.level === sideData.payLevel);
                         if (levelData) {
                             const currentBasicIndex = levelData.values.indexOf(newBasicTracker);
@@ -561,7 +564,7 @@ export default function Home() {
                         } else {
                             incrementedBasicValue = newBasicTracker;
                         }
-                    } else { // 6th CPC
+                    } else { // 6th CPC or if level not found
                         incrementedBasicValue = Math.round(newBasicTracker * 1.03);
                     }
             
@@ -823,8 +826,11 @@ export default function Home() {
     if (!statement || !loadedStatementId) return;
     setIsLoading(true);
 
+    const sanitizedEmployeeInfo = sanitizeForFirebase(statement.employeeInfo);
+    
     const docToUpdate = {
         ...statement,
+        employeeInfo: sanitizedEmployeeInfo,
         id: loadedStatementId,
         savedAt: new Date().toISOString(), // Update timestamp
     };
@@ -838,7 +844,7 @@ export default function Home() {
     if (isOnline && dbConfigured && db) {
         try {
             const docRef = doc(db, FIRESTORE_STATEMENTS_COLLECTION, loadedStatementId);
-            await updateDoc(docRef, sanitizeForFirebase(docToUpdate));
+            await updateDoc(docRef, docToUpdate);
              // Mark as not local anymore
             const finalLocalStatements = getLocalStatements().map(s => s.id === loadedStatementId ? { ...docToUpdate, isLocal: false } : s);
             saveLocalStatements(finalLocalStatements);
@@ -1429,3 +1435,5 @@ export default function Home() {
   );
 }
 
+
+    
