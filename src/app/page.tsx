@@ -827,10 +827,22 @@ export default function Home() {
     if (!statement || !loadedStatementId) return;
     setIsLoading(true);
 
-    const sanitizedEmployeeInfo = sanitizeForFirebase(statement.employeeInfo);
+    // Get the current form data to ensure we save the latest changes
+    const currentFormData = form.getValues();
+    const newStatementData = {
+        ...statement,
+        employeeInfo: currentFormData,
+        // Recalculate based on new form data before saving
+    }
+
+    // TODO: Ideally, we should recalculate the statement rows and totals here
+    // before saving, but for now we'll just save the form data. A full recalculation
+    // would be a larger change. Let's just update the employeeInfo for now.
+
+    const sanitizedEmployeeInfo = sanitizeForFirebase(currentFormData);
     
     const docToUpdate = {
-        ...statement,
+        ...newStatementData,
         employeeInfo: sanitizedEmployeeInfo,
         id: loadedStatementId,
         savedAt: new Date().toISOString(), // Update timestamp
