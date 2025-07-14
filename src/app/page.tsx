@@ -151,13 +151,15 @@ type StatementTotals = {
   difference: number;
 };
 
+type EmployeeInfo = Partial<ArrearFormData>;
+
 type SavedStatement = {
   id: string; // This will be doc ID from firestore or a UUID for local
   isLocal?: boolean;
   savedAt: string; // Keep as ISO string for simplicity across environments
   rows: StatementRow[];
   totals: StatementTotals;
-  employeeInfo: Partial<ArrearFormData>;
+  employeeInfo: EmployeeInfo;
 };
 
 const INCREMENT_MONTHS = [
@@ -170,7 +172,7 @@ const LOCALSTORAGE_STATEMENTS_KEY = "arrearEase_savedStatements";
 
 
 export default function Home() {
-  const [statement, setStatement] = React.useState<Omit<SavedStatement, 'id' | 'savedAt'> | null>(null);
+  const [statement, setStatement] = React.useState<Omit<SavedStatement, 'id' | 'savedAt' | 'isLocal'> | null>(null);
   const [savedStatements, setSavedStatements] = React.useState<SavedStatement[]>([]);
   const [isLoadDialogOpen, setLoadDialogOpen] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
@@ -260,13 +262,36 @@ export default function Home() {
             const serverStatements: SavedStatement[] = [];
             querySnapshot.forEach((docSnap) => {
                 const data = docSnap.data();
-                const employeeInfo = { ...data.employeeInfo };
-                if (employeeInfo.fromDate && employeeInfo.fromDate.toDate) {
+                
+                const employeeInfo: EmployeeInfo = { ...data.employeeInfo };
+                if (employeeInfo.fromDate && (employeeInfo.fromDate as any).toDate) {
                   employeeInfo.fromDate = (employeeInfo.fromDate as Timestamp).toDate();
                 }
-                if (employeeInfo.toDate && employeeInfo.toDate.toDate) {
+                if (employeeInfo.toDate && (employeeInfo.toDate as any).toDate) {
                   employeeInfo.toDate = (employeeInfo.toDate as Timestamp).toDate();
                 }
+
+                const processSide = (side: 'paid' | 'toBePaid') => {
+                    if (!employeeInfo[side]) return;
+                    const sideData = employeeInfo[side]!;
+
+                    const dateFields: (keyof typeof sideData)[] = [
+                      'hraFromDate', 'hraToDate', 
+                      'npaFromDate', 'npaToDate', 
+                      'taFromDate', 'taToDate',
+                      'otherAllowanceFromDate', 'otherAllowanceToDate',
+                      'incrementDate', 'refixedBasicPayDate'
+                    ];
+
+                    dateFields.forEach(field => {
+                        const dateVal = sideData[field] as any;
+                        if(dateVal && dateVal.toDate) {
+                          (sideData as any)[field] = dateVal.toDate();
+                        }
+                    });
+                };
+                processSide('paid');
+                processSide('toBePaid');
 
                 let savedAtISO = '';
                 if (data.savedAt?.toDate) { // It's a Firestore Timestamp
@@ -276,7 +301,6 @@ export default function Home() {
                 } else if (data.savedAt?.seconds) { // It's a serialized Timestamp-like object
                      savedAtISO = new Date(data.savedAt.seconds * 1000).toISOString();
                 }
-
 
                 serverStatements.push({
                     id: docSnap.id,
@@ -537,7 +561,7 @@ export default function Home() {
                     if (refixDay > 1) {
                         const daysBefore = refixDay - 1;
                         const daysAfter = daysInMonth - daysBefore;
-                        finalDueBasicForMonth = ((basicBeforeRefix * daysBefore) + (data.toBePaid.refixedBasicPay * daysAfter)) / daysInMonth;
+                        finalDueBasicForMonth = ((basicBeforeRefix * daysAfter) + (data.toBePaid.refixedBasicPay * daysBefore)) / daysInMonth;
                     } else {
                         finalDueBasicForMonth = data.toBePaid.refixedBasicPay;
                     }
@@ -557,9 +581,9 @@ export default function Home() {
             
             const getProratedAmount = (allowanceType: 'hra' | 'npa' | 'ta' | 'otherAllowance', side: 'paid' | 'toBePaid') => {
                 const sideData = data[side];
-                const isApplicable = sideData[`${allowanceType}Applicable`];
-                const fromDate = sideData[`${allowanceType}FromDate`];
-                const toDate = sideData[`${allowanceType}ToDate`];
+                const isApplicable = (sideData as any)[`${allowanceType}Applicable`];
+                const fromDate = (sideData as any)[`${allowanceType}FromDate`];
+                const toDate = (sideData as any)[`${allowanceType}ToDate`];
                 const otherAllowanceAmount = sideData.otherAllowance || 0;
 
                 if (allowanceType !== 'otherAllowance' && !isApplicable) return 0;
@@ -682,15 +706,7 @@ export default function Home() {
         setStatement({
             rows,
             totals,
-            employeeInfo: {
-                employeeName: data.employeeName,
-                designation: data.designation,
-                employeeId: data.employeeId,
-                department: data.department,
-                payFixationRef: data.payFixationRef,
-                fromDate: data.fromDate,
-                toDate: data.toDate,
-            }
+            employeeInfo: data
         });
         toast({
             title: "Calculation Complete",
@@ -757,22 +773,52 @@ export default function Home() {
   };
   
   const loadStatement = (statementToLoad: SavedStatement) => {
-     const sanitizedStatement = {
-         ...statementToLoad,
-         employeeInfo: {
-             ...statementToLoad.employeeInfo,
-             fromDate: statementToLoad.employeeInfo.fromDate ? new Date(statementToLoad.employeeInfo.fromDate) : undefined,
-             toDate: statementToLoad.employeeInfo.toDate ? new Date(statementToLoad.employeeInfo.toDate) : undefined,
-         }
-     }
-     setStatement(sanitizedStatement);
-     setLoadDialogOpen(false);
-     toast({
-        title: "Statement Loaded",
-        description: `Loaded arrear for ${statementToLoad.employeeInfo.employeeName}.`
-     });
-     setTimeout(() => {
-        document.getElementById("statement-section")?.scrollIntoView({ behavior: 'smooth' });
+      const { employeeInfo, ...restOfStatement } = statementToLoad;
+
+      const sanitizedEmployeeInfo = { ...employeeInfo };
+
+      // Make sure all date objects are actual Date objects
+      const dateFields: (keyof EmployeeInfo)[] = ['fromDate', 'toDate'];
+      dateFields.forEach(field => {
+          if (sanitizedEmployeeInfo[field]) {
+              sanitizedEmployeeInfo[field] = new Date(sanitizedEmployeeInfo[field] as any);
+          }
+      });
+      
+      const processSideDates = (side: 'paid' | 'toBePaid') => {
+        if (!sanitizedEmployeeInfo[side]) return;
+        const sideData = sanitizedEmployeeInfo[side] as any;
+        const sideDateFields = [
+            'hraFromDate', 'hraToDate', 'npaFromDate', 'npaToDate', 
+            'taFromDate', 'taToDate', 'otherAllowanceFromDate', 
+            'otherAllowanceToDate', 'incrementDate', 'refixedBasicPayDate'
+        ];
+        sideDateFields.forEach(field => {
+            if (sideData[field]) {
+                sideData[field] = new Date(sideData[field]);
+            }
+        });
+      };
+      
+      processSideDates('paid');
+      processSideDates('toBePaid');
+
+      // Reset the form with the loaded data
+      form.reset(sanitizedEmployeeInfo);
+
+      // Set the statement for rendering the results table
+      setStatement({
+          ...restOfStatement,
+          employeeInfo: sanitizedEmployeeInfo,
+      });
+
+      setLoadDialogOpen(false);
+      toast({
+          title: "Statement Loaded",
+          description: `Loaded arrear for ${statementToLoad.employeeInfo.employeeName}.`
+      });
+      setTimeout(() => {
+          document.getElementById("statement-section")?.scrollIntoView({ behavior: 'smooth' });
       }, 100);
   }
 
