@@ -260,9 +260,14 @@ export default function Home() {
             const serverStatements: SavedStatement[] = [];
             querySnapshot.forEach((docSnap) => {
                 const data = docSnap.data();
-                const employeeInfo = data.employeeInfo;
-                if (employeeInfo.fromDate) employeeInfo.fromDate = (employeeInfo.fromDate as Timestamp).toDate();
-                if (employeeInfo.toDate) employeeInfo.toDate = (employeeInfo.toDate as Timestamp).toDate();
+                const employeeInfo = { ...data.employeeInfo };
+                if (employeeInfo.fromDate && employeeInfo.fromDate.toDate) {
+                  employeeInfo.fromDate = (employeeInfo.fromDate as Timestamp).toDate();
+                }
+                if (employeeInfo.toDate && employeeInfo.toDate.toDate) {
+                  employeeInfo.toDate = (employeeInfo.toDate as Timestamp).toDate();
+                }
+
                 serverStatements.push({
                     id: docSnap.id,
                     savedAt: new Date(data.savedAt.seconds * 1000).toISOString(),
