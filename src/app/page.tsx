@@ -172,6 +172,24 @@ const INCREMENT_MONTHS = [
 const FIRESTORE_STATEMENTS_COLLECTION = "savedStatements";
 const LOCALSTORAGE_STATEMENTS_KEY = "arrearEase_savedStatements";
 
+const sanitizeForFirebase = (obj: any): any => {
+    if (obj === null || typeof obj !== 'object') {
+        return obj;
+    }
+
+    if (Array.isArray(obj)) {
+        return obj.map(item => sanitizeForFirebase(item));
+    }
+
+    const newObj: { [key: string]: any } = {};
+    for (const key in obj) {
+        if (obj[key] !== undefined) {
+            newObj[key] = sanitizeForFirebase(obj[key]);
+        }
+    }
+    return newObj;
+};
+
 
 export default function Home() {
   const [statement, setStatement] = React.useState<Omit<SavedStatement, 'id' | 'savedAt' | 'isLocal'> | null>(null);
@@ -198,6 +216,7 @@ export default function Home() {
   
   const getLocalStatements = (): SavedStatement[] => {
     try {
+      if (typeof window === 'undefined') return [];
       const localData = localStorage.getItem(LOCALSTORAGE_STATEMENTS_KEY);
       return localData ? JSON.parse(localData) : [];
     } catch (error) {
@@ -208,6 +227,7 @@ export default function Home() {
 
   const saveLocalStatements = (statements: SavedStatement[]) => {
     try {
+       if (typeof window === 'undefined') return;
       localStorage.setItem(LOCALSTORAGE_STATEMENTS_KEY, JSON.stringify(statements));
     } catch(error) {
        console.error("Failed to save local statements:", error);
@@ -229,7 +249,7 @@ export default function Home() {
         localOnly.forEach(stmt => {
           const { isLocal, ...serverStmt } = stmt; // remove isLocal flag
           const docRef = doc(db, FIRESTORE_STATEMENTS_COLLECTION, stmt.id);
-          batch.set(docRef, serverStmt);
+          batch.set(docRef, sanitizeForFirebase(serverStmt));
           syncedIds.add(stmt.id);
         });
         await batch.commit();
@@ -764,7 +784,7 @@ export default function Home() {
 
     if (isOnline && dbConfigured && db) {
         try {
-            await setDoc(doc(db, FIRESTORE_STATEMENTS_COLLECTION, docId), docToSave);
+            await setDoc(doc(db, FIRESTORE_STATEMENTS_COLLECTION, docId), sanitizeForFirebase(docToSave));
             
             // Update local copy to remove isLocal flag
             const updatedLocalStatements = getLocalStatements().map(s => s.id === docId ? { ...s, isLocal: false } : s);
@@ -813,7 +833,7 @@ export default function Home() {
     if (isOnline && dbConfigured && db) {
         try {
             const docRef = doc(db, FIRESTORE_STATEMENTS_COLLECTION, loadedStatementId);
-            await updateDoc(docRef, docToUpdate);
+            await updateDoc(docRef, sanitizeForFirebase(docToUpdate));
             toast({
                 title: "Arrear Updated",
                 description: "The statement has been updated successfully.",
@@ -872,10 +892,12 @@ export default function Home() {
       const processDateFields = (data: any) => {
           if (!data) return data;
           for (const key in data) {
-              if (typeof data[key] === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(data[key])) {
-                  data[key] = new Date(data[key]);
-              } else if (typeof data[key] === 'object' && data[key] !== null) {
-                  processDateFields(data[key]);
+              if(Object.prototype.hasOwnProperty.call(data, key)) {
+                if (typeof data[key] === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(data[key])) {
+                    data[key] = new Date(data[key]);
+                } else if (typeof data[key] === 'object' && data[key] !== null) {
+                    processDateFields(data[key]);
+                }
               }
           }
           return data;
@@ -956,7 +978,7 @@ export default function Home() {
       </Popover>
   );
 
-  const AllowanceField = ({ type, name, label, watchValues }: { type: 'paid' | 'toBePaid', name: 'hra' | 'npa' | 'otherAllowance', label: string, watchValues: any }) => (
+  const AllowanceField = ({ type, name, label, watchValues }: { type: 'paid' | 'toBePaid', name: 'hra' | 'npa', label: string, watchValues: any }) => (
     <>
       <FormField
         control={form.control}
@@ -1216,7 +1238,7 @@ export default function Home() {
                                                 {s.isLocal && <TooltipProvider><Tooltip><TooltipTrigger asChild><span className="inline-block mr-2"><CloudUpload className="h-4 w-4 text-muted-foreground"/></span></TooltipTrigger><TooltipContent><p>Saved locally. Will sync when online.</p></TooltipContent></Tooltip></TooltipProvider>}
                                                 {s.employeeInfo.employeeName} <span className="text-muted-foreground">({s.employeeInfo.employeeId})</span>
                                             </TableCell>
-                                            <TableCell className="hidden sm:table-cell">{format(new Date(s.savedAt), "PPP p")}</TableCell>
+                                            <TableCell className="hidden sm:table-cell">{s.savedAt ? format(new Date(s.savedAt), "PPP p") : 'N/A'}</TableCell>
                                             <TableCell className="text-right">
                                                 <Button size="sm" onClick={() => loadStatement(s)} className="mr-2" disabled={isLoading}>Load</Button>
                                                 <Button size="sm" variant="destructive" onClick={() => deleteStatement(s.id, s.isLocal)} disabled={isLoading}><Trash2 className="h-4 w-4"/></Button>
@@ -1406,5 +1428,3 @@ export default function Home() {
     </div>
   );
 }
-
-    
