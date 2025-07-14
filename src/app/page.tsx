@@ -89,6 +89,7 @@ import { cpcData } from "@/lib/cpc-data";
 import { Rate, useRates } from "@/context/rates-context";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Switch } from "@/components/ui/switch";
 
 const salaryComponentSchema = z.object({
   cpc: z.enum(["6th", "7th"], { required_error: "CPC selection is required." }),
@@ -96,21 +97,43 @@ const salaryComponentSchema = z.object({
   payLevel: z.string({ required_error: "Pay Level is required." }),
   incrementMonth: z.string({ required_error: "Increment month is required." }),
   incrementDate: z.date().optional(),
+  
   daApplicable: z.boolean().default(false),
+  daFixedRateApplicable: z.boolean().default(false),
+  daFixedRate: z.coerce.number().min(0).optional(),
+  daFixedRateFromDate: z.date().optional(),
+  daFixedRateToDate: z.date().optional(),
+
   hraApplicable: z.boolean().default(false),
   hraFromDate: z.date().optional(),
   hraToDate: z.date().optional(),
+  hraFixedRateApplicable: z.boolean().default(false),
+  hraFixedRate: z.coerce.number().min(0).optional(),
+  hraFixedRateFromDate: z.date().optional(),
+  hraFixedRateToDate: z.date().optional(),
+
   npaApplicable: z.boolean().default(false),
   npaFromDate: z.date().optional(),
   npaToDate: z.date().optional(),
+  
   taApplicable: z.boolean().default(false),
   doubleTaApplicable: z.boolean().default(false),
   taFromDate: z.date().optional(),
   taToDate: z.date().optional(),
+  taFixedRateApplicable: z.boolean().default(false),
+  taFixedRate: z.coerce.number().min(0).optional(),
+  taFixedRateFromDate: z.date().optional(),
+  taFixedRateToDate: z.date().optional(),
+
   otherAllowanceName: z.string().optional(),
   otherAllowance: z.coerce.number().min(0).optional().default(0),
   otherAllowanceFromDate: z.date().optional(),
   otherAllowanceToDate: z.date().optional(),
+  otherAllowanceFixedRateApplicable: z.boolean().default(false),
+  otherAllowanceFixedRate: z.coerce.number().min(0).optional(),
+  otherAllowanceFixedRateFromDate: z.date().optional(),
+  otherAllowanceFixedRateToDate: z.date().optional(),
+  
   refixedBasicPay: z.coerce.number().min(0).optional(),
   refixedBasicPayDate: z.date().optional(),
 });
@@ -403,12 +426,16 @@ export default function Home() {
         payLevel: undefined,
         incrementMonth: undefined,
         daApplicable: false,
+        daFixedRateApplicable: false,
         hraApplicable: false,
+        hraFixedRateApplicable: false,
         npaApplicable: false,
         taApplicable: false,
         doubleTaApplicable: false,
+        taFixedRateApplicable: false,
         otherAllowance: '' as any,
         otherAllowanceName: "",
+        otherAllowanceFixedRateApplicable: false,
       },
       toBePaid: {
         cpc: undefined,
@@ -416,12 +443,16 @@ export default function Home() {
         payLevel: undefined,
         incrementMonth: undefined,
         daApplicable: false,
+        daFixedRateApplicable: false,
         hraApplicable: false,
+        hraFixedRateApplicable: false,
         npaApplicable: false,
         taApplicable: false,
         doubleTaApplicable: false,
+        taFixedRateApplicable: false,
         otherAllowance: '' as any,
         otherAllowanceName: "",
+        otherAllowanceFixedRateApplicable: false,
         refixedBasicPay: '' as any,
       },
     },
@@ -624,13 +655,27 @@ export default function Home() {
                 const fromDate = (sideData as any)[`${allowanceType}FromDate`];
                 const toDate = (sideData as any)[`${allowanceType}ToDate`];
                 const otherAllowanceAmount = sideData.otherAllowance || 0;
+                
+                const isFixedRate = (sideData as any)[`${allowanceType}FixedRateApplicable`];
+                const fixedRate = (sideData as any)[`${allowanceType}FixedRate`];
+                const fixedFrom = (sideData as any)[`${allowanceType}FixedRateFromDate`];
+                const fixedTo = (sideData as any)[`${allowanceType}FixedRateToDate`];
 
                 if (allowanceType !== 'otherAllowance' && !isApplicable) return 0;
-                if (allowanceType === 'otherAllowance' && otherAllowanceAmount <= 0) return 0;
+                if (allowanceType === 'otherAllowance' && otherAllowanceAmount <= 0 && (!isFixedRate || !fixedRate)) return 0;
                 
-                const prorationFactor = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fromDate, toDate);
+                let prorationFactor = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fromDate, toDate);
+                
+                let useFixedRateForThisMonth = false;
+                if(isFixedRate && fixedRate > 0 && fixedFrom && fixedTo){
+                    if(isWithinInterval(currentDate, { start: fixedFrom, end: fixedTo })) {
+                        useFixedRateForThisMonth = true;
+                        prorationFactor = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fixedFrom, fixedTo);
+                    }
+                }
+                
                 if (prorationFactor === 0) return 0;
-                
+
                 const baseBasicForMonth = side === 'paid' ? drawnBasicForMonth : finalDueBasicForMonth;
                 const baseTrackerBasic = side === 'paid' ? drawnBasicTracker : dueBasicTracker;
                 const basePayLevel = side === 'paid' ? data.paid.payLevel : data.toBePaid.payLevel;
@@ -639,17 +684,21 @@ export default function Home() {
                 
                 switch(allowanceType) {
                     case 'hra': {
-                        const rateDetails = getRateForDate(hraRates, currentDate, baseTrackerBasic);
-                        if (!rateDetails) return 0;
-                        const rate = rateDetails.rate;
-                        let hraAmount = baseBasicForMonth * (rate / 100);
-                        
-                        if (rateDetails.minAmount && rateDetails.minAmount > 0) {
-                             const daysInCurrentMonth = getDaysInMonth(currentDate);
-                             const proratedMinHRA = (rateDetails.minAmount / daysInCurrentMonth) * (daysInCurrentMonth * prorationFactor);
-                             hraAmount = Math.max(hraAmount, proratedMinHRA);
+                        if (useFixedRateForThisMonth) {
+                             amount = baseBasicForMonth * (fixedRate / 100);
+                        } else {
+                            const rateDetails = getRateForDate(hraRates, currentDate, baseTrackerBasic);
+                            if (!rateDetails) return 0;
+                            const rate = rateDetails.rate;
+                            let hraAmount = baseBasicForMonth * (rate / 100);
+                            
+                            if (rateDetails.minAmount && rateDetails.minAmount > 0) {
+                                const daysInCurrentMonth = getDaysInMonth(currentDate);
+                                const proratedMinHRA = (rateDetails.minAmount / daysInCurrentMonth) * (daysInCurrentMonth * prorationFactor);
+                                hraAmount = Math.max(hraAmount, proratedMinHRA);
+                            }
+                            amount = hraAmount;
                         }
-                        amount = hraAmount;
                         break;
                     }
                     case 'npa': {
@@ -660,19 +709,23 @@ export default function Home() {
                         break;
                     }
                     case 'ta': {
-                         const rateDetails = getRateForDate(taRates, currentDate, baseTrackerBasic, basePayLevel);
-                         if (!rateDetails) return 0;
-                         const taBaseAmount = rateDetails.rate;
-                         const daRateDetails = getRateForDate(daRates, currentDate);
-                         const daRateForTa = daRateDetails ? daRateDetails.rate / 100 : 0;
-                         amount = taBaseAmount * (1 + daRateForTa);
+                         if (useFixedRateForThisMonth) {
+                             amount = fixedRate;
+                         } else {
+                            const rateDetails = getRateForDate(taRates, currentDate, baseTrackerBasic, basePayLevel);
+                            if (!rateDetails) return 0;
+                            const taBaseAmount = rateDetails.rate;
+                            const daRateDetails = getRateForDate(daRates, currentDate);
+                            const daRateForTa = daRateDetails ? daRateDetails.rate / 100 : 0;
+                            amount = taBaseAmount * (1 + daRateForTa);
+                         }
                          if(sideData.doubleTaApplicable) {
                              amount *= 2;
                          }
                         break;
                     }
                     case 'otherAllowance':
-                        amount = otherAllowanceAmount;
+                        amount = useFixedRateForThisMonth ? fixedRate : otherAllowanceAmount;
                         break;
                 }
                 return amount * prorationFactor;
@@ -690,17 +743,61 @@ export default function Home() {
 
             let drawnDA = 0;
             if (data.paid.daApplicable) {
-                const daRateDetails = getRateForDate(daRates, currentDate);
-                const daRate = daRateDetails ? daRateDetails.rate : 0;
-                const drawnBaseForDA = proratedDrawnBasic + drawnNPA;
+                const isFixedRate = data.paid.daFixedRateApplicable;
+                const fixedRate = data.paid.daFixedRate;
+                const fixedFrom = data.paid.daFixedRateFromDate;
+                const fixedTo = data.paid.daFixedRateToDate;
+                
+                let useFixedRateForThisMonth = false;
+                if(isFixedRate && fixedRate && fixedRate > 0 && fixedFrom && fixedTo){
+                    if(isWithinInterval(currentDate, { start: fixedFrom, end: fixedTo })) {
+                        useFixedRateForThisMonth = true;
+                    }
+                }
+                
+                let daRate = 0;
+                if (useFixedRateForThisMonth) {
+                    daRate = fixedRate!;
+                } else {
+                    const daRateDetails = getRateForDate(daRates, currentDate);
+                    daRate = daRateDetails ? daRateDetails.rate : 0;
+                }
+                
+                const prorationFactor = useFixedRateForThisMonth 
+                    ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fixedFrom, fixedTo)
+                    : monthProRataFactor;
+
+                const drawnBaseForDA = (drawnBasicForMonth * prorationFactor) + drawnNPA;
                 drawnDA = drawnBaseForDA * (daRate / 100);
             }
             
             let dueDA = 0;
             if (data.toBePaid.daApplicable) {
-                const daRateDetails = getRateForDate(daRates, currentDate);
-                const daRate = daRateDetails ? daRateDetails.rate : 0;
-                const dueBaseForDA = proratedDueBasic + dueNPA;
+                const isFixedRate = data.toBePaid.daFixedRateApplicable;
+                const fixedRate = data.toBePaid.daFixedRate;
+                const fixedFrom = data.toBePaid.daFixedRateFromDate;
+                const fixedTo = data.toBePaid.daFixedRateToDate;
+                
+                let useFixedRateForThisMonth = false;
+                if(isFixedRate && fixedRate && fixedRate > 0 && fixedFrom && fixedTo){
+                    if(isWithinInterval(currentDate, { start: fixedFrom, end: fixedTo })) {
+                        useFixedRateForThisMonth = true;
+                    }
+                }
+                
+                let daRate = 0;
+                if (useFixedRateForThisMonth) {
+                    daRate = fixedRate!;
+                } else {
+                    const daRateDetails = getRateForDate(daRates, currentDate);
+                    daRate = daRateDetails ? daRateDetails.rate : 0;
+                }
+                
+                 const prorationFactor = useFixedRateForThisMonth 
+                    ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fixedFrom, fixedTo)
+                    : monthProRataFactor;
+                
+                const dueBaseForDA = (finalDueBasicForMonth * prorationFactor) + dueNPA;
                 dueDA = dueBaseForDA * (daRate / 100);
             }
 
@@ -1051,6 +1148,52 @@ export default function Home() {
       )}
     </>
   );
+  
+  const FixedRateFields = ({ type, name, isAmount, watchValues }: { type: 'paid' | 'toBePaid', name: 'da' | 'hra' | 'ta' | 'otherAllowance', isAmount?: boolean, watchValues: any }) => (
+    <div className="space-y-4 rounded-md border p-4 bg-muted/20 mt-4">
+        <FormField
+            control={form.control}
+            name={`${type}.${name}FixedRateApplicable`}
+            render={({ field }) => (
+            <FormItem className="flex flex-row items-center justify-between">
+                <FormLabel>Override with Fixed Rate</FormLabel>
+                <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+            </FormItem>
+            )}
+        />
+        {watchValues?.[`${name}FixedRateApplicable`] && (
+            <div className="space-y-4 pt-2">
+                <FormField
+                    control={form.control}
+                    name={`${type}.${name}FixedRate`}
+                    render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>Fixed {isAmount ? 'Amount' : 'Rate (%)'}</FormLabel>
+                        <FormControl><Input type="number" placeholder={isAmount ? "e.g., 3600" : "e.g., 10"} {...field} value={field.value ?? ''} /></FormControl>
+                        <FormMessage />
+                    </FormItem>
+                    )}
+                />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                     <FormField
+                        control={form.control}
+                        name={`${type}.${name}FixedRateFromDate`}
+                        render={({ field }) => (
+                            <FormItem><FormDateInput field={field} label="From Date"/></FormItem>
+                        )}
+                        />
+                        <FormField
+                        control={form.control}
+                        name={`${type}.${name}FixedRateToDate`}
+                        render={({ field }) => (
+                            <FormItem><FormDateInput field={field} label="To Date" /></FormItem>
+                        )}
+                        />
+                </div>
+            </div>
+        )}
+    </div>
+  );
 
   const renderSalaryFields = (type: "paid" | "toBePaid") => {
       const currentWatchValues = type === 'paid' ? paidWatch : toBePaidWatch;
@@ -1148,16 +1291,24 @@ export default function Home() {
           )}
           <div className="space-y-4 rounded-md border p-4">
               <h4 className="font-medium">Applicable Allowances</h4>
-              <FormField control={form.control} name={`${type}.daApplicable`} render={({ field }) => (
-                <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                    <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                    <FormLabel className="font-normal">DA (Dearness Allowance)</FormLabel>
-                </FormItem>
-              )} />
-              <AllowanceField type={type} name="hra" label="HRA (House Rent Allowance)" watchValues={currentWatchValues}/>
+              <div className="space-y-2">
+                <FormField control={form.control} name={`${type}.daApplicable`} render={({ field }) => (
+                  <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                      <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                      <FormLabel className="font-normal">DA (Dearness Allowance)</FormLabel>
+                  </FormItem>
+                )} />
+                {currentWatchValues?.daApplicable && <FixedRateFields type={type} name="da" watchValues={currentWatchValues} />}
+              </div>
+             
+              <div className="space-y-2">
+                <AllowanceField type={type} name="hra" label="HRA (House Rent Allowance)" watchValues={currentWatchValues}/>
+                {currentWatchValues?.hraApplicable && <FixedRateFields type={type} name="hra" watchValues={currentWatchValues} />}
+              </div>
+
               <AllowanceField type={type} name="npa" label="NPA (Non-Practicing Allowance)" watchValues={currentWatchValues}/>
               
-              <div>
+              <div className="space-y-2">
                 <FormField
                     control={form.control}
                     name={`${type}.taApplicable`}
@@ -1196,43 +1347,47 @@ export default function Home() {
                             )}
                             />
                         </div>
+                        <FixedRateFields type={type} name="ta" isAmount watchValues={currentWatchValues} />
                     </div>
                 )}
               </div>
-
           </div>
-           <FormField control={form.control} name={`${type}.otherAllowanceName`} render={({ field }) => (
-            <FormItem>
-                <FormLabel>Other Allowance Name</FormLabel>
-                <FormControl><Input placeholder="e.g., Special Duty Allowance" {...field} /></FormControl>
-                <FormMessage />
-            </FormItem>
-            )} />
-          <FormField control={form.control} name={`${type}.otherAllowance`} render={({ field }) => (
-            <FormItem>
-              <FormLabel>Other Allowance Amount</FormLabel>
-              <FormControl><Input type="number" placeholder="e.g., 1500" {...field} value={field.value ?? ''} /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
-          {currentWatchValues?.otherAllowance > 0 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
-                <FormField
-                  control={form.control}
-                  name={`${type}.otherAllowanceFromDate`}
-                  render={({ field }) => (
-                    <FormItem><FormDateInput field={field} label="From Date"/></FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name={`${type}.otherAllowanceToDate`}
-                  render={({ field }) => (
-                    <FormItem><FormDateInput field={field} label="To Date" /></FormItem>
-                  )}
-                />
-            </div>
-          )}
+          <div className="space-y-2 rounded-md border p-4">
+              <h4 className="font-medium">Other Allowance</h4>
+              <FormField control={form.control} name={`${type}.otherAllowanceName`} render={({ field }) => (
+                <FormItem>
+                    <FormLabel>Other Allowance Name</FormLabel>
+                    <FormControl><Input placeholder="e.g., Special Duty Allowance" {...field} /></FormControl>
+                    <FormMessage />
+                </FormItem>
+                )} />
+              <FormField control={form.control} name={`${type}.otherAllowance`} render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Other Allowance Amount</FormLabel>
+                  <FormControl><Input type="number" placeholder="e.g., 1500" {...field} value={field.value ?? ''} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              {currentWatchValues?.otherAllowance > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
+                    <FormField
+                      control={form.control}
+                      name={`${type}.otherAllowanceFromDate`}
+                      render={({ field }) => (
+                        <FormItem><FormDateInput field={field} label="From Date"/></FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name={`${type}.otherAllowanceToDate`}
+                      render={({ field }) => (
+                        <FormItem><FormDateInput field={field} label="To Date" /></FormItem>
+                      )}
+                    />
+                </div>
+              )}
+               <FixedRateFields type={type} name="otherAllowance" isAmount watchValues={currentWatchValues} />
+          </div>
         </div>
       );
   }
@@ -1475,3 +1630,5 @@ export default function Home() {
     </div>
   );
 }
+
+    
