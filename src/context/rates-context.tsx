@@ -105,18 +105,15 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
   const loadRates = useCallback(async () => {
     const localRatesData = getLocalRates();
 
-    if (dbConfigured && db) { // No longer checking isOnline, relying on persistence
+    if (dbConfigured && db) {
         try {
             const ratesDocRef = doc(db, FIRESTORE_RATES_COLLECTION_ID, FIRESTORE_RATES_DOC_ID);
             const docSnap = await getDoc(ratesDocRef);
             if (docSnap.exists()) {
                 const firestoreData = parseAllRateTypes(docSnap.data());
                 setAllRates(firestoreData);
-
-                // If local data exists but is different, sync it (Firestore is source of truth)
-                if (localRatesData && !isEqual(localRatesData, firestoreData)) {
-                    localStorage.setItem(LOCALSTORAGE_RATES_KEY, JSON.stringify(firestoreData));
-                }
+                // Sync to local storage to ensure it's up-to-date
+                localStorage.setItem(LOCALSTORAGE_RATES_KEY, JSON.stringify(firestoreData));
             } else if (localRatesData) {
                 // Firestore is empty, but we have local data, so sync it up.
                 await setDoc(ratesDocRef, localRatesData);
@@ -125,6 +122,9 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
             }
         } catch(error) {
             console.error("Could not load or sync rates from Firestore, falling back to local:", error);
+            if (error instanceof Error && (error as any).code === 'unavailable') {
+              toast({ title: "Offline Mode", description: "Using locally saved rate data."})
+            }
             if(localRatesData) setAllRates(localRatesData); // Fallback to local on error
         }
     } else { // No DB configured, use local only
@@ -148,7 +148,7 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
       console.error("Could not save rates to localStorage:", error);
     }
     
-    if (dbConfigured && db) {
+    if (dbConfigured && db && isOnline) {
         try {
             const ratesDocRef = doc(db, FIRESTORE_RATES_COLLECTION_ID, FIRESTORE_RATES_DOC_ID);
             await setDoc(ratesDocRef, dataToSave, { merge: true });
@@ -161,7 +161,7 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
             });
         }
     }
-  }, [isLoaded, daRates, hraRates, npaRates, taRates, dbConfigured, toast]);
+  }, [isLoaded, daRates, hraRates, npaRates, taRates, dbConfigured, toast, isOnline]);
   
   useEffect(() => {
     // Debounced save for any changes

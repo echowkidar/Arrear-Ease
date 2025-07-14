@@ -13,7 +13,7 @@ const firebaseConfig = {
 
 // Function to check if Firebase is configured
 export const isFirebaseConfigured = () => {
-    return firebaseConfig.apiKey && firebaseConfig.projectId;
+    return !!firebaseConfig.apiKey && !!firebaseConfig.projectId;
 };
 
 // Initialize Firebase only if it's configured
@@ -26,6 +26,7 @@ if (db) {
       .catch((err) => {
         if (err.code == 'failed-precondition') {
           // Multiple tabs open, persistence can only be enabled in one.
+          // Silently fail, or log if you want.
           console.warn("Firebase persistence failed: multiple tabs open.");
         } else if (err.code == 'unimplemented') {
           // The current browser does not support all of the
