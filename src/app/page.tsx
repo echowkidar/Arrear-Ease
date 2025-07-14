@@ -23,9 +23,11 @@ import {
   Wifi,
   WifiOff,
   CloudUpload,
+  Copy,
+  Edit,
 } from "lucide-react";
 import { db, isFirebaseConfigured } from "@/lib/firebase";
-import { collection, addDoc, getDocs, doc, deleteDoc, Timestamp, writeBatch, setDoc } from "firebase/firestore";
+import { collection, addDoc, getDocs, doc, deleteDoc, Timestamp, writeBatch, setDoc, updateDoc } from "firebase/firestore";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -178,6 +180,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = React.useState(false);
   const [isOnline, setIsOnline] = React.useState(true);
   const [dbConfigured] = React.useState(isFirebaseConfigured());
+  const [loadedStatementId, setLoadedStatementId] = React.useState<string | null>(null);
 
   const { toast } = useToast();
   const { daRates, hraRates, npaRates, taRates } = useRates();
@@ -266,9 +269,14 @@ export default function Home() {
                 const employeeInfo: EmployeeInfo = { ...data.employeeInfo };
                 if (employeeInfo.fromDate && (employeeInfo.fromDate as any).toDate) {
                   employeeInfo.fromDate = (employeeInfo.fromDate as Timestamp).toDate();
+                } else if(typeof employeeInfo.fromDate === 'string') {
+                  employeeInfo.fromDate = new Date(employeeInfo.fromDate);
                 }
+
                 if (employeeInfo.toDate && (employeeInfo.toDate as any).toDate) {
                   employeeInfo.toDate = (employeeInfo.toDate as Timestamp).toDate();
+                } else if(typeof employeeInfo.toDate === 'string') {
+                  employeeInfo.toDate = new Date(employeeInfo.toDate);
                 }
 
                 const processSide = (side: 'paid' | 'toBePaid') => {
@@ -285,8 +293,10 @@ export default function Home() {
 
                     dateFields.forEach(field => {
                         const dateVal = sideData[field] as any;
-                        if(dateVal && dateVal.toDate) {
+                        if(dateVal && dateVal.toDate) { // Is firestore timestamp
                           (sideData as any)[field] = dateVal.toDate();
+                        } else if (dateVal && typeof dateVal === 'string') { // Is ISO string
+                          (sideData as any)[field] = new Date(dateVal);
                         }
                     });
                 };
@@ -726,6 +736,16 @@ export default function Home() {
     }
   };
   
+  const handleSaveOrUpdate = async () => {
+    if (!statement) return;
+
+    if (loadedStatementId) {
+      await updateStatement();
+    } else {
+      await saveStatement();
+    }
+  }
+
   const saveStatement = async () => {
     if (!statement) return;
     setIsLoading(true);
@@ -751,6 +771,7 @@ export default function Home() {
             saveLocalStatements(updatedLocalStatements);
             setSavedStatements(prev => prev.map(s => s.id === docId ? { ...s, isLocal: false } : s));
 
+            setLoadedStatementId(docId); // Set the loaded ID to enable "Update"
             toast({
                 title: "Arrear Saved",
                 description: "The statement has been saved to your browser and the database.",
@@ -763,6 +784,7 @@ export default function Home() {
             });
         }
     } else {
+        setLoadedStatementId(docId); // Set the loaded ID to enable "Update"
         toast({
             title: "Saved Locally",
             description: "The statement has been saved to your browser. It will sync to the database when online.",
@@ -772,45 +794,102 @@ export default function Home() {
     setIsLoading(false);
   };
   
+  const updateStatement = async () => {
+    if (!statement || !loadedStatementId) return;
+    setIsLoading(true);
+
+    const docToUpdate = {
+        ...statement,
+        id: loadedStatementId,
+        savedAt: new Date().toISOString(), // Update timestamp
+    };
+
+    // Update local storage first
+    const localStatements = getLocalStatements();
+    const updatedLocalStatements = localStatements.map(s => s.id === loadedStatementId ? { ...docToUpdate, isLocal: s.isLocal } : s);
+    saveLocalStatements(updatedLocalStatements);
+    setSavedStatements(updatedLocalStatements.sort((a,b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()));
+
+    if (isOnline && dbConfigured && db) {
+        try {
+            const docRef = doc(db, FIRESTORE_STATEMENTS_COLLECTION, loadedStatementId);
+            await updateDoc(docRef, docToUpdate);
+            toast({
+                title: "Arrear Updated",
+                description: "The statement has been updated successfully.",
+            });
+        } catch (error) {
+            console.error("Failed to update statement in Firestore:", error);
+            toast({
+                variant: "destructive",
+                title: "Update Failed",
+                description: "Could not update in database, but saved locally.",
+            });
+        }
+    } else {
+        toast({
+            title: "Updated Locally",
+            description: "Your changes have been saved to your browser and will sync when online.",
+        });
+    }
+
+    setIsLoading(false);
+  }
+  
+  const handleCopy = () => {
+    if (!statement) return;
+
+    // Clear employee-specific fields
+    form.setValue("employeeId", "");
+    form.setValue("employeeName", "");
+    
+    // Clear the loaded statement ID to ensure this saves as a new document
+    setLoadedStatementId(null);
+
+    // Keep the statement visible for reference, but indicate it's a new copy
+    setStatement(prev => prev ? {
+      ...prev,
+      employeeInfo: {
+        ...prev.employeeInfo,
+        employeeId: "",
+        employeeName: "",
+      }
+    } : null);
+    
+    toast({
+        title: "Arrear Copied",
+        description: "Statement data copied. Enter new employee details and save as a new arrear.",
+    });
+
+    document.getElementById("employee-details-card")?.scrollIntoView({ behavior: 'smooth' });
+  }
+
   const loadStatement = (statementToLoad: SavedStatement) => {
       const { employeeInfo, ...restOfStatement } = statementToLoad;
-
-      const sanitizedEmployeeInfo: Partial<ArrearFormData> = { ...employeeInfo };
-
-      // Make sure all top-level date objects are actual Date objects
-      const dateFields: (keyof EmployeeInfo)[] = ['fromDate', 'toDate'];
-      dateFields.forEach(field => {
-          if (sanitizedEmployeeInfo[field]) {
-              sanitizedEmployeeInfo[field] = new Date(sanitizedEmployeeInfo[field] as any);
-          }
-      });
       
-      const processSideDates = (side: 'paid' | 'toBePaid') => {
-        if (!sanitizedEmployeeInfo[side]) return;
-        const sideData = sanitizedEmployeeInfo[side] as any;
-        const sideDateFields = [
-            'hraFromDate', 'hraToDate', 'npaFromDate', 'npaToDate', 
-            'taFromDate', 'taToDate', 'otherAllowanceFromDate', 
-            'otherAllowanceToDate', 'incrementDate', 'refixedBasicPayDate'
-        ];
-        sideDateFields.forEach(field => {
-            if (sideData[field] && !(sideData[field] instanceof Date)) {
-                sideData[field] = new Date(sideData[field]);
-            }
-        });
+      const sanitizedEmployeeInfo: ArrearFormData = { ...form.getValues(), ...employeeInfo };
+
+      const processDateFields = (data: any) => {
+          if (!data) return data;
+          for (const key in data) {
+              if (typeof data[key] === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(data[key])) {
+                  data[key] = new Date(data[key]);
+              } else if (typeof data[key] === 'object' && data[key] !== null) {
+                  processDateFields(data[key]);
+              }
+          }
+          return data;
       };
       
-      processSideDates('paid');
-      processSideDates('toBePaid');
+      const fullyProcessedInfo = processDateFields(sanitizedEmployeeInfo);
 
-      // Reset the form with the loaded data
-      form.reset(sanitizedEmployeeInfo as ArrearFormData);
+      form.reset(fullyProcessedInfo);
 
-      // Set the statement for rendering the results table
       setStatement({
           ...restOfStatement,
-          employeeInfo: sanitizedEmployeeInfo,
+          employeeInfo: fullyProcessedInfo,
       });
+      setLoadedStatementId(statementToLoad.id);
 
       setLoadDialogOpen(false);
       toast({
@@ -851,6 +930,12 @@ export default function Home() {
         });
     }
 
+    if (loadedStatementId === id) {
+        setLoadedStatementId(null);
+        setStatement(null);
+        form.reset();
+    }
+
     await fetchSavedStatements(); // Refresh list
     setIsLoading(false);
   }
@@ -883,7 +968,7 @@ export default function Home() {
           </FormItem>
         )}
       />
-      {watchValues[`${name}Applicable`] && (
+      {watchValues?.[`${name}Applicable`] && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-7 pt-2">
             <FormField
               control={form.control}
@@ -1001,7 +1086,7 @@ export default function Home() {
                     </FormItem>
                     )}
                 />
-                {currentWatchValues.taApplicable && (
+                {currentWatchValues?.taApplicable && (
                     <div className="space-y-2 pl-7 pt-2">
                         <FormField
                             control={form.control}
@@ -1048,7 +1133,7 @@ export default function Home() {
               <FormMessage />
             </FormItem>
           )} />
-          {currentWatchValues.otherAllowance > 0 && (
+          {currentWatchValues?.otherAllowance > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
                 <FormField
                   control={form.control}
@@ -1157,7 +1242,7 @@ export default function Home() {
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8 no-print">
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
               <div className="lg:col-span-2 space-y-8">
-                <Card>
+                <Card id="employee-details-card">
                   <CardHeader><CardTitle className="flex items-center gap-2"><User /> Employee Details</CardTitle></CardHeader>
                   <CardContent className="space-y-4">
                     <FormField control={form.control} name="employeeId" render={({ field }) => ( <FormItem> <FormLabel>Employee ID</FormLabel> <FormControl><Input placeholder="Employee ID" {...field} /></FormControl> <FormMessage /> </FormItem> )} />
@@ -1196,8 +1281,8 @@ export default function Home() {
                   <CardContent>
                     <Tabs defaultValue="toBePaid" className="w-full">
                       <TabsList className="grid w-full grid-cols-2">
-                        <TabsTrigger value="paid">Drawn (Previous)</TabsTrigger>
-                        <TabsTrigger value="toBePaid">Due (Revised)</TabsTrigger>
+                        <TabsTrigger value="paid">Already Paid</TabsTrigger>
+                        <TabsTrigger value="toBePaid">To be Paid</TabsTrigger>
                       </TabsList>
                       <TabsContent value="paid" className="mt-4">{renderSalaryFields("paid")}</TabsContent>
                       <TabsContent value="toBePaid" className="mt-4">{renderSalaryFields("toBePaid")}</TabsContent>
@@ -1231,10 +1316,15 @@ export default function Home() {
                    </CardDescription>
                 </div>
                 <div className="flex flex-wrap gap-2 no-print">
-                   <Button onClick={saveStatement} variant="outline" disabled={isLoading}>
-                      {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                      Save Arrear
+                   <Button onClick={handleSaveOrUpdate} variant="outline" disabled={isLoading}>
+                      {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (loadedStatementId ? <Edit className="mr-2 h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />)}
+                      {loadedStatementId ? "Update Arrear" : "Save Arrear"}
                    </Button>
+                   {loadedStatementId && (
+                     <Button onClick={handleCopy} variant="outline" disabled={isLoading}>
+                        <Copy className="mr-2 h-4 w-4" /> Copy Arrear
+                     </Button>
+                   )}
                    <Button onClick={handlePrint} variant="outline">
                      <Download className="mr-2 h-4 w-4" /> Download PDF
                    </Button>
@@ -1316,3 +1406,5 @@ export default function Home() {
     </div>
   );
 }
+
+    
