@@ -275,12 +275,45 @@ export default function Home() {
       setIsLoading(false);
   };
 
+  const processFirestoreDataRecursive = (data: any): any => {
+    if (!data) return data;
+    if (Array.isArray(data)) {
+        return data.map(item => processFirestoreDataRecursive(item));
+    }
+    if (typeof data === 'object') {
+        // Check for Firestore Timestamp-like objects (from JSON serialization)
+        if (data.seconds !== undefined && data.nanoseconds !== undefined) {
+             try {
+                return new Timestamp(data.seconds, data.nanoseconds).toDate();
+             } catch (e) {
+                return data; // Not a valid timestamp, return as is
+             }
+        }
+        // Check for actual Firestore Timestamp objects
+        if (data instanceof Timestamp) {
+            return data.toDate();
+        }
+        // Check for ISO date strings
+        if (typeof data === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/.test(data)) {
+            return new Date(data);
+        }
+
+        const newObj: { [key: string]: any } = {};
+        for (const key in data) {
+            if (Object.prototype.hasOwnProperty.call(data, key)) {
+                newObj[key] = processFirestoreDataRecursive(data[key]);
+            }
+        }
+        return newObj;
+    }
+    return data;
+  };
+
 
   const fetchSavedStatements = async () => {
     setIsLoading(true);
     let allStatements: SavedStatement[] = [];
     
-    // Always load local statements first for offline availability
     const localStatements = getLocalStatements();
     allStatements.push(...localStatements);
 
@@ -291,40 +324,22 @@ export default function Home() {
             querySnapshot.forEach((docSnap) => {
                 const data = docSnap.data();
                 
-                const employeeInfo: EmployeeInfo = { ...data.employeeInfo };
+                const processedData = processFirestoreDataRecursive(data);
+                const { employeeInfo, ...restOfData } = processedData;
 
-                const processDateFieldsRecursive = (obj: any): any => {
-                    if (!obj) return obj;
-                    for (const key in obj) {
-                        if (Object.prototype.hasOwnProperty.call(obj, key)) {
-                            const value = obj[key];
-                            if (value && typeof value === 'object' && 'toDate' in value && typeof value.toDate === 'function') {
-                                obj[key] = value.toDate();
-                            } else if (typeof value === 'object' && value !== null) {
-                                processDateFieldsRecursive(value);
-                            }
-                        }
-                    }
-                    return obj;
-                };
-
-                const processedEmployeeInfo = processDateFieldsRecursive(employeeInfo);
-                
                 let savedAtISO = '';
-                if (data.savedAt?.toDate) { // It's a Firestore Timestamp
-                    savedAtISO = data.savedAt.toDate().toISOString();
-                } else if (typeof data.savedAt === 'string') { // It's an ISO string
-                    savedAtISO = data.savedAt;
-                } else if (data.savedAt?.seconds) { // It's a serialized Timestamp-like object
-                     savedAtISO = new Date(data.savedAt.seconds * 1000).toISOString();
+                if (processedData.savedAt instanceof Date) {
+                    savedAtISO = processedData.savedAt.toISOString();
+                } else if (typeof processedData.savedAt === 'string') {
+                    savedAtISO = processedData.savedAt;
                 }
 
                 serverStatements.push({
                     id: docSnap.id,
                     savedAt: savedAtISO,
-                    rows: data.rows,
-                    totals: data.totals,
-                    employeeInfo: processedEmployeeInfo,
+                    rows: restOfData.rows,
+                    totals: restOfData.totals,
+                    employeeInfo: employeeInfo,
                     isLocal: false
                 });
             });
@@ -882,27 +897,9 @@ export default function Home() {
   const loadStatement = (statementToLoad: SavedStatement) => {
     const { employeeInfo, ...restOfStatement } = statementToLoad;
     
-    const processDateFieldsRecursive = (obj: any): any => {
-        if (!obj) return obj;
-        const newObj = Array.isArray(obj) ? [] : {};
-        for (const key in obj) {
-            if (Object.prototype.hasOwnProperty.call(obj, key)) {
-                const value = obj[key];
-                if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(value)) {
-                    (newObj as any)[key] = new Date(value);
-                } else if (value && typeof value === 'object') {
-                    (newObj as any)[key] = processDateFieldsRecursive(value);
-                } else {
-                    (newObj as any)[key] = value;
-                }
-            }
-        }
-        return newObj;
-    };
-
-    const fullyProcessedInfo = processDateFieldsRecursive(employeeInfo);
+    const fullyProcessedInfo = processFirestoreDataRecursive(employeeInfo);
     
-    form.reset(fullyProcessedInfo);
+    form.reset(fullyProcessedInfo as ArrearFormData);
 
     setStatement({
         ...restOfStatement,
