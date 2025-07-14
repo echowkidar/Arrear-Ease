@@ -268,9 +268,19 @@ export default function Home() {
                   employeeInfo.toDate = (employeeInfo.toDate as Timestamp).toDate();
                 }
 
+                let savedAtISO = '';
+                if (data.savedAt?.toDate) { // It's a Firestore Timestamp
+                    savedAtISO = data.savedAt.toDate().toISOString();
+                } else if (typeof data.savedAt === 'string') { // It's an ISO string
+                    savedAtISO = data.savedAt;
+                } else if (data.savedAt?.seconds) { // It's a serialized Timestamp-like object
+                     savedAtISO = new Date(data.savedAt.seconds * 1000).toISOString();
+                }
+
+
                 serverStatements.push({
                     id: docSnap.id,
-                    savedAt: new Date(data.savedAt.seconds * 1000).toISOString(),
+                    savedAt: savedAtISO,
                     rows: data.rows,
                     totals: data.totals,
                     employeeInfo,
