@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -8,6 +9,7 @@ import { cn } from "@/lib/utils"
 import { buttonVariants } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./select"
 import { ScrollArea } from "./scroll-area"
+import { Separator } from "./separator"
 
 export type CalendarProps = React.ComponentProps<typeof DayPicker>
 
@@ -54,6 +56,7 @@ function Calendar({
         day_range_middle:
           "aria-selected:bg-accent aria-selected:text-accent-foreground",
         day_hidden: "invisible",
+        footer: "pt-2 mt-2 border-t",
         ...classNames,
       }}
       components={{

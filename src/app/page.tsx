@@ -829,23 +829,16 @@ export default function Home() {
 
     // Get the current form data to ensure we save the latest changes
     const currentFormData = form.getValues();
-    const newStatementData = {
-        ...statement,
-        employeeInfo: currentFormData,
-        // Recalculate based on new form data before saving
-    }
-
-    // TODO: Ideally, we should recalculate the statement rows and totals here
-    // before saving, but for now we'll just save the form data. A full recalculation
-    // would be a larger change. Let's just update the employeeInfo for now.
-
-    const sanitizedEmployeeInfo = sanitizeForFirebase(currentFormData);
     
-    const docToUpdate = {
-        ...newStatementData,
-        employeeInfo: sanitizedEmployeeInfo,
+    // Recalculate based on new form data before saving
+    onSubmit(currentFormData); // This will update the `statement` state if successful
+    
+    const docToUpdate: Omit<SavedStatement, 'isLocal'> = {
         id: loadedStatementId,
-        savedAt: new Date().toISOString(), // Update timestamp
+        savedAt: new Date().toISOString(),
+        rows: statement.rows, // Use the newly calculated rows
+        totals: statement.totals, // Use the newly calculated totals
+        employeeInfo: currentFormData,
     };
 
     // Update local storage first
@@ -857,7 +850,7 @@ export default function Home() {
     if (isOnline && dbConfigured && db) {
         try {
             const docRef = doc(db, FIRESTORE_STATEMENTS_COLLECTION, loadedStatementId);
-            await updateDoc(docRef, docToUpdate);
+            await updateDoc(docRef, sanitizeForFirebase(docToUpdate));
              // Mark as not local anymore
             const finalLocalStatements = getLocalStatements().map(s => s.id === loadedStatementId ? { ...docToUpdate, isLocal: false } : s);
             saveLocalStatements(finalLocalStatements);
@@ -1002,7 +995,26 @@ export default function Home() {
               </FormControl>
           </PopoverTrigger>
           <PopoverContent className="w-auto p-0" align="start">
-              <Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus={field.value ? new Date(field.value) : new Date()} captionLayout="dropdown-buttons" fromYear={1990} toYear={2050} {...calendarProps} />
+              <Calendar 
+                mode="single" 
+                selected={field.value} 
+                onSelect={(date) => field.onChange(date)} 
+                initialFocus={field.value ? new Date(field.value) : undefined} 
+                defaultMonth={field.value ? new Date(field.value) : undefined}
+                captionLayout="dropdown-buttons" 
+                fromYear={1990} 
+                toYear={2050} 
+                {...calendarProps} 
+                footer={
+                  <Button
+                    variant="ghost"
+                    className="w-full"
+                    onClick={() => field.onChange(undefined)}
+                  >
+                    Clear
+                  </Button>
+                }
+              />
           </PopoverContent>
       </Popover>
   );
@@ -1463,5 +1475,3 @@ export default function Home() {
     </div>
   );
 }
-
-    
