@@ -164,17 +164,19 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
   }, [isLoaded, daRates, hraRates, npaRates, taRates, dbConfigured, toast, isOnline]);
   
   useEffect(() => {
-    // Debounced save for any changes
+    // This effect now handles saving changes, but only after initial load is complete.
+    if (!isLoaded) {
+      return;
+    }
+    
     const handler = setTimeout(() => {
-      if(isLoaded){
-        // We only save if there are actual changes
-        const localRates = getLocalRates();
-        const currentRates = { daRates, hraRates, npaRates, taRates };
-        if (!isEqual(localRates, currentRates)) {
-            saveRates();
-        }
+      // We only save if there are actual changes from what's in local storage
+      const localRates = getLocalRates();
+      const currentRates = { daRates, hraRates, npaRates, taRates };
+      if (!isEqual(localRates, currentRates)) {
+          saveRates();
       }
-    }, 1500);
+    }, 1500); // Debounce save for 1.5 seconds
 
     return () => clearTimeout(handler);
   }, [daRates, hraRates, npaRates, taRates, saveRates, isLoaded]);
