@@ -101,6 +101,7 @@ const salaryComponentSchema = z.object({
   npaFromDate: z.date().optional(),
   npaToDate: z.date().optional(),
   taApplicable: z.boolean().default(false),
+  doubleTaApplicable: z.boolean().default(false),
   taFromDate: z.date().optional(),
   taToDate: z.date().optional(),
   otherAllowanceName: z.string().optional(),
@@ -317,6 +318,7 @@ export default function Home() {
         hraApplicable: false,
         npaApplicable: false,
         taApplicable: false,
+        doubleTaApplicable: false,
         otherAllowance: '' as any,
         otherAllowanceName: "",
       },
@@ -328,6 +330,7 @@ export default function Home() {
         hraApplicable: false,
         npaApplicable: false,
         taApplicable: false,
+        doubleTaApplicable: false,
         otherAllowance: '' as any,
         otherAllowanceName: "",
         refixedBasicPay: '' as any,
@@ -418,9 +421,6 @@ export default function Home() {
         let drawnBasicTracker = data.paid.basicPay;
         let dueBasicTracker = data.toBePaid.basicPay;
         
-        const drawnIncrementYears: number[] = [];
-        const dueIncrementYears: number[] = [];
-
         for (let i = 0; i <= monthCount; i++) {
             const currentDate = addMonths(firstMonth, i);
             const currentMonth = currentDate.getMonth() + 1;
@@ -429,85 +429,69 @@ export default function Home() {
 
             const monthStart = startOfMonth(currentDate);
             const monthEnd = endOfMonth(currentDate);
-            const effectiveMonthStart = max([monthStart, arrearFromDate]);
-            const effectiveMonthEnd = min([monthEnd, arrearToDate]);
             
-            if (effectiveMonthStart > effectiveMonthEnd) continue;
-
-            const daysToCalculateForMonth = differenceInDays(effectiveMonthEnd, effectiveMonthStart) + 1;
-            const monthProRataFactor = daysToCalculateForMonth / daysInMonth;
+            if(currentDate > arrearToDate && !isWithinInterval(arrearToDate, { start: monthStart, end: monthEnd })) continue;
 
             let drawnBasicForMonth = drawnBasicTracker;
             let dueBasicForMonth = dueBasicTracker;
             
-            const handleIncrement = (side: 'paid' | 'toBePaid', currentBasic: number, appliedYears: number[]) => {
+            const handleIncrement = (side: 'paid' | 'toBePaid', currentBasic: number) => {
               const sideData = data[side];
               const incrementMonthValue = parseInt(sideData.incrementMonth, 10);
               const firstIncrementDate = sideData.incrementDate;
-              
-              let incrementTriggerDate: Date | null = null;
-              
-              // Specific date check (first time only)
-              if (firstIncrementDate && !appliedYears.includes(firstIncrementDate.getFullYear())) {
-                  if (currentYear === firstIncrementDate.getFullYear() && currentMonth === firstIncrementDate.getMonth() + 1) {
-                      incrementTriggerDate = firstIncrementDate;
-                  }
-              } 
-              // Annual generic check for subsequent years
-              else if (currentMonth === incrementMonthValue && !appliedYears.includes(currentYear)) {
-                  // Ensure we don't apply increment for a year before it's supposed to start
-                  const startYear = firstIncrementDate ? firstIncrementDate.getFullYear() : arrearFromDate.getFullYear();
-                  if (currentYear > startYear || (currentYear === startYear && !firstIncrementDate)) {
-                     incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
-                  }
-              }
 
-              if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd }) && isWithinInterval(incrementTriggerDate, { start: arrearFromDate, end: arrearToDate })) {
-                  let incrementedBasic: number;
-                  if (cpc === '7th') {
-                      const levelData = cpcData['7th'].payLevels.find(l => l.level === sideData.payLevel);
-                      if (levelData) {
-                          const currentBasicIndex = levelData.values.indexOf(currentBasic);
-                          if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
-                              incrementedBasic = levelData.values[currentBasicIndex + 1];
-                          } else {
-                              incrementedBasic = currentBasic;
-                          }
-                      } else {
-                          incrementedBasic = currentBasic;
-                      }
-                  } else {
-                      incrementedBasic = Math.round(currentBasic * 1.03);
+              let newBasic = currentBasic;
+              
+              const incrementYearStart = firstIncrementDate ? firstIncrementDate.getFullYear() : arrearFromDate.getFullYear();
+              
+              if (currentYear >= incrementYearStart) {
+                  let incrementTriggerDate: Date | null = null;
+                  
+                  if (firstIncrementDate && currentYear === firstIncrementDate.getFullYear() && currentMonth === firstIncrementDate.getMonth() + 1) {
+                      incrementTriggerDate = firstIncrementDate;
+                  } else if (currentMonth === incrementMonthValue && currentYear > incrementYearStart) {
+                      incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
+                  } else if (!firstIncrementDate && currentMonth === incrementMonthValue && (currentYear > arrearFromDate.getFullYear() || (currentYear === arrearFromDate.getFullYear() && currentMonth >= (arrearFromDate.getMonth()+1) ))){
+                      incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
                   }
-          
-                  const incrementDay = incrementTriggerDate.getDate();
-                  if (incrementDay > 1) {
-                      const daysBefore = incrementDay - 1;
-                      const daysAfter = daysInMonth - daysBefore;
-                      const proratedMonthlyBasic = ((currentBasic * daysBefore) + (incrementedBasic * daysAfter)) / daysInMonth;
-                      return { newMonthlyBasic: proratedMonthlyBasic, newTrackerBasic: incrementedBasic, incrementedThisRun: true, year: currentYear };
-                  } else {
-                      return { newMonthlyBasic: incrementedBasic, newTrackerBasic: incrementedBasic, incrementedThisRun: true, year: currentYear };
+                  
+                  if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd }) && isWithinInterval(incrementTriggerDate, { start: arrearFromDate, end: arrearToDate })) {
+                    let incrementedBasicValue: number;
+                    if (cpc === '7th') {
+                        const levelData = cpcData['7th'].payLevels.find(l => l.level === sideData.payLevel);
+                        if (levelData) {
+                            const currentBasicIndex = levelData.values.indexOf(currentBasic);
+                            if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
+                                incrementedBasicValue = levelData.values[currentBasicIndex + 1];
+                            } else {
+                                incrementedBasicValue = currentBasic;
+                            }
+                        } else {
+                            incrementedBasicValue = currentBasic;
+                        }
+                    } else {
+                        incrementedBasicValue = Math.round(currentBasic * 1.03);
+                    }
+
+                    const incrementDay = incrementTriggerDate.getDate();
+                    if (incrementDay > 1) {
+                        const daysBefore = incrementDay - 1;
+                        const daysAfter = daysInMonth - daysBefore;
+                        newBasic = ((currentBasic * daysBefore) + (incrementedBasicValue * daysAfter)) / daysInMonth;
+                    } else {
+                        newBasic = incrementedBasicValue;
+                    }
+
+                    if(side === 'paid') drawnBasicTracker = incrementedBasicValue;
+                    if(side === 'toBePaid') dueBasicTracker = incrementedBasicValue;
                   }
               }
-          
-              return { newMonthlyBasic: currentBasic, newTrackerBasic: currentBasic, incrementedThisRun: false, year: -1 };
+              return newBasic;
             };
 
-            const drawnIncrementResult = handleIncrement('paid', drawnBasicTracker, drawnIncrementYears);
-            if(drawnIncrementResult.incrementedThisRun) {
-                drawnBasicForMonth = drawnIncrementResult.newMonthlyBasic;
-                drawnBasicTracker = drawnIncrementResult.newTrackerBasic;
-                drawnIncrementYears.push(drawnIncrementResult.year);
-            }
+            drawnBasicForMonth = handleIncrement('paid', drawnBasicTracker);
+            dueBasicForMonth = handleIncrement('toBePaid', dueBasicTracker);
 
-            const dueIncrementResult = handleIncrement('toBePaid', dueBasicTracker, dueIncrementYears);
-             if(dueIncrementResult.incrementedThisRun) {
-                dueBasicForMonth = dueIncrementResult.newMonthlyBasic;
-                dueBasicTracker = dueIncrementResult.newTrackerBasic;
-                dueIncrementYears.push(dueIncrementResult.year);
-            }
-            
             if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPay > 0 && data.toBePaid.refixedBasicPayDate) {
                 const refixDate = data.toBePaid.refixedBasicPayDate;
                  if (currentDate >= startOfMonth(refixDate)) {
@@ -530,6 +514,11 @@ export default function Home() {
                 }
             }
            
+            const effectiveMonthStart = max([monthStart, arrearFromDate]);
+            const effectiveMonthEnd = min([monthEnd, arrearToDate]);
+            const daysToCalculateForMonth = differenceInDays(effectiveMonthEnd, effectiveMonthStart) + 1;
+            const monthProRataFactor = daysToCalculateForMonth / daysInMonth;
+
             const proratedDrawnBasic = drawnBasicForMonth * monthProRataFactor;
             const proratedDueBasic = dueBasicForMonth * monthProRataFactor;
             
@@ -581,6 +570,9 @@ export default function Home() {
                          const daRateDetails = getRateForDate(daRates, currentDate);
                          const daRateForTa = daRateDetails ? daRateDetails.rate / 100 : 0;
                          amount = taBaseAmount * (1 + daRateForTa);
+                         if(sideData.doubleTaApplicable) {
+                             amount *= 2;
+                         }
                         break;
                     }
                     case 'otherAllowance':
@@ -620,6 +612,8 @@ export default function Home() {
             const dueTotal = proratedDueBasic + dueDA + dueHRA + dueNPA + dueTA + dueOther;
             const difference = dueTotal - drawnTotal;
 
+            if (daysToCalculateForMonth <= 0) continue;
+            
             rows.push({
                 month: format(currentDate, "MMM yyyy"),
                 drawn: {
@@ -795,7 +789,7 @@ export default function Home() {
       </Popover>
   );
 
-  const AllowanceField = ({ type, name, label, watchValues }: { type: 'paid' | 'toBePaid', name: 'hra' | 'npa' | 'ta' | 'otherAllowance', label: string, watchValues: any }) => (
+  const AllowanceField = ({ type, name, label, watchValues }: { type: 'paid' | 'toBePaid', name: 'hra' | 'npa' | 'otherAllowance', label: string, watchValues: any }) => (
     <>
       <FormField
         control={form.control}
@@ -911,7 +905,49 @@ export default function Home() {
               )} />
               <AllowanceField type={type} name="hra" label="HRA (House Rent Allowance)" watchValues={currentWatchValues}/>
               <AllowanceField type={type} name="npa" label="NPA (Non-Practicing Allowance)" watchValues={currentWatchValues}/>
-              <AllowanceField type={type} name="ta" label="TA (Transport Allowance)" watchValues={currentWatchValues}/>
+              
+              <div>
+                <FormField
+                    control={form.control}
+                    name={`${type}.taApplicable`}
+                    render={({ field }) => (
+                    <FormItem className="flex flex-row items-center space-x-3 space-y-0">
+                        <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                        <FormLabel className="font-normal">TA (Transport Allowance)</FormLabel>
+                    </FormItem>
+                    )}
+                />
+                {currentWatchValues.taApplicable && (
+                    <div className="space-y-2 pl-7 pt-2">
+                        <FormField
+                            control={form.control}
+                            name={`${type}.doubleTaApplicable`}
+                            render={({ field }) => (
+                            <FormItem className="flex flex-row items-center space-x-3 space-y-0">
+                                <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                                <FormLabel className="font-normal">Double Transport Allowance</FormLabel>
+                            </FormItem>
+                            )}
+                        />
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <FormField
+                            control={form.control}
+                            name={`${type}.taFromDate`}
+                            render={({ field }) => (
+                                <FormItem><FormDateInput field={field} label="From Date"/></FormItem>
+                            )}
+                            />
+                            <FormField
+                            control={form.control}
+                            name={`${type}.taToDate`}
+                            render={({ field }) => (
+                                <FormItem><FormDateInput field={field} label="To Date" /></FormItem>
+                            )}
+                            />
+                        </div>
+                    </div>
+                )}
+              </div>
 
           </div>
            <FormField control={form.control} name={`${type}.otherAllowanceName`} render={({ field }) => (
@@ -1196,3 +1232,5 @@ export default function Home() {
     </div>
   );
 }
+
+    
