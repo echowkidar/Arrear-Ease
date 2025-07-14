@@ -280,37 +280,35 @@ export default function Home() {
     if (Array.isArray(data)) {
       return data.map(item => processFirestoreDataRecursive(item));
     }
-    
-    // Check for Firestore Timestamp objects (from server) or serialized objects (from local storage)
-    if (typeof data === 'object' && data !== null && !Array.isArray(data) && !(data instanceof Date)) {
-      if (typeof data.seconds === 'number' && typeof data.nanoseconds === 'number') {
-        try {
-          return new Timestamp(data.seconds, data.nanoseconds).toDate();
-        } catch (e) {
-          return data; // Not a valid timestamp, return as is
-        }
-      }
-    }
-    
-    // Check for ISO date strings
-    if (typeof data === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/.test(data)) {
-      const d = new Date(data);
-      if (!isNaN(d.getTime())) return d;
-    }
   
     if (typeof data === 'object' && data !== null && !Array.isArray(data) && !(data instanceof Date)) {
-      const newObj: { [key: string]: any } = {};
-      for (const key in data) {
-        if (Object.prototype.hasOwnProperty.call(data, key)) {
-          newObj[key] = processFirestoreDataRecursive(data[key]);
+        // Handle Firestore Timestamp
+        if (typeof data.seconds === 'number' && typeof data.nanoseconds === 'number') {
+            try {
+                return new Timestamp(data.seconds, data.nanoseconds).toDate();
+            } catch (e) {
+                return data; // Not a valid timestamp, return as is
+            }
         }
-      }
-      return newObj;
+  
+        // Recurse into nested objects
+        const newObj: { [key: string]: any } = {};
+        for (const key in data) {
+            if (Object.prototype.hasOwnProperty.call(data, key)) {
+                newObj[key] = processFirestoreDataRecursive(data[key]);
+            }
+        }
+        return newObj;
+    }
+  
+    // Handle ISO date strings
+    if (typeof data === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/.test(data)) {
+        const d = new Date(data);
+        if (!isNaN(d.getTime())) return d;
     }
   
     return data;
   };
-
 
   const fetchSavedStatements = async () => {
     setIsLoading(true);
@@ -905,8 +903,11 @@ export default function Home() {
     const { employeeInfo, ...restOfStatement } = statementToLoad;
     
     const fullyProcessedInfo = processFirestoreDataRecursive(employeeInfo);
-    
-    form.reset(fullyProcessedInfo as ArrearFormData);
+
+    // Using setTimeout to ensure form state updates after initial render cycles
+    setTimeout(() => {
+        form.reset(fullyProcessedInfo as ArrearFormData);
+    }, 0);
 
     setStatement({
         ...restOfStatement,
@@ -1435,3 +1436,5 @@ export default function Home() {
     </div>
   );
 }
+
+    
