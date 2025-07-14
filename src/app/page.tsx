@@ -430,67 +430,68 @@ export default function Home() {
             const monthStart = startOfMonth(currentDate);
             const monthEnd = endOfMonth(currentDate);
             
+            if(currentDate < arrearFromDate && !isWithinInterval(arrearFromDate, { start: monthStart, end: monthEnd })) continue;
             if(currentDate > arrearToDate && !isWithinInterval(arrearToDate, { start: monthStart, end: monthEnd })) continue;
 
             let drawnBasicForMonth = drawnBasicTracker;
             let dueBasicForMonth = dueBasicTracker;
             
-            const handleIncrement = (side: 'paid' | 'toBePaid', currentBasic: number) => {
-              const sideData = data[side];
-              const incrementMonthValue = parseInt(sideData.incrementMonth, 10);
-              const firstIncrementDate = sideData.incrementDate;
+            const handleIncrement = (side: 'paid' | 'toBePaid', currentBasic: number, basicTracker: number): [number, number] => {
+                const sideData = data[side];
+                const incrementMonthValue = parseInt(sideData.incrementMonth, 10);
+                const firstIncrementDate = sideData.incrementDate;
 
-              let newBasic = currentBasic;
-              
-              const incrementYearStart = firstIncrementDate ? firstIncrementDate.getFullYear() : arrearFromDate.getFullYear();
-              
-              if (currentYear >= incrementYearStart) {
-                  let incrementTriggerDate: Date | null = null;
-                  
-                  if (firstIncrementDate && currentYear === firstIncrementDate.getFullYear() && currentMonth === firstIncrementDate.getMonth() + 1) {
-                      incrementTriggerDate = firstIncrementDate;
-                  } else if (currentMonth === incrementMonthValue && currentYear > incrementYearStart) {
-                      incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
-                  } else if (!firstIncrementDate && currentMonth === incrementMonthValue && (currentYear > arrearFromDate.getFullYear() || (currentYear === arrearFromDate.getFullYear() && currentMonth >= (arrearFromDate.getMonth()+1) ))){
-                      incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
-                  }
-                  
-                  if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd }) && isWithinInterval(incrementTriggerDate, { start: arrearFromDate, end: arrearToDate })) {
+                let newBasicForMonth = currentBasic;
+                let newBasicTracker = basicTracker;
+
+                const incrementYear = currentYear;
+
+                let incrementTriggerDate: Date | null = null;
+
+                if (firstIncrementDate && incrementYear === firstIncrementDate.getFullYear() && currentMonth === firstIncrementDate.getMonth() + 1) {
+                    incrementTriggerDate = firstIncrementDate;
+                } else if (firstIncrementDate && currentYear > firstIncrementDate.getFullYear() && currentMonth === firstIncrementDate.getMonth() + 1) {
+                    incrementTriggerDate = new Date(incrementYear, firstIncrementDate.getMonth(), 1);
+                } else if (!firstIncrementDate && currentMonth === incrementMonthValue) {
+                   if (currentYear > arrearFromDate.getFullYear() || (currentYear === arrearFromDate.getFullYear() && currentMonth >= (arrearFromDate.getMonth() + 1))) {
+                        incrementTriggerDate = new Date(incrementYear, incrementMonthValue - 1, 1);
+                   }
+                }
+                
+                if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd }) && isWithinInterval(incrementTriggerDate, { start: arrearFromDate, end: arrearToDate })) {
                     let incrementedBasicValue: number;
                     if (cpc === '7th') {
                         const levelData = cpcData['7th'].payLevels.find(l => l.level === sideData.payLevel);
                         if (levelData) {
-                            const currentBasicIndex = levelData.values.indexOf(currentBasic);
+                            const currentBasicIndex = levelData.values.indexOf(basicTracker);
                             if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
                                 incrementedBasicValue = levelData.values[currentBasicIndex + 1];
                             } else {
-                                incrementedBasicValue = currentBasic;
+                                incrementedBasicValue = basicTracker;
                             }
                         } else {
-                            incrementedBasicValue = currentBasic;
+                            incrementedBasicValue = basicTracker;
                         }
                     } else {
-                        incrementedBasicValue = Math.round(currentBasic * 1.03);
+                        incrementedBasicValue = Math.round(basicTracker * 1.03);
                     }
-
+                    
                     const incrementDay = incrementTriggerDate.getDate();
                     if (incrementDay > 1) {
                         const daysBefore = incrementDay - 1;
                         const daysAfter = daysInMonth - daysBefore;
-                        newBasic = ((currentBasic * daysBefore) + (incrementedBasicValue * daysAfter)) / daysInMonth;
+                        newBasicForMonth = ((basicTracker * daysBefore) + (incrementedBasicValue * daysAfter)) / daysInMonth;
                     } else {
-                        newBasic = incrementedBasicValue;
+                        newBasicForMonth = incrementedBasicValue;
                     }
-
-                    if(side === 'paid') drawnBasicTracker = incrementedBasicValue;
-                    if(side === 'toBePaid') dueBasicTracker = incrementedBasicValue;
-                  }
-              }
-              return newBasic;
+                    newBasicTracker = incrementedBasicValue;
+                }
+                return [newBasicForMonth, newBasicTracker];
             };
 
-            drawnBasicForMonth = handleIncrement('paid', drawnBasicTracker);
-            dueBasicForMonth = handleIncrement('toBePaid', dueBasicTracker);
+            [drawnBasicForMonth, drawnBasicTracker] = handleIncrement('paid', drawnBasicForMonth, drawnBasicTracker);
+            [dueBasicForMonth, dueBasicTracker] = handleIncrement('toBePaid', dueBasicForMonth, dueBasicTracker);
+
 
             if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPay > 0 && data.toBePaid.refixedBasicPayDate) {
                 const refixDate = data.toBePaid.refixedBasicPayDate;
@@ -1232,5 +1233,3 @@ export default function Home() {
     </div>
   );
 }
-
-    

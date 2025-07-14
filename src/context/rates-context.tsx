@@ -6,6 +6,7 @@ import * as z from "zod";
 import { db, isFirebaseConfigured } from '@/lib/firebase';
 import { doc, getDoc, setDoc } from "firebase/firestore"; 
 import { useToast } from '@/hooks/use-toast';
+import isEqual from 'lodash.isequal';
 
 const rateSchema = z.object({
   id: z.string(),
@@ -24,14 +25,17 @@ const rateSchema = z.object({
 
 export type Rate = z.infer<typeof rateSchema>;
 
-interface RatesContextType {
-  daRates: Rate[];
+type AllRates = {
+    daRates: Rate[];
+    hraRates: Rate[];
+    npaRates: Rate[];
+    taRates: Rate[];
+}
+
+interface RatesContextType extends AllRates {
   setDaRates: React.Dispatch<React.SetStateAction<Rate[]>>;
-  hraRates: Rate[];
   setHraRates: React.Dispatch<React.SetStateAction<Rate[]>>;
-  npaRates: Rate[];
   setNpaRates: React.Dispatch<React.SetStateAction<Rate[]>>;
-  taRates: Rate[];
   setTaRates: React.Dispatch<React.SetStateAction<Rate[]>>;
 }
 
@@ -49,6 +53,13 @@ const parseTimestamps = (rates: any[]): Rate[] => {
         toDate: rate.toDate?.toDate ? rate.toDate.toDate() : new Date(rate.toDate)
     }));
 }
+
+const parseAllRateTypes = (data: any): AllRates => ({
+    daRates: parseTimestamps(data.daRates || []),
+    hraRates: parseTimestamps(data.hraRates || []),
+    npaRates: parseTimestamps(data.npaRates || []),
+    taRates: parseTimestamps(data.taRates || []),
+});
 
 export const RatesProvider = ({ children }: { children: ReactNode }) => {
   const [daRates, setDaRates] = useState<Rate[]>([]);
@@ -71,42 +82,56 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
-  const loadRatesFromLocal = useCallback(() => {
-    try {
-      const localData = localStorage.getItem(LOCALSTORAGE_RATES_KEY);
-      if (localData) {
-          const data = JSON.parse(localData);
-          if (data.daRates) setDaRates(parseTimestamps(data.daRates));
-          if (data.hraRates) setHraRates(parseTimestamps(data.hraRates));
-          if (data.npaRates) setNpaRates(parseTimestamps(data.npaRates));
-          if (data.taRates) setTaRates(parseTimestamps(data.taRates));
+  const getLocalRates = (): AllRates | null => {
+      try {
+        const localData = localStorage.getItem(LOCALSTORAGE_RATES_KEY);
+        if (localData) {
+            return parseAllRateTypes(JSON.parse(localData));
+        }
+        return null;
+      } catch (error) {
+          console.error("Could not load rates from localStorage:", error);
+          return null;
       }
-    } catch (error) {
-      console.error("Could not load rates from localStorage:", error);
-    }
-    setIsLoaded(true);
-  }, []);
+  };
 
+  const setAllRates = (rates: AllRates) => {
+      setDaRates(rates.daRates);
+      setHraRates(rates.hraRates);
+      setNpaRates(rates.npaRates);
+      setTaRates(rates.taRates);
+  };
+  
   const loadRates = useCallback(async () => {
+    const localRatesData = getLocalRates();
+
     if (isOnline && dbConfigured && db) {
         try {
             const ratesDocRef = doc(db, FIRESTORE_RATES_COLLECTION_ID, FIRESTORE_RATES_DOC_ID);
             const docSnap = await getDoc(ratesDocRef);
             if (docSnap.exists()) {
-                const data = docSnap.data();
-                if (data.daRates) setDaRates(parseTimestamps(data.daRates));
-                if (data.hraRates) setHraRates(parseTimestamps(data.hraRates));
-                if (data.npaRates) setNpaRates(parseTimestamps(data.npaRates));
-                if (data.taRates) setTaRates(parseTimestamps(data.taRates));
-                setIsLoaded(true);
-                return;
+                const firestoreData = parseAllRateTypes(docSnap.data());
+                setAllRates(firestoreData);
+
+                // If local data exists but is different, sync it (Firestore is source of truth)
+                if (localRatesData && !isEqual(localRatesData, firestoreData)) {
+                    localStorage.setItem(LOCALSTORAGE_RATES_KEY, JSON.stringify(firestoreData));
+                }
+            } else if (localRatesData) {
+                // Firestore is empty, but we have local data, so sync it up.
+                await setDoc(ratesDocRef, localRatesData);
+                setAllRates(localRatesData);
+                toast({ title: "Rates Synced", description: "Your locally saved rates have been uploaded to the database."});
             }
         } catch(error) {
-            console.error("Could not load rates from Firestore, falling back to local:", error);
+            console.error("Could not load or sync rates from Firestore, falling back to local:", error);
+            if(localRatesData) setAllRates(localRatesData);
         }
+    } else {
+        if(localRatesData) setAllRates(localRatesData);
     }
-    loadRatesFromLocal();
-  }, [isOnline, dbConfigured, loadRatesFromLocal]);
+    setIsLoaded(true);
+  }, [isOnline, dbConfigured, toast]);
 
   useEffect(() => {
     loadRates();
@@ -117,18 +142,16 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
     
     const dataToSave = { daRates, hraRates, npaRates, taRates };
     
-    // Always save to localStorage
     try {
       localStorage.setItem(LOCALSTORAGE_RATES_KEY, JSON.stringify(dataToSave));
     } catch (error) {
       console.error("Could not save rates to localStorage:", error);
     }
     
-    // Attempt to save to Firestore if online and configured
     if (isOnline && dbConfigured && db) {
         try {
             const ratesDocRef = doc(db, FIRESTORE_RATES_COLLECTION_ID, FIRESTORE_RATES_DOC_ID);
-            await setDoc(ratesDocRef, dataToSave);
+            await setDoc(ratesDocRef, dataToSave, { merge: true });
         } catch (error) {
             console.error("Could not save rates to Firestore:", error);
             toast({
@@ -141,12 +164,15 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
   }, [isLoaded, daRates, hraRates, npaRates, taRates, isOnline, dbConfigured, toast]);
   
   useEffect(() => {
+    // Debounced save for any changes
     const handler = setTimeout(() => {
-      saveRates();
-    }, 1500); // Debounce saving
+      if(isLoaded){
+        saveRates();
+      }
+    }, 1500);
 
     return () => clearTimeout(handler);
-  }, [saveRates]);
+  }, [daRates, hraRates, npaRates, taRates, saveRates, isLoaded]);
 
   return (
     <RatesContext.Provider value={{
@@ -167,5 +193,3 @@ export const useRates = (): RatesContextType => {
   }
   return context;
 };
-
-    
