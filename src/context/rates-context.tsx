@@ -4,7 +4,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import * as z from "zod";
 import { db, isFirebaseConfigured } from '@/lib/firebase';
-import { doc, getDoc, setDoc } from "firebase/firestore"; 
+import { doc, getDoc, setDoc, Timestamp } from "firebase/firestore"; 
 import { useToast } from '@/hooks/use-toast';
 import isEqual from 'lodash.isequal';
 
@@ -164,19 +164,17 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
   }, [isLoaded, daRates, hraRates, npaRates, taRates, dbConfigured, toast, isOnline]);
   
   useEffect(() => {
-    // This effect now handles saving changes, but only after initial load is complete.
     if (!isLoaded) {
       return;
     }
     
     const handler = setTimeout(() => {
-      // We only save if there are actual changes from what's in local storage
       const localRates = getLocalRates();
       const currentRates = { daRates, hraRates, npaRates, taRates };
       if (!isEqual(localRates, currentRates)) {
           saveRates();
       }
-    }, 1500); // Debounce save for 1.5 seconds
+    }, 1500);
 
     return () => clearTimeout(handler);
   }, [daRates, hraRates, npaRates, taRates, saveRates, isLoaded]);
