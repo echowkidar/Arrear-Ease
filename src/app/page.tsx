@@ -777,7 +777,7 @@ export default function Home() {
 
       const sanitizedEmployeeInfo: Partial<ArrearFormData> = { ...employeeInfo };
 
-      // Make sure all date objects are actual Date objects
+      // Make sure all top-level date objects are actual Date objects
       const dateFields: (keyof EmployeeInfo)[] = ['fromDate', 'toDate'];
       dateFields.forEach(field => {
           if (sanitizedEmployeeInfo[field]) {
@@ -794,7 +794,7 @@ export default function Home() {
             'otherAllowanceToDate', 'incrementDate', 'refixedBasicPayDate'
         ];
         sideDateFields.forEach(field => {
-            if (sideData[field]) {
+            if (sideData[field] && !(sideData[field] instanceof Date)) {
                 sideData[field] = new Date(sideData[field]);
             }
         });
