@@ -58,27 +58,55 @@
   }
 }
 
+@page {
+  size: A4 portrait;
+  margin: 1.5cm;
+}
+
 @media print {
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
   body * {
     visibility: hidden;
   }
+
   .printable-area, .printable-area * {
     visibility: visible;
   }
+
   .printable-area {
     position: absolute;
     left: 0;
     top: 0;
     width: 100%;
     height: auto;
-    padding: 1rem;
+    padding: 0;
     margin: 0;
+    font-size: 10pt;
   }
+
   .no-print {
     display: none !important;
   }
+
   .printable-area .card {
      border: none;
      box-shadow: none;
+  }
+  
+  .printable-area h1, .printable-area h2, .printable-area h3, .printable-area .text-3xl {
+    font-size: 14pt !important;
+  }
+  .printable-area .text-lg {
+    font-size: 11pt !important;
+  }
+   .printable-area table {
+    width: 100%;
+  }
+  .printable-area th, .printable-area td {
+    padding: 4px 8px;
   }
 }
