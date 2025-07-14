@@ -91,6 +91,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const salaryComponentSchema = z.object({
+  cpc: z.enum(["6th", "7th"], { required_error: "CPC selection is required." }),
   basicPay: z.coerce.number({ required_error: "Basic Pay is required." }).min(0, "Cannot be negative"),
   payLevel: z.string({ required_error: "Pay Level is required." }),
   incrementMonth: z.string({ required_error: "Increment month is required." }),
@@ -119,7 +120,6 @@ const formSchema = z.object({
     employeeName: z.string().min(1, "Employee name is required"),
     designation: z.string().min(1, "Designation is required"),
     department: z.string().min(1, "Department is required"),
-    cpc: z.enum(["6th", "7th"], { required_error: "CPC selection is required." }),
     fromDate: z.date({ required_error: "From date is required." }),
     toDate: z.date({ required_error: "To date is required." }),
     payFixationRef: z.string().optional(),
@@ -180,10 +180,15 @@ const sanitizeForFirebase = (obj: any): any => {
     if (Array.isArray(obj)) {
         return obj.map(item => sanitizeForFirebase(item));
     }
+    
+    // Convert Date objects to Timestamps
+    if (obj instanceof Date) {
+        return Timestamp.fromDate(obj);
+    }
 
     const newObj: { [key: string]: any } = {};
     for (const key in obj) {
-        if (obj[key] !== undefined) {
+        if (Object.prototype.hasOwnProperty.call(obj, key) && obj[key] !== undefined) {
             newObj[key] = sanitizeForFirebase(obj[key]);
         }
     }
@@ -287,42 +292,24 @@ export default function Home() {
                 const data = docSnap.data();
                 
                 const employeeInfo: EmployeeInfo = { ...data.employeeInfo };
-                if (employeeInfo.fromDate && (employeeInfo.fromDate as any).toDate) {
-                  employeeInfo.fromDate = (employeeInfo.fromDate as Timestamp).toDate();
-                } else if(typeof employeeInfo.fromDate === 'string') {
-                  employeeInfo.fromDate = new Date(employeeInfo.fromDate);
-                }
 
-                if (employeeInfo.toDate && (employeeInfo.toDate as any).toDate) {
-                  employeeInfo.toDate = (employeeInfo.toDate as Timestamp).toDate();
-                } else if(typeof employeeInfo.toDate === 'string') {
-                  employeeInfo.toDate = new Date(employeeInfo.toDate);
-                }
-
-                const processSide = (side: 'paid' | 'toBePaid') => {
-                    if (!employeeInfo[side]) return;
-                    const sideData = employeeInfo[side]!;
-
-                    const dateFields: (keyof typeof sideData)[] = [
-                      'hraFromDate', 'hraToDate', 
-                      'npaFromDate', 'npaToDate', 
-                      'taFromDate', 'taToDate',
-                      'otherAllowanceFromDate', 'otherAllowanceToDate',
-                      'incrementDate', 'refixedBasicPayDate'
-                    ];
-
-                    dateFields.forEach(field => {
-                        const dateVal = sideData[field] as any;
-                        if(dateVal && dateVal.toDate) { // Is firestore timestamp
-                          (sideData as any)[field] = dateVal.toDate();
-                        } else if (dateVal && typeof dateVal === 'string') { // Is ISO string
-                          (sideData as any)[field] = new Date(dateVal);
+                const processDateFieldsRecursive = (obj: any): any => {
+                    if (!obj) return obj;
+                    for (const key in obj) {
+                        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+                            const value = obj[key];
+                            if (value && typeof value === 'object' && 'toDate' in value && typeof value.toDate === 'function') {
+                                obj[key] = value.toDate();
+                            } else if (typeof value === 'object' && value !== null) {
+                                processDateFieldsRecursive(value);
+                            }
                         }
-                    });
+                    }
+                    return obj;
                 };
-                processSide('paid');
-                processSide('toBePaid');
 
+                const processedEmployeeInfo = processDateFieldsRecursive(employeeInfo);
+                
                 let savedAtISO = '';
                 if (data.savedAt?.toDate) { // It's a Firestore Timestamp
                     savedAtISO = data.savedAt.toDate().toISOString();
@@ -337,7 +324,7 @@ export default function Home() {
                     savedAt: savedAtISO,
                     rows: data.rows,
                     totals: data.totals,
-                    employeeInfo,
+                    employeeInfo: processedEmployeeInfo,
                     isLocal: false
                 });
             });
@@ -390,11 +377,11 @@ export default function Home() {
       employeeName: "",
       designation: "",
       department: "",
-      cpc: undefined,
       fromDate: undefined,
       toDate: undefined,
       payFixationRef: "",
       paid: {
+        cpc: undefined,
         basicPay: '' as any,
         payLevel: undefined,
         incrementMonth: undefined,
@@ -407,6 +394,7 @@ export default function Home() {
         otherAllowanceName: "",
       },
       toBePaid: {
+        cpc: undefined,
         basicPay: '' as any,
         payLevel: undefined,
         incrementMonth: undefined,
@@ -422,12 +410,14 @@ export default function Home() {
     },
   });
 
-  const cpc = form.watch("cpc");
   const paidWatch = form.watch("paid");
   const toBePaidWatch = form.watch("toBePaid");
 
-  const payLevels = cpc ? cpcData[cpc].payLevels.map(pl => ({ value: pl.level, label: cpc === '6th' ? `GP ${pl.gradePay} (${pl.payBand})` : `Level ${pl.level}`})) : [];
-
+  const getPayLevels = (cpc: '6th' | '7th' | undefined) => {
+     if (!cpc) return [];
+     return cpcData[cpc].payLevels.map(pl => ({ value: pl.level, label: cpc === '6th' ? `GP ${pl.gradePay} (${pl.payBand})` : `Level ${pl.level}`}));
+  };
+  
   const getRateForDate = (rates: Rate[], date: Date, basicPay?: number, payLevel?: string): Rate | null => {
     const applicableRate = rates.find(r => {
       const from = new Date(r.fromDate);
@@ -544,7 +534,7 @@ export default function Home() {
 
                 if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd })) {
                     let incrementedBasicValue: number;
-                    if (cpc === '7th') {
+                    if (sideData.cpc === '7th') {
                         const levelData = cpcData['7th'].payLevels.find(l => l.level === sideData.payLevel);
                         if (levelData) {
                             const currentBasicIndex = levelData.values.indexOf(newBasicTracker);
@@ -826,7 +816,7 @@ export default function Home() {
 
     // Update local storage first
     const localStatements = getLocalStatements();
-    const updatedLocalStatements = localStatements.map(s => s.id === loadedStatementId ? { ...docToUpdate, isLocal: s.isLocal } : s);
+    const updatedLocalStatements = localStatements.map(s => s.id === loadedStatementId ? { ...docToUpdate, isLocal: s.isLocal ?? true } : s);
     saveLocalStatements(updatedLocalStatements);
     setSavedStatements(updatedLocalStatements.sort((a,b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()));
 
@@ -834,6 +824,11 @@ export default function Home() {
         try {
             const docRef = doc(db, FIRESTORE_STATEMENTS_COLLECTION, loadedStatementId);
             await updateDoc(docRef, sanitizeForFirebase(docToUpdate));
+             // Mark as not local anymore
+            const finalLocalStatements = getLocalStatements().map(s => s.id === loadedStatementId ? { ...docToUpdate, isLocal: false } : s);
+            saveLocalStatements(finalLocalStatements);
+            setSavedStatements(finalLocalStatements.sort((a,b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()));
+
             toast({
                 title: "Arrear Updated",
                 description: "The statement has been updated successfully.",
@@ -885,42 +880,44 @@ export default function Home() {
   }
 
   const loadStatement = (statementToLoad: SavedStatement) => {
-      const { employeeInfo, ...restOfStatement } = statementToLoad;
-      
-      const sanitizedEmployeeInfo: ArrearFormData = { ...form.getValues(), ...employeeInfo };
-
-      const processDateFields = (data: any) => {
-          if (!data) return data;
-          for (const key in data) {
-              if(Object.prototype.hasOwnProperty.call(data, key)) {
-                if (typeof data[key] === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(data[key])) {
-                    data[key] = new Date(data[key]);
-                } else if (typeof data[key] === 'object' && data[key] !== null) {
-                    processDateFields(data[key]);
+    const { employeeInfo, ...restOfStatement } = statementToLoad;
+    
+    const processDateFieldsRecursive = (obj: any): any => {
+        if (!obj) return obj;
+        const newObj = Array.isArray(obj) ? [] : {};
+        for (const key in obj) {
+            if (Object.prototype.hasOwnProperty.call(obj, key)) {
+                const value = obj[key];
+                if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(value)) {
+                    (newObj as any)[key] = new Date(value);
+                } else if (value && typeof value === 'object') {
+                    (newObj as any)[key] = processDateFieldsRecursive(value);
+                } else {
+                    (newObj as any)[key] = value;
                 }
-              }
-          }
-          return data;
-      };
-      
-      const fullyProcessedInfo = processDateFields(sanitizedEmployeeInfo);
+            }
+        }
+        return newObj;
+    };
 
-      form.reset(fullyProcessedInfo);
+    const fullyProcessedInfo = processDateFieldsRecursive(employeeInfo);
+    
+    form.reset(fullyProcessedInfo);
 
-      setStatement({
-          ...restOfStatement,
-          employeeInfo: fullyProcessedInfo,
-      });
-      setLoadedStatementId(statementToLoad.id);
+    setStatement({
+        ...restOfStatement,
+        employeeInfo: fullyProcessedInfo,
+    });
+    setLoadedStatementId(statementToLoad.id);
 
-      setLoadDialogOpen(false);
-      toast({
-          title: "Statement Loaded",
-          description: `Loaded arrear for ${statementToLoad.employeeInfo.employeeName}.`
-      });
-      setTimeout(() => {
-          document.getElementById("statement-section")?.scrollIntoView({ behavior: 'smooth' });
-      }, 100);
+    setLoadDialogOpen(false);
+    toast({
+        title: "Statement Loaded",
+        description: `Loaded arrear for ${statementToLoad.employeeInfo.employeeName}.`
+    });
+    setTimeout(() => {
+        document.getElementById("statement-section")?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
   }
 
   const deleteStatement = async (id: string, isLocal: boolean | undefined) => {
@@ -1015,18 +1012,37 @@ export default function Home() {
       const currentWatchValues = type === 'paid' ? paidWatch : toBePaidWatch;
       if (!currentWatchValues) return null; // Guard clause
       
-      const selectedIncrementMonth = parseInt(currentWatchValues.incrementMonth, 10);
+      const selectedIncrementMonth = currentWatchValues.incrementMonth ? parseInt(currentWatchValues.incrementMonth, 10) : undefined;
       const calendarProps = selectedIncrementMonth ? {
           disabled: (date: Date) => date.getMonth() + 1 !== selectedIncrementMonth || date.getFullYear() < 1990
       } : {};
 
+      const payLevels = getPayLevels(currentWatchValues.cpc);
+      
       return (
         <div className="space-y-4">
+            <FormField control={form.control} name={`${type}.cpc`} render={({ field }) => (
+              <FormItem>
+                <FormLabel>CPC</FormLabel>
+                <Select onValueChange={(value) => {
+                    field.onChange(value);
+                    form.setValue(`${type}.payLevel`, undefined as any);
+                }} value={field.value}>
+                  <FormControl><SelectTrigger><SelectValue placeholder="Select CPC" /></SelectTrigger></FormControl>
+                  <SelectContent>
+                    <SelectItem value="6th">6th CPC</SelectItem>
+                    <SelectItem value="7th">7th CPC</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )} />
+
            <FormField control={form.control} name={`${type}.payLevel`} render={({ field }) => (
             <FormItem>
                 <FormLabel>Pay Level</FormLabel>
-                <Select onValueChange={field.onChange} value={field.value} disabled={!cpc}>
-                    <FormControl><SelectTrigger><SelectValue placeholder={cpc ? "Select a level" : "Select CPC first"} /></SelectTrigger></FormControl>
+                <Select onValueChange={field.onChange} value={field.value} disabled={!currentWatchValues.cpc}>
+                    <FormControl><SelectTrigger><SelectValue placeholder={currentWatchValues.cpc ? "Select a level" : "Select CPC first"} /></SelectTrigger></FormControl>
                     <SelectContent>
                     {payLevels.map(level => <SelectItem key={level.value} value={level.value}>{level.label}</SelectItem>)}
                     </SelectContent>
@@ -1271,19 +1287,6 @@ export default function Home() {
                     <FormField control={form.control} name="employeeName" render={({ field }) => ( <FormItem> <FormLabel>Employee Name</FormLabel> <FormControl><Input placeholder="Full Name" {...field} /></FormControl> <FormMessage /> </FormItem> )} />
                     <FormField control={form.control} name="designation" render={({ field }) => ( <FormItem> <FormLabel>Designation</FormLabel> <FormControl><Input placeholder="Designation" {...field} /></FormControl> <FormMessage /> </FormItem> )} />
                     <FormField control={form.control} name="department" render={({ field }) => ( <FormItem> <FormLabel>Department</FormLabel> <FormControl><Input placeholder="Department" {...field} /></FormControl> <FormMessage /> </FormItem> )} />
-                    <FormField control={form.control} name="cpc" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>CPC</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl><SelectTrigger><SelectValue placeholder="Select CPC" /></SelectTrigger></FormControl>
-                          <SelectContent>
-                            <SelectItem value="6th">6th CPC</SelectItem>
-                            <SelectItem value="7th">7th CPC</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
                   </CardContent>
                 </Card>
                 <Card>
@@ -1428,3 +1431,4 @@ export default function Home() {
     </div>
   );
 }
+
