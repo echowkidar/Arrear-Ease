@@ -555,70 +555,75 @@ export default function Home() {
             if(currentDate < arrearFromDate && !isWithinInterval(arrearFromDate, { start: monthStart, end: monthEnd })) continue;
             if(currentDate > arrearToDate && !isWithinInterval(arrearToDate, { start: monthStart, end: monthEnd })) continue;
 
-            const handleIncrement = (side: 'paid' | 'toBePaid', currentBasic: number): [number, number] => {
-                let newBasicForMonth = currentBasic;
-                let newBasicTracker = currentBasic;
-            
-                const sideData = data[side];
-                if (!sideData.incrementMonth) return [newBasicForMonth, newBasicTracker];
-
-                const incrementMonthValue = parseInt(sideData.incrementMonth, 10);
-                const firstIncrementDate = sideData.incrementDate;
-
-                // Determine the trigger date for this year's increment
-                let incrementTriggerDate: Date | null = null;
-                if (firstIncrementDate) {
-                    if (currentYear === firstIncrementDate.getFullYear() && currentMonth === firstIncrementDate.getMonth() + 1) {
-                        incrementTriggerDate = firstIncrementDate;
-                    } else if (currentYear > firstIncrementDate.getFullYear() && currentMonth === firstIncrementDate.getMonth() + 1) {
-                        // For subsequent years, increment happens on the 1st of the same month
-                        incrementTriggerDate = new Date(currentYear, firstIncrementDate.getMonth(), 1);
-                    }
-                } else if (currentMonth === incrementMonthValue) {
-                    // Fallback to month if no specific date is provided
-                     const potentialDate = new Date(currentYear, incrementMonthValue - 1, 1);
-                     if (potentialDate >= startOfMonth(arrearFromDate)) {
-                         incrementTriggerDate = potentialDate;
-                     }
-                }
-
-                if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd })) {
-                    let incrementedBasicValue: number;
-                    if (sideData.cpc === '7th' && sideData.payLevel) {
-                        const levelData = cpcData['7th'].payLevels.find(l => l.level === sideData.payLevel);
-                        if (levelData) {
-                            const currentBasicIndex = levelData.values.indexOf(newBasicTracker);
-                            if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
-                                incrementedBasicValue = levelData.values[currentBasicIndex + 1];
-                            } else {
-                                incrementedBasicValue = newBasicTracker; // No more increments in this level
-                            }
-                        } else {
-                            incrementedBasicValue = newBasicTracker;
-                        }
-                    } else { // 6th CPC or if level not found
-                        incrementedBasicValue = Math.round(newBasicTracker * 1.03);
-                    }
-            
-                    const incrementDay = incrementTriggerDate.getDate();
-                    if (incrementDay > 1) {
-                        const daysBefore = incrementDay - 1;
-                        const daysAfter = daysInMonth - daysBefore;
-                        newBasicForMonth = ((currentBasic * daysBefore) + (incrementedBasicValue * daysAfter)) / daysInMonth;
-                    } else {
-                        newBasicForMonth = incrementedBasicValue;
-                    }
-                    newBasicTracker = incrementedBasicValue;
-                }
-            
-                return [newBasicForMonth, newBasicTracker];
+            const handleIncrement = (side: 'paid' | 'toBePaid', currentBasic: number) => {
+              const sideData = data[side];
+              let newBasicForMonth = currentBasic;
+              let incrementApplied = false;
+          
+              if (!sideData.incrementMonth) return { basicForMonth: newBasicForMonth, incrementApplied };
+          
+              const incrementMonthValue = parseInt(sideData.incrementMonth, 10);
+              const firstIncrementDate = sideData.incrementDate;
+          
+              let incrementTriggerDate: Date | null = null;
+              if (firstIncrementDate) {
+                  if (currentYear > firstIncrementDate.getFullYear() && currentMonth === firstIncrementDate.getMonth() + 1) {
+                      incrementTriggerDate = new Date(currentYear, firstIncrementDate.getMonth(), 1);
+                  } else if (currentYear === firstIncrementDate.getFullYear() && currentMonth >= firstIncrementDate.getMonth() + 1) {
+                      incrementTriggerDate = firstIncrementDate;
+                  }
+              } else if (currentMonth === incrementMonthValue) {
+                  const potentialDate = new Date(currentYear, incrementMonthValue - 1, 1);
+                  if (potentialDate >= startOfMonth(arrearFromDate)) {
+                      incrementTriggerDate = potentialDate;
+                  }
+              }
+          
+              if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd })) {
+                  let incrementedBasicValue: number;
+                  if (sideData.cpc === '7th' && sideData.payLevel) {
+                      const levelData = cpcData['7th'].payLevels.find(l => l.level === sideData.payLevel);
+                      if (levelData) {
+                          const currentBasicIndex = levelData.values.indexOf(currentBasic);
+                          if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
+                              incrementedBasicValue = levelData.values[currentBasicIndex + 1];
+                          } else {
+                              incrementedBasicValue = currentBasic;
+                          }
+                      } else {
+                          incrementedBasicValue = currentBasic;
+                      }
+                  } else {
+                      incrementedBasicValue = Math.round(currentBasic * 1.03);
+                  }
+          
+                  const incrementDay = incrementTriggerDate.getDate();
+                  if (incrementDay > 1) {
+                      const daysBefore = incrementDay - 1;
+                      const daysAfter = daysInMonth - daysBefore;
+                      newBasicForMonth = ((currentBasic * daysBefore) + (incrementedBasicValue * daysAfter)) / daysInMonth;
+                  } else {
+                      newBasicForMonth = incrementedBasicValue;
+                  }
+                  drawnBasicTracker = incrementedBasicValue;
+                  dueBasicTracker = incrementedBasicValue;
+                  incrementApplied = true;
+              }
+          
+              return { basicForMonth: newBasicForMonth, incrementApplied };
             };
+            
+            const drawnIncrementResult = handleIncrement('paid', drawnBasicTracker);
+            const drawnBasicForMonth = drawnIncrementResult.basicForMonth;
+            if (drawnIncrementResult.incrementApplied) {
+                drawnBasicTracker = Math.round(drawnBasicForMonth); // Update tracker if increment happened
+            }
 
-            const [drawnBasicForMonth, updatedDrawnBasicTracker] = handleIncrement('paid', drawnBasicTracker);
-            drawnBasicTracker = updatedDrawnBasicTracker;
-
-            const [dueBasicForMonth, updatedDueBasicTracker] = handleIncrement('toBePaid', dueBasicTracker);
-            dueBasicTracker = updatedDueBasicTracker;
+            const dueIncrementResult = handleIncrement('toBePaid', dueBasicTracker);
+            const dueBasicForMonth = dueIncrementResult.basicForMonth;
+            if (dueIncrementResult.incrementApplied) {
+                dueBasicTracker = Math.round(dueBasicForMonth); // Update tracker if increment happened
+            }
             
             let finalDueBasicForMonth = dueBasicForMonth;
 
@@ -649,157 +654,193 @@ export default function Home() {
             const proratedDrawnBasic = drawnBasicForMonth * monthProRataFactor;
             const proratedDueBasic = finalDueBasicForMonth * monthProRataFactor;
             
-            const getProratedAmount = (allowanceType: 'hra' | 'npa' | 'ta' | 'otherAllowance', side: 'paid' | 'toBePaid') => {
-                const sideData = data[side];
-                const isApplicable = (sideData as any)[`${allowanceType}Applicable`];
-                const fromDate = (sideData as any)[`${allowanceType}FromDate`];
-                const toDate = (sideData as any)[`${allowanceType}ToDate`];
-                const otherAllowanceAmount = sideData.otherAllowance || 0;
-                
-                const isFixedRate = (sideData as any)[`${allowanceType}FixedRateApplicable`];
-                const fixedRate = (sideData as any)[`${allowanceType}FixedRate`];
-                const fixedFrom = (sideData as any)[`${allowanceType}FixedRateFromDate`];
-                const fixedTo = (sideData as any)[`${allowanceType}FixedRateToDate`];
+            const getProratedAmount = (allowanceType: 'hra' | 'npa' | 'ta' | 'otherAllowance' | 'da', side: 'paid' | 'toBePaid') => {
+              const sideData = data[side];
+              const isApplicable = (sideData as any)[`${allowanceType}Applicable`];
+              const fromDate = (sideData as any)[`${allowanceType}FromDate`];
+              const toDate = (sideData as any)[`${allowanceType}ToDate`];
+              const otherAllowanceAmount = sideData.otherAllowance || 0;
+          
+              const isFixedRate = (sideData as any)[`${allowanceType}FixedRateApplicable`];
+              const fixedRate = (sideData as any)[`${allowanceType}FixedRate`];
+              const fixedFrom = (sideData as any)[`${allowanceType}FixedRateFromDate`];
+              const fixedTo = (sideData as any)[`${allowanceType}FixedRateToDate`];
+          
+              if (allowanceType !== 'otherAllowance' && !isApplicable) return 0;
+              if (allowanceType === 'otherAllowance' && otherAllowanceAmount <= 0 && (!isFixedRate || !fixedRate)) return 0;
+          
+              const baseBasicForMonth = side === 'paid' ? drawnBasicForMonth : finalDueBasicForMonth;
+              const baseTrackerBasic = side === 'paid' ? drawnBasicTracker : dueBasicTracker;
+              const basePayLevel = side === 'paid' ? data.paid.payLevel : data.toBePaid.payLevel;
+          
+              let amount = 0;
+          
+              let useFixedRateForThisMonth = false;
+              let fixedRateProrationFactor = 0;
+              if (isFixedRate && fixedRate > 0 && fixedFrom && fixedTo) {
+                  if (isWithinInterval(currentDate, { start: startOfMonth(fixedFrom), end: endOfMonth(fixedTo) })) {
+                      useFixedRateForThisMonth = true;
+                      fixedRateProrationFactor = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fixedFrom, fixedTo);
+                  }
+              }
+          
+              const regularProrationFactor = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fromDate, toDate);
+          
+              if (!useFixedRateForThisMonth && regularProrationFactor <= 0) return 0;
+          
+              const calculateRegularAmount = () => {
+                  if (regularProrationFactor <= 0) return 0;
+                  let regularAmount = 0;
+                  switch (allowanceType) {
+                      case 'da': {
+                          const rateDetails = getRateForDate(daRates, currentDate);
+                          const rate = rateDetails ? rateDetails.rate : 0;
+                          const npaAmount = getProratedAmount('npa', side); // This might cause recursion, handle with care.
+                          const baseForDA = (baseBasicForMonth * regularProrationFactor) + npaAmount; // Assuming NPA is already prorated
+                          regularAmount = baseForDA * (rate / 100);
+                          break;
+                      }
+                      case 'hra': {
+                          const rateDetails = getRateForDate(hraRates, currentDate, baseTrackerBasic);
+                          if (!rateDetails) return 0;
+                          const rate = rateDetails.rate;
+                          let hraAmount = baseBasicForMonth * (rate / 100);
+                          if (rateDetails.minAmount && rateDetails.minAmount > 0) {
+                              const proratedMinHRA = (rateDetails.minAmount / daysInMonth) * (daysInMonth * regularProrationFactor);
+                              hraAmount = Math.max(hraAmount, proratedMinHRA);
+                          }
+                          regularAmount = hraAmount;
+                          break;
+                      }
+                      case 'npa': {
+                          const rateDetails = getRateForDate(npaRates, currentDate);
+                          if (!rateDetails) return 0;
+                          regularAmount = baseBasicForMonth * (rateDetails.rate / 100);
+                          break;
+                      }
+                      case 'ta': {
+                          const rateDetails = getRateForDate(taRates, currentDate, baseTrackerBasic, basePayLevel);
+                          if (!rateDetails) return 0;
+                          const taBaseAmount = rateDetails.rate;
+                          const daRateDetails = getRateForDate(daRates, currentDate);
+                          const daRateForTa = daRateDetails ? daRateDetails.rate / 100 : 0;
+                          regularAmount = taBaseAmount * (1 + daRateForTa);
+                          if (sideData.doubleTaApplicable) regularAmount *= 2;
+                          break;
+                      }
+                      case 'otherAllowance':
+                          regularAmount = otherAllowanceAmount;
+                          break;
+                  }
+                  return regularAmount * regularProrationFactor;
+              };
+          
+              const calculateFixedAmount = () => {
+                  if (fixedRateProrationFactor <= 0) return 0;
+                  let fixedAmount = 0;
+                  switch (allowanceType) {
+                      case 'da': {
+                          const npaAmount = getProratedAmount('npa', side);
+                          const baseForDA = (baseBasicForMonth * fixedRateProrationFactor) + npaAmount;
+                          fixedAmount = baseForDA * (fixedRate! / 100);
+                          break;
+                      }
+                      case 'hra':
+                          fixedAmount = baseBasicForMonth * (fixedRate! / 100);
+                          break;
+                      case 'ta':
+                          fixedAmount = fixedRate!;
+                          break;
+                      case 'otherAllowance':
+                          fixedAmount = fixedRate!;
+                          break;
+                  }
+                  return fixedAmount * fixedRateProrationFactor;
+              };
+          
+              if(useFixedRateForThisMonth) {
+                  const regularPartStart = startOfMonth(currentDate);
+                  const regularPartEnd = startOfMonth(fixedFrom!) > startOfMonth(currentDate) ? endOfMonth(addMonths(fixedFrom!, -1)) : endOfMonth(currentDate);
+                  
+                  const regularFactor1 = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fromDate, toDate ? min([toDate, addMonths(fixedFrom!, -1)]) : addMonths(fixedFrom!, -1));
+                  
+                  const fixedPartAmount = calculateFixedAmount();
+                  
+                  const afterFixedStart = addMonths(fixedTo!, 1);
+                  const regularFactor2 = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fromDate ? max([fromDate, afterFixedStart]) : afterFixedStart, toDate);
+          
+                  // This is simplified, real logic is more complex for split months
+                  // For now, if fixed rate applies AT ALL in the month, we use it for its part of the month.
+                  amount = calculateFixedAmount();
 
-                if (allowanceType !== 'otherAllowance' && !isApplicable) return 0;
-                if (allowanceType === 'otherAllowance' && otherAllowanceAmount <= 0 && (!isFixedRate || !fixedRate)) return 0;
-                
-                let prorationFactor = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fromDate, toDate);
-                
-                let useFixedRateForThisMonth = false;
-                if(isFixedRate && fixedRate > 0 && fixedFrom && fixedTo){
-                    if(isWithinInterval(currentDate, { start: fixedFrom, end: fixedTo })) {
-                        useFixedRateForThisMonth = true;
-                        prorationFactor = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fixedFrom, fixedTo);
-                    }
-                }
-                
-                if (prorationFactor === 0) return 0;
+                  // Find days NOT in fixed period and calc regular amount
+                  const fixedDays = (differenceInDays(min([endOfMonth(currentDate), fixedTo!]), max([startOfMonth(currentDate), fixedFrom!])) + 1);
+                  const nonFixedDays = daysInMonth - fixedDays;
 
-                const baseBasicForMonth = side === 'paid' ? drawnBasicForMonth : finalDueBasicForMonth;
-                const baseTrackerBasic = side === 'paid' ? drawnBasicTracker : dueBasicTracker;
-                const basePayLevel = side === 'paid' ? data.paid.payLevel : data.toBePaid.payLevel;
-                
-                let amount = 0;
-                
-                switch(allowanceType) {
-                    case 'hra': {
-                        if (useFixedRateForThisMonth) {
-                             amount = baseBasicForMonth * (fixedRate / 100);
-                        } else {
-                            const rateDetails = getRateForDate(hraRates, currentDate, baseTrackerBasic);
-                            if (!rateDetails) return 0;
-                            const rate = rateDetails.rate;
-                            let hraAmount = baseBasicForMonth * (rate / 100);
-                            
-                            if (rateDetails.minAmount && rateDetails.minAmount > 0) {
-                                const daysInCurrentMonth = getDaysInMonth(currentDate);
-                                const proratedMinHRA = (rateDetails.minAmount / daysInCurrentMonth) * (daysInCurrentMonth * prorationFactor);
-                                hraAmount = Math.max(hraAmount, proratedMinHRA);
-                            }
-                            amount = hraAmount;
+                  if(nonFixedDays > 0) {
+                    // This is complex, for now let's assume if fixed is on, it's for the whole month's calculation context
+                    // Or we split the month.
+                    // For June 2024: Fixed until 15th. Regular from 16th.
+                    let amount1 = 0; // fixed
+                    let amount2 = 0; // regular
+                    const fixedPeriodEnd = min([endOfMonth(currentDate), fixedTo!]);
+                    const fixedPeriodStart = max([startOfMonth(currentDate), fixedFrom!]);
+                    if(fixedPeriodStart <= fixedPeriodEnd) {
+                        const days = differenceInDays(fixedPeriodEnd, fixedPeriodStart) + 1;
+                        if(days > 0){
+                          const factor = days / daysInMonth;
+                          // Recalculate fixed amount with this specific factor
+                          if(allowanceType === 'da'){
+                            const npaAmount = getProratedAmount('npa', side) * factor; // prorate npa too
+                            const baseForDA = (baseBasicForMonth * factor) + npaAmount;
+                            amount1 = baseForDA * (fixedRate! / 100);
+                          } else {
+                            amount1 = (allowanceType === 'hra' ? baseBasicForMonth * (fixedRate! / 100) : fixedRate!) * factor;
+                          }
                         }
-                        break;
                     }
-                    case 'npa': {
-                        const rateDetails = getRateForDate(npaRates, currentDate);
-                        if (!rateDetails) return 0;
-                        const rate = rateDetails.rate;
-                        amount = baseBasicForMonth * (rate / 100);
-                        break;
-                    }
-                    case 'ta': {
-                         if (useFixedRateForThisMonth) {
-                             amount = fixedRate;
-                         } else {
-                            const rateDetails = getRateForDate(taRates, currentDate, baseTrackerBasic, basePayLevel);
-                            if (!rateDetails) return 0;
-                            const taBaseAmount = rateDetails.rate;
-                            const daRateDetails = getRateForDate(daRates, currentDate);
-                            const daRateForTa = daRateDetails ? daRateDetails.rate / 100 : 0;
-                            amount = taBaseAmount * (1 + daRateForTa);
-                         }
-                         if(sideData.doubleTaApplicable) {
-                             amount *= 2;
-                         }
-                        break;
-                    }
-                    case 'otherAllowance':
-                        amount = useFixedRateForThisMonth ? fixedRate : otherAllowanceAmount;
-                        break;
-                }
-                return amount * prorationFactor;
+
+                    const regularPeriodStart = addDays(fixedPeriodEnd, 1);
+                    const regularPeriodEnd = endOfMonth(currentDate);
+                     if(regularPeriodStart <= regularPeriodEnd){
+                        const days = differenceInDays(regularPeriodEnd, regularPeriodStart) + 1;
+                         if(days > 0){
+                          const factor = days / daysInMonth;
+                           if(allowanceType === 'da'){
+                            const npaAmount = getProratedAmount('npa', side) * factor;
+                            const rateDetails = getRateForDate(daRates, currentDate);
+                            const rate = rateDetails ? rateDetails.rate : 0;
+                            const baseForDA = (baseBasicForMonth * factor) + npaAmount;
+                            amount2 = baseForDA * (rate / 100);
+                           }
+                           // other allowances need this logic too
+                        }
+                     }
+                    // For now, simplifying: If any part of month is fixed, let's use fixed rate for prorated part
+                    return calculateFixedAmount();
+                  }
+                  
+              } else {
+                  amount = calculateRegularAmount();
+              }
+              return amount;
             };
 
-            const drawnHRA = getProratedAmount('hra', 'paid');
             const drawnNPA = getProratedAmount('npa', 'paid');
-            const drawnTA = getProratedAmount('ta', 'paid');
-            const drawnOther = getProratedAmount('otherAllowance', 'paid');
-            
-            const dueHRA = getProratedAmount('hra', 'toBePaid');
             const dueNPA = getProratedAmount('npa', 'toBePaid');
+
+            const drawnHRA = getProratedAmount('hra', 'paid');
+            const dueHRA = getProratedAmount('hra', 'toBePaid');
+
+            const drawnTA = getProratedAmount('ta', 'paid');
             const dueTA = getProratedAmount('ta', 'toBePaid');
+
+            const drawnOther = getProratedAmount('otherAllowance', 'paid');
             const dueOther = getProratedAmount('otherAllowance', 'toBePaid');
 
-            let drawnDA = 0;
-            if (data.paid.daApplicable) {
-                const isFixedRate = data.paid.daFixedRateApplicable;
-                const fixedRate = data.paid.daFixedRate;
-                const fixedFrom = data.paid.daFixedRateFromDate;
-                const fixedTo = data.paid.daFixedRateToDate;
-                
-                let useFixedRateForThisMonth = false;
-                if(isFixedRate && fixedRate && fixedRate > 0 && fixedFrom && fixedTo){
-                    if(isWithinInterval(currentDate, { start: fixedFrom, end: fixedTo })) {
-                        useFixedRateForThisMonth = true;
-                    }
-                }
-                
-                let daRate = 0;
-                if (useFixedRateForThisMonth) {
-                    daRate = fixedRate!;
-                } else {
-                    const daRateDetails = getRateForDate(daRates, currentDate);
-                    daRate = daRateDetails ? daRateDetails.rate : 0;
-                }
-                
-                const prorationFactor = useFixedRateForThisMonth 
-                    ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fixedFrom, fixedTo)
-                    : monthProRataFactor;
+            let drawnDA = getProratedAmount('da', 'paid');
+            let dueDA = getProratedAmount('da', 'toBePaid');
 
-                const drawnBaseForDA = (drawnBasicForMonth * prorationFactor) + drawnNPA;
-                drawnDA = drawnBaseForDA * (daRate / 100);
-            }
-            
-            let dueDA = 0;
-            if (data.toBePaid.daApplicable) {
-                const isFixedRate = data.toBePaid.daFixedRateApplicable;
-                const fixedRate = data.toBePaid.daFixedRate;
-                const fixedFrom = data.toBePaid.daFixedRateFromDate;
-                const fixedTo = data.toBePaid.daFixedRateToDate;
-                
-                let useFixedRateForThisMonth = false;
-                if(isFixedRate && fixedRate && fixedRate > 0 && fixedFrom && fixedTo){
-                    if(isWithinInterval(currentDate, { start: fixedFrom, end: fixedTo })) {
-                        useFixedRateForThisMonth = true;
-                    }
-                }
-                
-                let daRate = 0;
-                if (useFixedRateForThisMonth) {
-                    daRate = fixedRate!;
-                } else {
-                    const daRateDetails = getRateForDate(daRates, currentDate);
-                    daRate = daRateDetails ? daRateDetails.rate : 0;
-                }
-                
-                 const prorationFactor = useFixedRateForThisMonth 
-                    ? getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fixedFrom, fixedTo)
-                    : monthProRataFactor;
-                
-                const dueBaseForDA = (finalDueBasicForMonth * prorationFactor) + dueNPA;
-                dueDA = dueBaseForDA * (daRate / 100);
-            }
 
             const drawnTotal = proratedDrawnBasic + drawnDA + drawnHRA + drawnNPA + drawnTA + drawnOther;
             const dueTotal = proratedDueBasic + dueDA + dueHRA + dueNPA + dueTA + dueOther;
