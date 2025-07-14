@@ -775,7 +775,7 @@ export default function Home() {
   const loadStatement = (statementToLoad: SavedStatement) => {
       const { employeeInfo, ...restOfStatement } = statementToLoad;
 
-      const sanitizedEmployeeInfo = { ...employeeInfo };
+      const sanitizedEmployeeInfo: Partial<ArrearFormData> = { ...employeeInfo };
 
       // Make sure all date objects are actual Date objects
       const dateFields: (keyof EmployeeInfo)[] = ['fromDate', 'toDate'];
@@ -804,7 +804,7 @@ export default function Home() {
       processSideDates('toBePaid');
 
       // Reset the form with the loaded data
-      form.reset(sanitizedEmployeeInfo);
+      form.reset(sanitizedEmployeeInfo as ArrearFormData);
 
       // Set the statement for rendering the results table
       setStatement({
@@ -906,6 +906,8 @@ export default function Home() {
 
   const renderSalaryFields = (type: "paid" | "toBePaid") => {
       const currentWatchValues = type === 'paid' ? paidWatch : toBePaidWatch;
+      if (!currentWatchValues) return null; // Guard clause
+      
       const selectedIncrementMonth = parseInt(currentWatchValues.incrementMonth, 10);
       const calendarProps = selectedIncrementMonth ? {
           disabled: (date: Date) => date.getMonth() + 1 !== selectedIncrementMonth || date.getFullYear() < 1990
