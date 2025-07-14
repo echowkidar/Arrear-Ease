@@ -25,7 +25,7 @@ import {
   CloudUpload,
 } from "lucide-react";
 import { db, isFirebaseConfigured } from "@/lib/firebase";
-import { collection, addDoc, getDocs, doc, deleteDoc, Timestamp, writeBatch } from "firebase/firestore";
+import { collection, addDoc, getDocs, doc, deleteDoc, Timestamp, writeBatch, setDoc } from "firebase/firestore";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -341,7 +341,7 @@ export default function Home() {
 
   const payLevels = cpc ? cpcData[cpc].payLevels.map(pl => ({ value: pl.level, label: cpc === '6th' ? `GP ${pl.gradePay} (${pl.payBand})` : `Level ${pl.level}`})) : [];
 
-  const getRateForDate = (rates: Rate[], date: Date, basicPay?: number, payLevel?: string) => {
+  const getRateForDate = (rates: Rate[], date: Date, basicPay?: number, payLevel?: string): Rate | null => {
     const applicableRate = rates.find(r => {
       const from = new Date(r.fromDate);
       const to = new Date(r.toDate);
@@ -368,7 +368,7 @@ export default function Home() {
 
       return isDateMatch && isBasicMatch && isPayLevelMatch;
     });
-    return applicableRate ? applicableRate.rate : 0;
+    return applicableRate || null;
   }
   
   const handlePrint = () => {
@@ -418,8 +418,8 @@ export default function Home() {
         let drawnBasicTracker = data.paid.basicPay;
         let dueBasicTracker = data.toBePaid.basicPay;
         
-        let lastDrawnIncrementYear = -1;
-        let lastDueIncrementYear = -1;
+        const drawnIncrementYears: number[] = [];
+        const dueIncrementYears: number[] = [];
 
         for (let i = 0; i <= monthCount; i++) {
             const currentDate = addMonths(firstMonth, i);
@@ -440,32 +440,28 @@ export default function Home() {
             let drawnBasicForMonth = drawnBasicTracker;
             let dueBasicForMonth = dueBasicTracker;
             
-            const handleIncrement = (side: 'paid' | 'toBePaid', currentBasic: number, lastIncrementYear: number) => {
+            const handleIncrement = (side: 'paid' | 'toBePaid', currentBasic: number, appliedYears: number[]) => {
               const sideData = data[side];
               const incrementMonthValue = parseInt(sideData.incrementMonth, 10);
               const firstIncrementDate = sideData.incrementDate;
-          
+              
               let incrementTriggerDate: Date | null = null;
-          
-              if (firstIncrementDate && currentYear >= firstIncrementDate.getFullYear() && lastIncrementYear < firstIncrementDate.getFullYear()) {
+              
+              // Specific date check (first time only)
+              if (firstIncrementDate && !appliedYears.includes(firstIncrementDate.getFullYear())) {
                   if (currentYear === firstIncrementDate.getFullYear() && currentMonth === firstIncrementDate.getMonth() + 1) {
                       incrementTriggerDate = firstIncrementDate;
                   }
-              } else if (currentMonth === incrementMonthValue) {
-                  if (firstIncrementDate) {
-                      if (currentYear > firstIncrementDate.getFullYear() && lastIncrementYear < currentYear) {
-                           incrementTriggerDate = new Date(currentYear, currentMonth - 1, 1);
-                      }
-                  } else {
-                       const firstPossibleIncrementYear = (arrearFromDate.getFullYear() === currentYear && arrearFromDate.getMonth() + 1 > incrementMonthValue)
-                                                          ? currentYear + 1
-                                                          : currentYear;
-                      if(currentYear >= firstPossibleIncrementYear && lastIncrementYear < currentYear) {
-                          incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
-                      }
+              } 
+              // Annual generic check for subsequent years
+              else if (currentMonth === incrementMonthValue && !appliedYears.includes(currentYear)) {
+                  // Ensure we don't apply increment for a year before it's supposed to start
+                  const startYear = firstIncrementDate ? firstIncrementDate.getFullYear() : arrearFromDate.getFullYear();
+                  if (currentYear > startYear || (currentYear === startYear && !firstIncrementDate)) {
+                     incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
                   }
               }
-          
+
               if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd }) && isWithinInterval(incrementTriggerDate, { start: arrearFromDate, end: arrearToDate })) {
                   let incrementedBasic: number;
                   if (cpc === '7th') {
@@ -489,27 +485,27 @@ export default function Home() {
                       const daysBefore = incrementDay - 1;
                       const daysAfter = daysInMonth - daysBefore;
                       const proratedMonthlyBasic = ((currentBasic * daysBefore) + (incrementedBasic * daysAfter)) / daysInMonth;
-                      return { newMonthlyBasic: proratedMonthlyBasic, newTrackerBasic: incrementedBasic, incrementedThisRun: true, incrementYear: currentYear };
+                      return { newMonthlyBasic: proratedMonthlyBasic, newTrackerBasic: incrementedBasic, incrementedThisRun: true, year: currentYear };
                   } else {
-                      return { newMonthlyBasic: incrementedBasic, newTrackerBasic: incrementedBasic, incrementedThisRun: true, incrementYear: currentYear };
+                      return { newMonthlyBasic: incrementedBasic, newTrackerBasic: incrementedBasic, incrementedThisRun: true, year: currentYear };
                   }
               }
           
-              return { newMonthlyBasic: currentBasic, newTrackerBasic: currentBasic, incrementedThisRun: false, incrementYear: lastIncrementYear };
+              return { newMonthlyBasic: currentBasic, newTrackerBasic: currentBasic, incrementedThisRun: false, year: -1 };
             };
 
-            const drawnIncrementResult = handleIncrement('paid', drawnBasicTracker, lastDrawnIncrementYear);
+            const drawnIncrementResult = handleIncrement('paid', drawnBasicTracker, drawnIncrementYears);
             if(drawnIncrementResult.incrementedThisRun) {
                 drawnBasicForMonth = drawnIncrementResult.newMonthlyBasic;
                 drawnBasicTracker = drawnIncrementResult.newTrackerBasic;
-                lastDrawnIncrementYear = drawnIncrementResult.incrementYear;
+                drawnIncrementYears.push(drawnIncrementResult.year);
             }
 
-            const dueIncrementResult = handleIncrement('toBePaid', dueBasicTracker, lastDueIncrementYear);
+            const dueIncrementResult = handleIncrement('toBePaid', dueBasicTracker, dueIncrementYears);
              if(dueIncrementResult.incrementedThisRun) {
                 dueBasicForMonth = dueIncrementResult.newMonthlyBasic;
                 dueBasicTracker = dueIncrementResult.newTrackerBasic;
-                lastDueIncrementYear = dueIncrementResult.incrementYear;
+                dueIncrementYears.push(dueIncrementResult.year);
             }
             
             if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPay > 0 && data.toBePaid.refixedBasicPayDate) {
@@ -553,24 +549,40 @@ export default function Home() {
                 const baseBasicForMonth = side === 'paid' ? drawnBasicForMonth : dueBasicForMonth;
                 const baseTrackerBasic = side === 'paid' ? drawnBasicTracker : dueBasicTracker;
                 const basePayLevel = side === 'paid' ? data.paid.payLevel : data.toBePaid.payLevel;
-
-                let rate = 0;
+                
                 let amount = 0;
                 
                 switch(allowanceType) {
-                    case 'hra':
-                        rate = getRateForDate(hraRates, currentDate, baseTrackerBasic);
+                    case 'hra': {
+                        const rateDetails = getRateForDate(hraRates, currentDate, baseTrackerBasic);
+                        if (!rateDetails) return 0;
+                        const rate = rateDetails.rate;
+                        let hraAmount = baseBasicForMonth * (rate / 100);
+                        
+                        if (rateDetails.minAmount && rateDetails.minAmount > 0) {
+                             const daysInCurrentMonth = getDaysInMonth(currentDate);
+                             const proratedMinHRA = (rateDetails.minAmount / daysInCurrentMonth) * (daysInCurrentMonth * prorationFactor);
+                             hraAmount = Math.max(hraAmount, proratedMinHRA);
+                        }
+                        amount = hraAmount;
+                        break;
+                    }
+                    case 'npa': {
+                        const rateDetails = getRateForDate(npaRates, currentDate);
+                        if (!rateDetails) return 0;
+                        const rate = rateDetails.rate;
                         amount = baseBasicForMonth * (rate / 100);
                         break;
-                    case 'npa':
-                        rate = getRateForDate(npaRates, currentDate);
-                        amount = baseBasicForMonth * (rate / 100);
-                        break;
-                    case 'ta':
-                         const taBaseAmount = getRateForDate(taRates, currentDate, baseTrackerBasic, basePayLevel);
-                         const daRateForTa = getRateForDate(daRates, currentDate) / 100;
+                    }
+                    case 'ta': {
+                         const rateDetails = getRateForDate(taRates, currentDate, baseTrackerBasic, basePayLevel);
+                         if (!rateDetails) return 0;
+                         const taBaseAmount = rateDetails.rate;
+                         const daRateDetails = getRateForDate(daRates, currentDate);
+                         const daRateForTa = daRateDetails ? daRateDetails.rate / 100 : 0;
                          amount = taBaseAmount * (1 + daRateForTa);
                         break;
+                    }
                     case 'otherAllowance':
                         amount = otherAllowanceAmount;
                         break;
@@ -590,14 +602,16 @@ export default function Home() {
 
             let drawnDA = 0;
             if (data.paid.daApplicable) {
-                const daRate = getRateForDate(daRates, currentDate);
+                const daRateDetails = getRateForDate(daRates, currentDate);
+                const daRate = daRateDetails ? daRateDetails.rate : 0;
                 const drawnBaseForDA = proratedDrawnBasic + drawnNPA;
                 drawnDA = drawnBaseForDA * (daRate / 100);
             }
             
             let dueDA = 0;
             if (data.toBePaid.daApplicable) {
-                const daRate = getRateForDate(daRates, currentDate);
+                const daRateDetails = getRateForDate(daRates, currentDate);
+                const daRate = daRateDetails ? daRateDetails.rate : 0;
                 const dueBaseForDA = proratedDueBasic + dueNPA;
                 dueDA = dueBaseForDA * (daRate / 100);
             }
@@ -1181,5 +1195,4 @@ export default function Home() {
       </main>
     </div>
   );
-
-    
+}

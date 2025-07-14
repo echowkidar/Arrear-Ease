@@ -16,6 +16,7 @@ const rateSchema = z.object({
   basicTo: z.any().optional(),
   payLevelFrom: z.any().optional(),
   payLevelTo: z.any().optional(),
+  minAmount: z.any().optional(),
 }).refine(data => !data.toDate || !data.fromDate || new Date(data.toDate) >= new Date(data.fromDate), {
     message: "To Date cannot be before From Date.",
     path: ["toDate"],

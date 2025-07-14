@@ -88,7 +88,7 @@ const DateInput = ({ value, onChange }: { value: Date | undefined; onChange: (da
     );
 };
 
-const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevelRange, initialRates, setGlobalRates }: { title: string, description?: string, withBasicRange?: boolean, isAmount?: boolean, withPayLevelRange?: boolean, initialRates: Rate[], setGlobalRates: React.Dispatch<React.SetStateAction<Rate[]>> }) => {
+const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevelRange, withMinAmount, initialRates, setGlobalRates }: { title: string, description?: string, withBasicRange?: boolean, isAmount?: boolean, withPayLevelRange?: boolean, withMinAmount?: boolean, initialRates: Rate[], setGlobalRates: React.Dispatch<React.SetStateAction<Rate[]>> }) => {
     const { toast } = useToast();
     const [localRates, setLocalRates] = React.useState<Rate[]>(initialRates);
 
@@ -107,6 +107,7 @@ const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevelR
                 basicTo: r.basicTo ? parseFloat(r.basicTo as any) : '',
                 payLevelFrom: r.payLevelFrom ?? '',
                 payLevelTo: r.payLevelTo ?? '',
+                minAmount: r.minAmount ? parseFloat(r.minAmount as any) : '',
             }));
         
         if (validRates.length < localRates.length) {
@@ -125,7 +126,7 @@ const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevelR
     };
     
     const append = () => {
-        const newRate: Rate = { id: crypto.randomUUID(), fromDate: new Date(), toDate: new Date(), rate: '', basicFrom: '', basicTo: '', payLevelFrom: '', payLevelTo: '' };
+        const newRate: Rate = { id: crypto.randomUUID(), fromDate: new Date(), toDate: new Date(), rate: '', basicFrom: '', basicTo: '', payLevelFrom: '', payLevelTo: '', minAmount: '' };
         setLocalRates(prev => [...prev, newRate]);
     }
 
@@ -147,7 +148,7 @@ const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevelR
         updateRate(id, field, e.target.value);
     };
 
-    const handleBlur = (id: string, field: 'rate' | 'basicFrom' | 'basicTo') => {
+    const handleBlur = (id: string, field: 'rate' | 'basicFrom' | 'basicTo' | 'minAmount') => {
         const rate = localRates.find(r => r.id === id);
         if (rate && typeof rate[field] === 'string') {
             const numericValue = parseFloat(rate[field] as string);
@@ -196,6 +197,7 @@ const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevelR
                                 {withBasicRange && <><TableHead>Basic From</TableHead><TableHead>Basic To</TableHead></>}
                                 {withPayLevelRange && <><TableHead>From Pay Level</TableHead><TableHead>To Pay Level</TableHead></>}
                                 <TableHead>{isAmount ? 'Amount' : 'Rate (%)'}</TableHead>
+                                {withMinAmount && <TableHead>Min. HRA Amount</TableHead>}
                                 <TableHead className="text-right">Action</TableHead>
                             </TableRow>
                         </TableHeader>
@@ -229,6 +231,7 @@ const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevelR
                                     <TableCell className="min-w-[120px]">
                                         <Input type="number" value={field.rate ?? ''} onChange={e => handleInputChange(field.id, 'rate', e)} onBlur={() => handleBlur(field.id, 'rate')}/>
                                     </TableCell>
+                                    {withMinAmount && <TableCell className="min-w-[120px]"><Input type="number" value={field.minAmount ?? ''} onChange={e => handleInputChange(field.id, 'minAmount', e)} onBlur={() => handleBlur(field.id, 'minAmount')}/></TableCell>}
                                     <TableCell className="text-right">
                                         <Button type="button" variant="destructive" size="icon" onClick={() => remove(field.id)}>
                                             <Trash2 />
@@ -238,7 +241,7 @@ const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevelR
                             ))}
                             {localRates.length === 0 && (
                                 <TableRow>
-                                    <TableCell colSpan={withBasicRange ? (withPayLevelRange ? 7 : 5) : (withPayLevelRange ? 6: 4)} className="text-center text-muted-foreground py-4">
+                                    <TableCell colSpan={withBasicRange ? (withPayLevelRange ? (withMinAmount ? 8 : 7) : (withMinAmount ? 6: 5)) : (withPayLevelRange ? (withMinAmount ? 7 : 6) : (withMinAmount ? 5 : 4))} className="text-center text-muted-foreground py-4">
                                         No rates defined. Click 'Add Row' to start.
                                     </TableCell>
                                 </TableRow>
@@ -341,7 +344,7 @@ export default function RatesPage() {
                     
                     <div className="space-y-8">
                         <RateTable title="DA Rate Master" initialRates={daRates} setGlobalRates={setDaRates} />
-                        <RateTable title="HRA Rate Master" withBasicRange initialRates={hraRates} setGlobalRates={setHraRates} />
+                        <RateTable title="HRA Rate Master" withBasicRange withMinAmount initialRates={hraRates} setGlobalRates={setHraRates} />
                         <RateTable title="NPA Rate Master" initialRates={npaRates} setGlobalRates={setNpaRates} />
                         <RateTable title="TA Master" description="Define fixed transport allowance amounts." withBasicRange withPayLevelRange isAmount initialRates={taRates} setGlobalRates={setTaRates} />
                     </div>
