@@ -332,6 +332,8 @@ export default function Home() {
                     savedAtISO = processedData.savedAt.toISOString();
                 } else if (typeof processedData.savedAt === 'string') {
                     savedAtISO = processedData.savedAt;
+                } else if (processedData.savedAt && typeof processedData.savedAt.seconds === 'number') {
+                    savedAtISO = new Timestamp(processedData.savedAt.seconds, processedData.savedAt.nanoseconds).toDate().toISOString();
                 }
 
                 serverStatements.push({
@@ -904,10 +906,23 @@ export default function Home() {
     
     const fullyProcessedInfo = processFirestoreDataRecursive(employeeInfo);
 
-    // Using setTimeout to ensure form state updates after initial render cycles
+    const { paid, toBePaid, ...restInfo } = fullyProcessedInfo;
+    const { payLevel: paidPayLevel, ...restPaid } = paid;
+    const { payLevel: toBePaidPayLevel, ...restToBePaid } = toBePaid;
+    
+    const formDataToReset = {
+      ...restInfo,
+      paid: restPaid,
+      toBePaid: restToBePaid,
+    }
+
+    form.reset(formDataToReset as ArrearFormData);
+    
     setTimeout(() => {
-        form.reset(fullyProcessedInfo as ArrearFormData);
+        if(paidPayLevel) form.setValue('paid.payLevel', paidPayLevel);
+        if(toBePaidPayLevel) form.setValue('toBePaid.payLevel', toBePaidPayLevel);
     }, 0);
+
 
     setStatement({
         ...restOfStatement,
