@@ -181,7 +181,6 @@ const sanitizeForFirebase = (obj: any): any => {
         return obj.map(item => sanitizeForFirebase(item));
     }
     
-    // Convert Date objects to Timestamps
     if (obj instanceof Date) {
         return Timestamp.fromDate(obj);
     }
@@ -277,36 +276,38 @@ export default function Home() {
 
   const processFirestoreDataRecursive = (data: any): any => {
     if (!data) return data;
-
+  
     if (Array.isArray(data)) {
-        return data.map(item => processFirestoreDataRecursive(item));
+      return data.map(item => processFirestoreDataRecursive(item));
     }
     
-    // Check for Firestore Timestamp objects (from server) or serialized objects (from local)
-    if (typeof data === 'object' && (data instanceof Timestamp || (data.seconds !== undefined && data.nanoseconds !== undefined))) {
+    // Check for Firestore Timestamp objects (from server) or serialized objects (from local storage)
+    if (typeof data === 'object' && data !== null && !Array.isArray(data) && !(data instanceof Date)) {
+      if (typeof data.seconds === 'number' && typeof data.nanoseconds === 'number') {
         try {
-            return data instanceof Timestamp ? data.toDate() : new Timestamp(data.seconds, data.nanoseconds).toDate();
+          return new Timestamp(data.seconds, data.nanoseconds).toDate();
         } catch (e) {
-            return data; // Not a valid timestamp, return as is
+          return data; // Not a valid timestamp, return as is
         }
+      }
     }
     
     // Check for ISO date strings
     if (typeof data === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/.test(data)) {
-        const d = new Date(data);
-        if(!isNaN(d.getTime())) return d;
+      const d = new Date(data);
+      if (!isNaN(d.getTime())) return d;
     }
-
-    if (typeof data === 'object') {
-        const newObj: { [key: string]: any } = {};
-        for (const key in data) {
-            if (Object.prototype.hasOwnProperty.call(data, key)) {
-                newObj[key] = processFirestoreDataRecursive(data[key]);
-            }
+  
+    if (typeof data === 'object' && data !== null && !Array.isArray(data) && !(data instanceof Date)) {
+      const newObj: { [key: string]: any } = {};
+      for (const key in data) {
+        if (Object.prototype.hasOwnProperty.call(data, key)) {
+          newObj[key] = processFirestoreDataRecursive(data[key]);
         }
-        return newObj;
+      }
+      return newObj;
     }
-
+  
     return data;
   };
 
@@ -1434,6 +1435,3 @@ export default function Home() {
     </div>
   );
 }
-
-
-    
