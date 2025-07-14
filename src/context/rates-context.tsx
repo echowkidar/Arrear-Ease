@@ -105,7 +105,7 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
   const loadRates = useCallback(async () => {
     const localRatesData = getLocalRates();
 
-    if (isOnline && dbConfigured && db) {
+    if (dbConfigured && db) { // No longer checking isOnline, relying on persistence
         try {
             const ratesDocRef = doc(db, FIRESTORE_RATES_COLLECTION_ID, FIRESTORE_RATES_DOC_ID);
             const docSnap = await getDoc(ratesDocRef);
@@ -125,13 +125,13 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
             }
         } catch(error) {
             console.error("Could not load or sync rates from Firestore, falling back to local:", error);
-            if(localRatesData) setAllRates(localRatesData);
+            if(localRatesData) setAllRates(localRatesData); // Fallback to local on error
         }
-    } else {
+    } else { // No DB configured, use local only
         if(localRatesData) setAllRates(localRatesData);
     }
     setIsLoaded(true);
-  }, [isOnline, dbConfigured, toast]);
+  }, [dbConfigured, toast]);
 
   useEffect(() => {
     loadRates();
@@ -148,7 +148,7 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
       console.error("Could not save rates to localStorage:", error);
     }
     
-    if (isOnline && dbConfigured && db) {
+    if (dbConfigured && db) {
         try {
             const ratesDocRef = doc(db, FIRESTORE_RATES_COLLECTION_ID, FIRESTORE_RATES_DOC_ID);
             await setDoc(ratesDocRef, dataToSave, { merge: true });
@@ -161,13 +161,18 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
             });
         }
     }
-  }, [isLoaded, daRates, hraRates, npaRates, taRates, isOnline, dbConfigured, toast]);
+  }, [isLoaded, daRates, hraRates, npaRates, taRates, dbConfigured, toast]);
   
   useEffect(() => {
     // Debounced save for any changes
     const handler = setTimeout(() => {
       if(isLoaded){
-        saveRates();
+        // We only save if there are actual changes
+        const localRates = getLocalRates();
+        const currentRates = { daRates, hraRates, npaRates, taRates };
+        if (!isEqual(localRates, currentRates)) {
+            saveRates();
+        }
       }
     }, 1500);
 

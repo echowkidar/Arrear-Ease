@@ -210,7 +210,7 @@ export default function Home() {
   }
 
   const syncLocalToServer = async () => {
-      if (!isOnline || !dbConfigured) return;
+      if (!isOnline || !dbConfigured || !db) return;
       
       const localStatements = getLocalStatements();
       const localOnly = localStatements.filter(s => s.isLocal);
@@ -220,15 +220,17 @@ export default function Home() {
       setIsLoading(true);
       try {
         const batch = writeBatch(db);
+        const syncedIds = new Set();
         localOnly.forEach(stmt => {
           const { isLocal, ...serverStmt } = stmt; // remove isLocal flag
           const docRef = doc(db, FIRESTORE_STATEMENTS_COLLECTION, stmt.id);
           batch.set(docRef, serverStmt);
+          syncedIds.add(stmt.id);
         });
         await batch.commit();
 
         // Update local statements to remove isLocal flag
-        const updatedLocalStatements = localStatements.map(s => s.isLocal ? { ...s, isLocal: false } : s);
+        const updatedLocalStatements = localStatements.map(s => syncedIds.has(s.id) ? { ...s, isLocal: false } : s);
         saveLocalStatements(updatedLocalStatements);
 
         toast({
@@ -247,16 +249,23 @@ export default function Home() {
   const fetchSavedStatements = async () => {
     setIsLoading(true);
     let allStatements: SavedStatement[] = [];
+    let fetchedFromServer = false;
     
-    if (isOnline && dbConfigured) {
+    // Always load local statements first for offline availability
+    const localStatements = getLocalStatements();
+    allStatements.push(...localStatements);
+
+    if (isOnline && dbConfigured && db) {
         try {
             const querySnapshot = await getDocs(collection(db, FIRESTORE_STATEMENTS_COLLECTION));
+            fetchedFromServer = true;
+            const serverStatements: SavedStatement[] = [];
             querySnapshot.forEach((doc) => {
                 const data = doc.data();
                 const employeeInfo = data.employeeInfo;
                 if (employeeInfo.fromDate) employeeInfo.fromDate = (employeeInfo.fromDate as Timestamp).toDate();
                 if (employeeInfo.toDate) employeeInfo.toDate = (employeeInfo.toDate as Timestamp).toDate();
-                allStatements.push({
+                serverStatements.push({
                     id: doc.id,
                     savedAt: new Date(data.savedAt.seconds * 1000).toISOString(),
                     rows: data.rows,
@@ -265,24 +274,32 @@ export default function Home() {
                     isLocal: false
                 });
             });
+
+            // Merge server and local, giving server precedence
+            const serverIds = new Set(serverStatements.map(s => s.id));
+            const merged = [...serverStatements, ...localStatements.filter(l => !serverIds.has(l.id))];
+            allStatements = merged;
+
+            // Update local storage with the merged truth
+            saveLocalStatements(allStatements);
+
         } catch (error) {
             console.error("Could not load saved statements from Firestore:", error);
-            toast({
-                variant: "destructive",
-                title: "Load Failed",
-                description: "Could not fetch statements from the database. Showing local data.",
-            });
+            if (error instanceof Error && (error as any).code === 'unavailable') {
+                toast({
+                    title: "Offline Mode",
+                    description: "Displaying locally saved statements. Will sync when online.",
+                });
+            } else {
+                 toast({
+                    variant: "destructive",
+                    title: "Load Failed",
+                    description: "Could not fetch statements from the database. Showing local data.",
+                });
+            }
         }
     }
     
-    // Merge with local statements, giving precedence to server version if IDs match
-    const localStatements = getLocalStatements();
-    localStatements.forEach(localStmt => {
-        if (!allStatements.some(serverStmt => serverStmt.id === localStmt.id)) {
-            allStatements.push(localStmt);
-        }
-    });
-
     setSavedStatements(allStatements.sort((a,b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()));
     setIsLoading(false);
   };
@@ -433,85 +450,98 @@ export default function Home() {
             if(currentDate < arrearFromDate && !isWithinInterval(arrearFromDate, { start: monthStart, end: monthEnd })) continue;
             if(currentDate > arrearToDate && !isWithinInterval(arrearToDate, { start: monthStart, end: monthEnd })) continue;
 
-            let drawnBasicForMonth = drawnBasicTracker;
-            let dueBasicForMonth = dueBasicTracker;
-            
-            const handleIncrement = (side: 'paid' | 'toBePaid', currentBasic: number, basicTracker: number): [number, number] => {
+            const handleIncrement = (side: 'paid' | 'toBePaid', currentBasicTracker: number): [number, number] => {
                 const sideData = data[side];
                 const incrementMonthValue = parseInt(sideData.incrementMonth, 10);
                 const firstIncrementDate = sideData.incrementDate;
 
-                let newBasicForMonth = currentBasic;
-                let newBasicTracker = basicTracker;
-
-                const incrementYear = currentYear;
+                let newBasicForMonth = currentBasicTracker;
+                let newBasicTracker = currentBasicTracker;
 
                 let incrementTriggerDate: Date | null = null;
+                
+                // Determine if an increment should happen this month.
+                // It happens if the specific date is set and falls in this month,
+                // OR if only the month is set and it matches.
+                
+                const incrementYear = currentYear;
+                let potentialIncrementDate: Date;
 
-                if (firstIncrementDate && incrementYear === firstIncrementDate.getFullYear() && currentMonth === firstIncrementDate.getMonth() + 1) {
-                    incrementTriggerDate = firstIncrementDate;
-                } else if (firstIncrementDate && currentYear > firstIncrementDate.getFullYear() && currentMonth === firstIncrementDate.getMonth() + 1) {
-                    incrementTriggerDate = new Date(incrementYear, firstIncrementDate.getMonth(), 1);
-                } else if (!firstIncrementDate && currentMonth === incrementMonthValue) {
-                   if (currentYear > arrearFromDate.getFullYear() || (currentYear === arrearFromDate.getFullYear() && currentMonth >= (arrearFromDate.getMonth() + 1))) {
-                        incrementTriggerDate = new Date(incrementYear, incrementMonthValue - 1, 1);
+                if (firstIncrementDate) {
+                    if (incrementYear === firstIncrementDate.getFullYear() && currentMonth === firstIncrementDate.getMonth() + 1) {
+                         potentialIncrementDate = firstIncrementDate;
+                         if (isWithinInterval(potentialIncrementDate, {start: arrearFromDate, end: arrearToDate})) {
+                            incrementTriggerDate = potentialIncrementDate;
+                         }
+                    } else if (incrementYear > firstIncrementDate.getFullYear() && currentMonth === firstIncrementDate.getMonth() + 1) {
+                        potentialIncrementDate = new Date(incrementYear, firstIncrementDate.getMonth(), firstIncrementDate.getDate());
+                        if (isWithinInterval(potentialIncrementDate, {start: arrearFromDate, end: arrearToDate})) {
+                            incrementTriggerDate = potentialIncrementDate;
+                        }
+                    }
+                } else if (currentMonth === incrementMonthValue) {
+                   potentialIncrementDate = new Date(incrementYear, incrementMonthValue - 1, 1);
+                   if (potentialIncrementDate >= arrearFromDate && isWithinInterval(potentialIncrementDate, {start: arrearFromDate, end: arrearToDate})) {
+                       incrementTriggerDate = potentialIncrementDate;
                    }
                 }
                 
-                if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd }) && isWithinInterval(incrementTriggerDate, { start: arrearFromDate, end: arrearToDate })) {
+                if (incrementTriggerDate) {
                     let incrementedBasicValue: number;
                     if (cpc === '7th') {
                         const levelData = cpcData['7th'].payLevels.find(l => l.level === sideData.payLevel);
                         if (levelData) {
-                            const currentBasicIndex = levelData.values.indexOf(basicTracker);
+                            const currentBasicIndex = levelData.values.indexOf(newBasicTracker);
                             if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
                                 incrementedBasicValue = levelData.values[currentBasicIndex + 1];
                             } else {
-                                incrementedBasicValue = basicTracker;
+                                incrementedBasicValue = newBasicTracker;
                             }
                         } else {
-                            incrementedBasicValue = basicTracker;
+                            incrementedBasicValue = newBasicTracker;
                         }
                     } else {
-                        incrementedBasicValue = Math.round(basicTracker * 1.03);
+                        incrementedBasicValue = Math.round(newBasicTracker * 1.03);
                     }
                     
                     const incrementDay = incrementTriggerDate.getDate();
-                    if (incrementDay > 1) {
+                    if (isWithinInterval(incrementTriggerDate, {start: monthStart, end: monthEnd}) && incrementDay > 1) {
                         const daysBefore = incrementDay - 1;
                         const daysAfter = daysInMonth - daysBefore;
-                        newBasicForMonth = ((basicTracker * daysBefore) + (incrementedBasicValue * daysAfter)) / daysInMonth;
+                        newBasicForMonth = ((newBasicTracker * daysBefore) + (incrementedBasicValue * daysAfter)) / daysInMonth;
                     } else {
                         newBasicForMonth = incrementedBasicValue;
                     }
                     newBasicTracker = incrementedBasicValue;
                 }
+                
                 return [newBasicForMonth, newBasicTracker];
             };
 
-            [drawnBasicForMonth, drawnBasicTracker] = handleIncrement('paid', drawnBasicForMonth, drawnBasicTracker);
-            [dueBasicForMonth, dueBasicTracker] = handleIncrement('toBePaid', dueBasicForMonth, dueBasicTracker);
+            const [drawnBasicForMonth, updatedDrawnBasicTracker] = handleIncrement('paid', drawnBasicTracker);
+            drawnBasicTracker = updatedDrawnBasicTracker;
 
+            const [dueBasicForMonth, updatedDueBasicTracker] = handleIncrement('toBePaid', dueBasicTracker);
+            dueBasicTracker = updatedDueBasicTracker;
+            
+            let finalDueBasicForMonth = dueBasicForMonth;
 
             if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPay > 0 && data.toBePaid.refixedBasicPayDate) {
                 const refixDate = data.toBePaid.refixedBasicPayDate;
-                 if (currentDate >= startOfMonth(refixDate)) {
-                    if (currentYear === refixDate.getFullYear() && currentMonth === refixDate.getMonth() + 1) {
-                        const refixDay = refixDate.getDate();
-                        const basicBeforeRefix = dueBasicForMonth; 
-                        
-                        if (refixDay > 1) {
-                            const daysBefore = refixDay - 1;
-                            const daysAfter = daysInMonth - daysBefore;
-                            dueBasicForMonth = ((basicBeforeRefix * daysBefore) + (data.toBePaid.refixedBasicPay * daysAfter)) / daysInMonth;
-                        } else {
-                            dueBasicForMonth = data.toBePaid.refixedBasicPay;
-                        }
-                        dueBasicTracker = data.toBePaid.refixedBasicPay;
-                    } 
-                    else if (currentDate > refixDate) {
-                        dueBasicForMonth = dueBasicTracker;
+                if (isWithinInterval(refixDate, { start: monthStart, end: monthEnd })) {
+                    const refixDay = refixDate.getDate();
+                    const basicBeforeRefix = dueBasicForMonth;
+                    
+                    if (refixDay > 1) {
+                        const daysBefore = refixDay - 1;
+                        const daysAfter = daysInMonth - daysBefore;
+                        finalDueBasicForMonth = ((basicBeforeRefix * daysBefore) + (data.toBePaid.refixedBasicPay * daysAfter)) / daysInMonth;
+                    } else {
+                        finalDueBasicForMonth = data.toBePaid.refixedBasicPay;
                     }
+                    dueBasicTracker = data.toBePaid.refixedBasicPay;
+                } else if (currentDate > refixDate) {
+                    finalDueBasicForMonth = dueBasicTracker;
                 }
             }
            
@@ -521,7 +551,7 @@ export default function Home() {
             const monthProRataFactor = daysToCalculateForMonth / daysInMonth;
 
             const proratedDrawnBasic = drawnBasicForMonth * monthProRataFactor;
-            const proratedDueBasic = dueBasicForMonth * monthProRataFactor;
+            const proratedDueBasic = finalDueBasicForMonth * monthProRataFactor;
             
             const getProratedAmount = (allowanceType: 'hra' | 'npa' | 'ta' | 'otherAllowance', side: 'paid' | 'toBePaid') => {
                 const sideData = data[side];
@@ -536,7 +566,7 @@ export default function Home() {
                 const prorationFactor = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fromDate, toDate);
                 if (prorationFactor === 0) return 0;
                 
-                const baseBasicForMonth = side === 'paid' ? drawnBasicForMonth : dueBasicForMonth;
+                const baseBasicForMonth = side === 'paid' ? drawnBasicForMonth : finalDueBasicForMonth;
                 const baseTrackerBasic = side === 'paid' ? drawnBasicTracker : dueBasicTracker;
                 const basePayLevel = side === 'paid' ? data.paid.payLevel : data.toBePaid.payLevel;
                 
@@ -687,27 +717,26 @@ export default function Home() {
         ...statement,
         id: docId,
         savedAt: new Date().toISOString(),
-        isLocal: true
     };
     
     // Always save locally first
     const localStatements = getLocalStatements();
-    saveLocalStatements([...localStatements, docToSave]);
+    saveLocalStatements([...localStatements, { ...docToSave, isLocal: true }]);
+    setSavedStatements(prev => [...prev, { ...docToSave, isLocal: true }].sort((a,b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()));
 
-    if (isOnline && dbConfigured) {
+    if (isOnline && dbConfigured && db) {
         try {
-            const { isLocal, ...serverStmt } = docToSave;
-            await setDoc(doc(db, FIRESTORE_STATEMENTS_COLLECTION, docId), serverStmt);
+            await setDoc(doc(db, FIRESTORE_STATEMENTS_COLLECTION, docId), docToSave);
             
             // Update local copy to remove isLocal flag
             const updatedLocalStatements = getLocalStatements().map(s => s.id === docId ? { ...s, isLocal: false } : s);
             saveLocalStatements(updatedLocalStatements);
+            setSavedStatements(prev => prev.map(s => s.id === docId ? { ...s, isLocal: false } : s));
 
             toast({
                 title: "Arrear Saved",
                 description: "The statement has been saved to your browser and the database.",
             });
-            fetchSavedStatements();
         } catch (error) {
             console.error("Failed to save statement to Firestore:", error);
             toast({
@@ -736,6 +765,10 @@ export default function Home() {
      }
      setStatement(sanitizedStatement);
      setLoadDialogOpen(false);
+     toast({
+        title: "Statement Loaded",
+        description: `Loaded arrear for ${statementToLoad.employeeInfo.employeeName}.`
+     });
      setTimeout(() => {
         document.getElementById("statement-section")?.scrollIntoView({ behavior: 'smooth' });
       }, 100);
@@ -748,7 +781,7 @@ export default function Home() {
     const localStatements = getLocalStatements();
     saveLocalStatements(localStatements.filter(s => s.id !== id));
 
-    if (isOnline && dbConfigured && !isLocal) {
+    if (isOnline && dbConfigured && db && !isLocal) {
         try {
             await deleteDoc(doc(db, FIRESTORE_STATEMENTS_COLLECTION, id));
             toast({
@@ -770,7 +803,7 @@ export default function Home() {
         });
     }
 
-    fetchSavedStatements(); // Refresh list
+    await fetchSavedStatements(); // Refresh list
     setIsLoading(false);
   }
 
