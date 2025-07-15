@@ -2,22 +2,23 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Users can create their own profile upon signup.
-    // They can only read/update their own data afterwards.
+    // Authenticated users can create their own user document,
+    // and can only read/update/delete their own document.
     match /users/{userId} {
-      allow read, update: if request.auth != null && request.auth.uid == userId;
+      allow read, update, delete: if request.auth != null && request.auth.uid == userId;
       allow create: if request.auth != null && request.auth.uid == userId;
     }
-    
-    // Users can only CUD their own statements.
+
+    // Users can manage their own saved statements.
     match /savedStatements/{statementId} {
-      allow read, create, update, delete: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow read, write, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
     }
 
-    // Rate configurations can be read and written by any authenticated user.
-    match /configurations/{docId} {
-       allow read, write: if request.auth != null;
+    // All authenticated users can read, but not write, the central rate configurations.
+    match /configurations/{configId} {
+      allow read: if request.auth != null;
+      allow write: if false;
     }
   }
 }
