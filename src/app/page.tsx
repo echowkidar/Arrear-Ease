@@ -25,9 +25,10 @@ import {
   CloudUpload,
   Copy,
   Edit,
+  LogOut,
 } from "lucide-react";
 import { db, isFirebaseConfigured } from "@/lib/firebase";
-import { collection, addDoc, getDocs, doc, deleteDoc, Timestamp, writeBatch, setDoc, updateDoc } from "firebase/firestore";
+import { collection, addDoc, getDocs, doc, deleteDoc, Timestamp, writeBatch, setDoc, updateDoc, query, where } from "firebase/firestore";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -90,6 +91,9 @@ import { Rate, useRates } from "@/context/rates-context";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Switch } from "@/components/ui/switch";
+import { useAuth } from "@/context/auth-context";
+import { AuthModal, GuestInfoModal, OtpModal } from "@/components/auth-modals";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 const salaryComponentSchema = z.object({
   cpc: z.enum(["6th", "7th"], { required_error: "CPC selection is required." }),
@@ -185,6 +189,7 @@ type SavedStatement = {
   rows: StatementRow[];
   totals: StatementTotals;
   employeeInfo: EmployeeInfo;
+  userId?: string;
 };
 
 const INCREMENT_MONTHS = [
@@ -226,7 +231,8 @@ export default function Home() {
   const [isOnline, setIsOnline] = React.useState(true);
   const [dbConfigured] = React.useState(isFirebaseConfigured());
   const [loadedStatementId, setLoadedStatementId] = React.useState<string | null>(null);
-
+  
+  const { user, authStatus, loading, logout, openAuthModal, openGuestModal } = useAuth();
   const { toast } = useToast();
   const { daRates, hraRates, npaRates, taRates } = useRates();
 
@@ -262,7 +268,7 @@ export default function Home() {
   }
 
   const syncLocalToServer = async () => {
-      if (!isOnline || !dbConfigured || !db) return;
+      if (!isOnline || !dbConfigured || !db || authStatus !== 'authenticated') return;
       
       const localStatements = getLocalStatements();
       const localOnly = localStatements.filter(s => s.isLocal);
@@ -276,7 +282,7 @@ export default function Home() {
         localOnly.forEach(stmt => {
           const { isLocal, ...serverStmt } = stmt; // remove isLocal flag
           const docRef = doc(db, FIRESTORE_STATEMENTS_COLLECTION, stmt.id);
-          batch.set(docRef, sanitizeForFirebase(serverStmt));
+          batch.set(docRef, sanitizeForFirebase({ ...serverStmt, userId: user?.uid }));
           syncedIds.add(stmt.id);
         });
         await batch.commit();
@@ -334,15 +340,20 @@ export default function Home() {
   };
 
   const fetchSavedStatements = async () => {
+    if (authStatus !== 'authenticated') return;
     setIsLoading(true);
     let allStatements: SavedStatement[] = [];
     
-    const localStatements = getLocalStatements();
-    allStatements.push(...localStatements);
+    // We only fetch from local for authenticated users if they are offline
+    if (!isOnline) {
+      const localStatements = getLocalStatements();
+      allStatements.push(...localStatements);
+    }
 
-    if (isOnline && dbConfigured && db) {
+    if (isOnline && dbConfigured && db && user?.uid) {
         try {
-            const querySnapshot = await getDocs(collection(db, FIRESTORE_STATEMENTS_COLLECTION));
+            const q = query(collection(db, FIRESTORE_STATEMENTS_COLLECTION), where("userId", "==", user.uid));
+            const querySnapshot = await getDocs(q);
             const serverStatements: SavedStatement[] = [];
             querySnapshot.forEach((docSnap) => {
                 const data = docSnap.data();
@@ -368,14 +379,8 @@ export default function Home() {
                     isLocal: false
                 });
             });
-
-            // Merge server and local, giving server precedence
-            const serverIds = new Set(serverStatements.map(s => s.id));
-            const merged = [...serverStatements, ...localStatements.filter(l => !serverIds.has(l.id))];
-            allStatements = merged;
-
-            // Update local storage with the merged truth
-            saveLocalStatements(allStatements);
+            allStatements = serverStatements;
+            saveLocalStatements(allStatements); // keep local in sync
 
         } catch (error) {
             console.error("Could not load saved statements from Firestore:", error);
@@ -399,16 +404,16 @@ export default function Home() {
   };
 
   React.useEffect(() => {
-    if(isLoadDialogOpen) {
+    if(isLoadDialogOpen && authStatus === 'authenticated') {
       fetchSavedStatements();
     }
-  }, [isLoadDialogOpen]);
-
+  }, [isLoadDialogOpen, authStatus]);
+  
   React.useEffect(() => {
-    if (isOnline && dbConfigured) {
+    if (isOnline && dbConfigured && authStatus === 'authenticated') {
         syncLocalToServer();
     }
-  }, [isOnline, dbConfigured]);
+  }, [isOnline, dbConfigured, authStatus]);
   
   const form = useForm<ArrearFormData>({
     resolver: zodResolver(formSchema),
@@ -575,15 +580,14 @@ export default function Home() {
                     if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd })) {
                         let newBasic: number | null = null;
                         if (sideData.cpc === '7th' && sideData.payLevel) {
-                            const levelData = cpcData['7th'].payLevels.find(l => {
-                                if(l.level.includes('/')) {
-                                    return l.level.split('/').includes(sideData.payLevel);
-                                }
-                                return l.level === sideData.payLevel;
-                            });
+                           let levelData = cpcData['7th'].payLevels.find(l => l.level === sideData.payLevel);
+                            
+                            if (!levelData) {
+                                levelData = cpcData['7th'].payLevels.find(l => l.level.includes('/') && l.level.split('/').includes(sideData.payLevel));
+                            }
 
                             if (levelData) {
-                                const currentBasicIndex = levelData.values.indexOf(trackerBasic);
+                                const currentBasicIndex = levelData.values.indexOf(basicForMonth);
                                 if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
                                     newBasic = levelData.values[currentBasicIndex + 1];
                                 }
@@ -615,11 +619,9 @@ export default function Home() {
             
             const drawnIncrementResult = handleIncrement('paid', drawnBasicTracker);
             let drawnBasicForMonth = drawnIncrementResult.basicForMonth;
-            drawnBasicTracker = drawnIncrementResult.newTrackerValue;
             
             const dueIncrementResult = handleIncrement('toBePaid', dueBasicTracker);
             let dueBasicForMonth = dueIncrementResult.basicForMonth;
-            dueBasicTracker = dueIncrementResult.newTrackerValue;
             
             if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPay > 0 && data.toBePaid.refixedBasicPayDate) {
                 const refixDate = data.toBePaid.refixedBasicPayDate;
@@ -641,6 +643,9 @@ export default function Home() {
                     }
                 }
             }
+
+            drawnBasicTracker = drawnIncrementResult.newTrackerValue;
+            dueBasicTracker = dueIncrementResult.newTrackerValue;
            
             const effectiveMonthStart = max([monthStart, arrearFromDate]);
             const effectiveMonthEnd = min([monthEnd, arrearToDate]);
@@ -852,9 +857,22 @@ export default function Home() {
         return null;
     }
   };
+
+  const handleCalculatePress = (data: ArrearFormData) => {
+    if (authStatus === 'unauthenticated') {
+      openGuestModal(() => onSubmit(data));
+    } else {
+      onSubmit(data);
+    }
+  };
   
   const handleSaveOrUpdate = async () => {
     if (!statement) return;
+
+    if (authStatus !== 'authenticated') {
+      openAuthModal();
+      return;
+    }
 
     if (loadedStatementId) {
       await updateStatement();
@@ -864,7 +882,7 @@ export default function Home() {
   }
 
   const saveStatement = async () => {
-    if (!statement) return;
+    if (!statement || !user) return;
     setIsLoading(true);
 
     const docId = crypto.randomUUID();
@@ -872,9 +890,10 @@ export default function Home() {
         ...statement,
         id: docId,
         savedAt: new Date().toISOString(),
+        userId: user.uid,
     };
     
-    // Always save locally first
+    // Always save locally first for offline capability
     const localStatements = getLocalStatements();
     saveLocalStatements([...localStatements, { ...docToSave, isLocal: true }]);
     setSavedStatements(prev => [...prev, { ...docToSave, isLocal: true }].sort((a,b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()));
@@ -891,20 +910,20 @@ export default function Home() {
             setLoadedStatementId(docId); // Set the loaded ID to enable "Update"
             toast({
                 title: "Arrear Saved",
-                description: "The statement has been saved to your browser and the database.",
+                description: "The statement has been saved to your account.",
             });
         } catch (error) {
             console.error("Failed to save statement to Firestore:", error);
             toast({
                 title: "Saved Locally",
-                description: "The statement has been saved to your browser. It will sync to the database when online.",
+                description: "The statement has been saved to your browser. It will sync to your account when online.",
             });
         }
     } else {
         setLoadedStatementId(docId); // Set the loaded ID to enable "Update"
         toast({
             title: "Saved Locally",
-            description: "The statement has been saved to your browser. It will sync to the database when online.",
+            description: "The statement has been saved to your browser. It will sync to your account when online.",
         });
     }
 
@@ -939,7 +958,7 @@ export default function Home() {
     // Update local storage first
     const localStatements = getLocalStatements();
     const updatedLocalStatements = localStatements.map(s => 
-        s.id === loadedStatementId ? { ...docToUpdate, isLocal: s.isLocal ?? true } : s
+        s.id === loadedStatementId ? { ...docToUpdate, userId: user?.uid, isLocal: s.isLocal ?? true } : s
     );
     saveLocalStatements(updatedLocalStatements);
     setSavedStatements(updatedLocalStatements.sort((a,b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()));
@@ -979,6 +998,11 @@ export default function Home() {
 
   const handleCopy = () => {
     if (!statement) return;
+
+    if (authStatus !== 'authenticated') {
+      openAuthModal();
+      return;
+    }
 
     // Clear employee-specific fields
     form.setValue("employeeId", "");
@@ -1399,6 +1423,10 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-background">
       <main className="container mx-auto px-4 py-8 md:py-12">
+        <AuthModal />
+        <GuestInfoModal />
+        <OtpModal />
+
         <header className="text-center mb-8 no-print">
           <div className="flex justify-end items-center gap-4">
             <TooltipProvider>
@@ -1419,6 +1447,26 @@ export default function Home() {
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
+
+            {loading ? (
+                <Loader2 className="h-6 w-6 animate-spin"/>
+            ) : authStatus === 'authenticated' && user ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="flex items-center gap-2">
+                    <User className="h-4 w-4" />
+                    <span>{user.displayName || user.phoneNumber}</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={logout}>
+                    <LogOut className="mr-2 h-4 w-4" />
+                    <span>Log out</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
+
             <ThemeToggle />
           </div>
           <h1 className="font-headline text-4xl md:text-5xl font-bold text-primary">Arrear Ease</h1>
@@ -1429,7 +1477,13 @@ export default function Home() {
         <div className="flex flex-col sm:flex-row justify-end gap-2 mb-4 no-print">
             <Dialog open={isLoadDialogOpen} onOpenChange={setLoadDialogOpen}>
                 <DialogTrigger asChild>
-                    <Button variant="outline">
+                    <Button variant="outline" onClick={() => {
+                      if (authStatus !== 'authenticated') {
+                        openAuthModal();
+                      } else {
+                        setLoadDialogOpen(true);
+                      }
+                    }}>
                         <FolderOpen className="mr-2 h-4 w-4" /> Load Saved Arrears
                     </Button>
                 </DialogTrigger>
@@ -1472,15 +1526,17 @@ export default function Home() {
                     </div>
                 </DialogContent>
             </Dialog>
-            <Button variant="outline" asChild>
-                <Link href="/rates">
-                    <Settings className="mr-2 h-4 w-4" /> Rate Configuration
-                </Link>
-            </Button>
+            {authStatus === 'authenticated' && (
+              <Button variant="outline" asChild>
+                  <Link href="/rates">
+                      <Settings className="mr-2 h-4 w-4" /> Rate Configuration
+                  </Link>
+              </Button>
+            )}
         </div>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(data => onSubmit(data))} className="space-y-8 no-print">
+          <form onSubmit={form.handleSubmit(handleCalculatePress)} className="space-y-8 no-print">
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
               <div className="lg:col-span-2 space-y-8">
                 <Card id="employee-details-card">
@@ -1544,12 +1600,12 @@ export default function Home() {
                    </CardDescription>
                 </div>
                 <div className="flex flex-wrap gap-2 no-print">
-                   <Button onClick={handleSaveOrUpdate} variant="outline" disabled={isLoading}>
+                   <Button onClick={handleSaveOrUpdate} variant="outline" disabled={isLoading || authStatus === 'guest'}>
                       {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (loadedStatementId ? <Edit className="mr-2 h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />)}
                       {loadedStatementId ? "Update Arrear" : "Save Arrear"}
                    </Button>
                    {loadedStatementId && (
-                     <Button onClick={handleCopy} variant="outline" disabled={isLoading}>
+                     <Button onClick={handleCopy} variant="outline" disabled={isLoading || authStatus !== 'authenticated'}>
                         <Copy className="mr-2 h-4 w-4" /> Copy Arrear
                      </Button>
                    )}
@@ -1634,5 +1690,3 @@ export default function Home() {
     </div>
   );
 }
-
-    

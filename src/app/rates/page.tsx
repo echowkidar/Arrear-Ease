@@ -58,6 +58,8 @@ import { useRates, Rate } from "@/context/rates-context";
 import { useToast } from "@/hooks/use-toast";
 import { cpcData } from "@/lib/cpc-data";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { useAuth } from "@/context/auth-context";
+import { useRouter } from "next/navigation";
 
 
 const allPayLevels = [
@@ -261,95 +263,59 @@ const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevelR
     )
 }
 
-const PasswordDialog = ({ open, onAuthenticated }: { open: boolean, onAuthenticated: () => void }) => {
-    const [password, setPassword] = React.useState('');
-    const [error, setError] = React.useState('');
-
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (password === 'Salary') {
-            onAuthenticated();
-        } else {
-            setError('Incorrect password. Please try again.');
-        }
-    };
-    
-    return (
-        <Dialog open={open}>
-            <DialogContent className="sm:max-w-md" onInteractOutside={(e) => e.preventDefault()}>
-                <DialogHeader>
-                    <DialogTitle>Authentication Required</DialogTitle>
-                    <DialogDescription>
-                        Please enter the password to access the rate configuration page.
-                    </DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleSubmit}>
-                    <div className="grid gap-4 py-4">
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <label htmlFor="password-input" className="text-right">Password</label>
-                            <Input
-                                id="password-input"
-                                type="password"
-                                value={password}
-                                onChange={(e) => {
-                                  setPassword(e.target.value);
-                                  setError('');
-                                }}
-                                className="col-span-3"
-                            />
-                        </div>
-                        {error && <p className="col-span-4 text-center text-sm text-destructive">{error}</p>}
-                    </div>
-                    <DialogFooter>
-                        <Button type="submit">Unlock</Button>
-                    </DialogFooter>
-                </form>
-            </DialogContent>
-        </Dialog>
-    );
-};
-
-
-export default function RatesPage() {
+const ProtectedRatesPage = () => {
     const { 
         daRates, setDaRates, 
         hraRates, setHraRates,
         npaRates, setNpaRates,
         taRates, setTaRates
     } = useRates();
-    const [isAuthenticated, setIsAuthenticated] = React.useState(false);
-
-    return (
+     return (
         <main className="container mx-auto px-4 py-8 md:py-12">
-            {!isAuthenticated ? (
-                <PasswordDialog open={!isAuthenticated} onAuthenticated={() => setIsAuthenticated(true)} />
-            ) : (
-                <>
-                    <header className="mb-8">
-                      <div className="flex justify-between items-center">
-                        <Button asChild variant="outline">
-                            <Link href="/">
-                                <ArrowLeft className="mr-2" /> Back to Calculator
-                            </Link>
-                        </Button>
-                        <ThemeToggle />
-                      </div>
-                        <h1 className="font-headline text-4xl md:text-5xl font-bold text-primary text-center mt-4">
-                            Allowances Rate Configuration
-                        </h1>
-                        <p className="text-muted-foreground mt-2 text-lg text-center">
-                            Define the applicable rates for various allowances.
-                        </p>
-                    </header>
-                    
-                    <div className="space-y-8">
-                        <RateTable title="DA Rate Master" initialRates={daRates} setGlobalRates={setDaRates} />
-                        <RateTable title="HRA Rate Master" withBasicRange withMinAmount initialRates={hraRates} setGlobalRates={setHraRates} />
-                        <RateTable title="NPA Rate Master" initialRates={npaRates} setGlobalRates={setNpaRates} />
-                        <RateTable title="TA Master" description="Define fixed transport allowance amounts." withBasicRange withPayLevelRange isAmount initialRates={taRates} setGlobalRates={setTaRates} />
-                    </div>
-                </>
-            )}
+            <header className="mb-8">
+                <div className="flex justify-between items-center">
+                <Button asChild variant="outline">
+                    <Link href="/">
+                        <ArrowLeft className="mr-2" /> Back to Calculator
+                    </Link>
+                </Button>
+                <ThemeToggle />
+                </div>
+                <h1 className="font-headline text-4xl md:text-5xl font-bold text-primary text-center mt-4">
+                    Allowances Rate Configuration
+                </h1>
+                <p className="text-muted-foreground mt-2 text-lg text-center">
+                    Define the applicable rates for various allowances.
+                </p>
+            </header>
+            
+            <div className="space-y-8">
+                <RateTable title="DA Rate Master" initialRates={daRates} setGlobalRates={setDaRates} />
+                <RateTable title="HRA Rate Master" withBasicRange withMinAmount initialRates={hraRates} setGlobalRates={setHraRates} />
+                <RateTable title="NPA Rate Master" initialRates={npaRates} setGlobalRates={setNpaRates} />
+                <RateTable title="TA Master" description="Define fixed transport allowance amounts." withBasicRange withPayLevelRange isAmount initialRates={taRates} setGlobalRates={setTaRates} />
+            </div>
         </main>
     );
+}
+
+export default function RatesPage() {
+    const { authStatus, loading } = useAuth();
+    const router = useRouter();
+
+    React.useEffect(() => {
+        if (!loading && authStatus !== 'authenticated') {
+            router.push('/');
+        }
+    }, [authStatus, loading, router]);
+
+    if (loading || authStatus !== 'authenticated') {
+        return (
+            <div className="flex justify-center items-center min-h-screen">
+                <p>Loading...</p>
+            </div>
+        );
+    }
+    
+    return <ProtectedRatesPage />;
 }

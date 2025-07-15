@@ -1,6 +1,7 @@
 
-import { initializeApp, getApps, getApp } from "firebase/app";
+import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
 import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
+import { getAuth, type Auth } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -17,8 +18,9 @@ export const isFirebaseConfigured = () => {
 };
 
 // Initialize Firebase only if it's configured
-const app = isFirebaseConfigured() && !getApps().length ? initializeApp(firebaseConfig) : (getApps().length ? getApp() : null);
+const app: FirebaseApp | null = isFirebaseConfigured() && !getApps().length ? initializeApp(firebaseConfig) : (getApps().length ? getApp() : null);
 const db = app ? getFirestore(app) : null;
+const auth: Auth | null = app ? getAuth(app) : null;
 
 // Enable offline persistence if db is initialized
 if (db) {
@@ -37,4 +39,4 @@ if (db) {
 }
 
 
-export { db };
+export { db, auth, app };
