@@ -92,7 +92,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/context/auth-context";
-import { AuthModal, GuestInfoModal, OtpModal } from "@/components/auth-modals";
+import { AuthModal } from "@/components/auth-modals";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 const salaryComponentSchema = z.object({
@@ -232,7 +232,7 @@ export default function Home() {
   const [dbConfigured] = React.useState(isFirebaseConfigured());
   const [loadedStatementId, setLoadedStatementId] = React.useState<string | null>(null);
   
-  const { user, authStatus, loading, logout, openAuthModal, openGuestModal } = useAuth();
+  const { user, authStatus, loading, logout, openAuthModal } = useAuth();
   const { toast } = useToast();
   const { daRates, hraRates, npaRates, taRates } = useRates();
 
@@ -268,10 +268,10 @@ export default function Home() {
   }
 
   const syncLocalToServer = async () => {
-      if (!isOnline || !dbConfigured || !db || authStatus !== 'authenticated') return;
+      if (!isOnline || !dbConfigured || !db || authStatus !== 'authenticated' || !user?.uid) return;
       
       const localStatements = getLocalStatements();
-      const localOnly = localStatements.filter(s => s.isLocal);
+      const localOnly = localStatements.filter(s => s.isLocal && !s.userId); // Only sync statements that haven't been assigned a user
 
       if (localOnly.length === 0) return;
 
@@ -282,18 +282,18 @@ export default function Home() {
         localOnly.forEach(stmt => {
           const { isLocal, ...serverStmt } = stmt; // remove isLocal flag
           const docRef = doc(db, FIRESTORE_STATEMENTS_COLLECTION, stmt.id);
-          batch.set(docRef, sanitizeForFirebase({ ...serverStmt, userId: user?.uid }));
+          batch.set(docRef, sanitizeForFirebase({ ...serverStmt, userId: user.uid }));
           syncedIds.add(stmt.id);
         });
         await batch.commit();
 
-        // Update local statements to remove isLocal flag
-        const updatedLocalStatements = localStatements.map(s => syncedIds.has(s.id) ? { ...s, isLocal: false } : s);
+        // Update local statements to remove isLocal flag and add userId
+        const updatedLocalStatements = localStatements.map(s => syncedIds.has(s.id) ? { ...s, isLocal: false, userId: user.uid } : s);
         saveLocalStatements(updatedLocalStatements);
 
         toast({
             title: "Sync Complete",
-            description: `${localOnly.length} locally saved statement(s) have been synced to the database.`
+            description: `${localOnly.length} locally saved statement(s) have been synced to your account.`
         });
         await fetchSavedStatements(); // refresh list
       } catch (error) {
@@ -347,7 +347,7 @@ export default function Home() {
     // We only fetch from local for authenticated users if they are offline
     if (!isOnline) {
       const localStatements = getLocalStatements();
-      allStatements.push(...localStatements);
+      allStatements.push(...localStatements.filter(s => s.userId === user?.uid));
     }
 
     if (isOnline && dbConfigured && db && user?.uid) {
@@ -389,12 +389,17 @@ export default function Home() {
                     title: "Offline Mode",
                     description: "Displaying locally saved statements. Will sync when online.",
                 });
+                 const localStatements = getLocalStatements();
+                 allStatements.push(...localStatements.filter(s => s.userId === user?.uid));
+
             } else {
                  toast({
                     variant: "destructive",
                     title: "Load Failed",
                     description: "Could not fetch statements from the database. Showing local data.",
                 });
+                 const localStatements = getLocalStatements();
+                 allStatements.push(...localStatements.filter(s => s.userId === user?.uid));
             }
         }
     }
@@ -569,12 +574,13 @@ export default function Home() {
                     const incrementMonthValue = parseInt(sideData.incrementMonth, 10);
                     let incrementTriggerDate: Date | null = null;
             
-                    if (sideData.incrementDate) { // Prorated increment
-                        if (currentMonth === sideData.incrementDate.getMonth() + 1 && currentYear === sideData.incrementDate.getFullYear()) {
-                            incrementTriggerDate = sideData.incrementDate;
-                        }
-                    } else if (currentMonth === incrementMonthValue) {
+                    // Non-prorated increment check
+                    if (!sideData.incrementDate && currentMonth === incrementMonthValue && currentDate >= new Date(currentYear, incrementMonthValue - 1, 1)) {
                        incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
+                    } 
+                    // Prorated increment check
+                    else if (sideData.incrementDate && currentMonth === sideData.incrementDate.getMonth() + 1 && currentYear === sideData.incrementDate.getFullYear()) {
+                        incrementTriggerDate = sideData.incrementDate;
                     }
                     
                     if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd })) {
@@ -617,11 +623,8 @@ export default function Home() {
                 return { newTrackerValue: newTracker, basicForMonth };
             };
             
-            const drawnIncrementResult = handleIncrement('paid', drawnBasicTracker);
-            let drawnBasicForMonth = drawnIncrementResult.basicForMonth;
-            
-            const dueIncrementResult = handleIncrement('toBePaid', dueBasicTracker);
-            let dueBasicForMonth = dueIncrementResult.basicForMonth;
+            let { newTrackerValue: newDrawnTracker, basicForMonth: drawnBasicForMonth } = handleIncrement('paid', drawnBasicTracker);
+            let { newTrackerValue: newDueTracker, basicForMonth: dueBasicForMonth } = handleIncrement('toBePaid', dueBasicTracker);
             
             if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPay > 0 && data.toBePaid.refixedBasicPayDate) {
                 const refixDate = data.toBePaid.refixedBasicPayDate;
@@ -637,15 +640,15 @@ export default function Home() {
                         } else {
                            dueBasicForMonth = data.toBePaid.refixedBasicPay;
                         }
-                        dueBasicTracker = data.toBePaid.refixedBasicPay;
+                        newDueTracker = data.toBePaid.refixedBasicPay;
                     } else if (currentDate > refixDate) {
-                        dueBasicForMonth = dueBasicTracker;
+                        dueBasicForMonth = newDueTracker;
                     }
                 }
             }
 
-            drawnBasicTracker = drawnIncrementResult.newTrackerValue;
-            dueBasicTracker = dueIncrementResult.newTrackerValue;
+            drawnBasicTracker = newDrawnTracker;
+            dueBasicTracker = newDueTracker;
            
             const effectiveMonthStart = max([monthStart, arrearFromDate]);
             const effectiveMonthEnd = min([monthEnd, arrearToDate]);
@@ -855,14 +858,6 @@ export default function Home() {
             description: "An unexpected error occurred. Please check your inputs.",
         });
         return null;
-    }
-  };
-
-  const handleCalculatePress = (data: ArrearFormData) => {
-    if (authStatus === 'unauthenticated') {
-      openGuestModal(() => onSubmit(data));
-    } else {
-      onSubmit(data);
     }
   };
   
@@ -1424,9 +1419,7 @@ export default function Home() {
     <div className="min-h-screen bg-background">
       <main className="container mx-auto px-4 py-8 md:py-12">
         <AuthModal />
-        <GuestInfoModal />
-        <OtpModal />
-
+        
         <header className="text-center mb-8 no-print">
           <div className="flex justify-end items-center gap-4">
             <TooltipProvider>
@@ -1455,7 +1448,7 @@ export default function Home() {
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" className="flex items-center gap-2">
                     <User className="h-4 w-4" />
-                    <span>{user.displayName || user.phoneNumber}</span>
+                    <span>{user.displayName || user.email}</span>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -1465,7 +1458,11 @@ export default function Home() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-            ) : null}
+            ) : (
+              <Button variant="outline" onClick={() => openAuthModal()}>
+                <User className="mr-2 h-4 w-4" /> Login / Signup
+              </Button>
+            )}
 
             <ThemeToggle />
           </div>
@@ -1536,7 +1533,7 @@ export default function Home() {
         </div>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleCalculatePress)} className="space-y-8 no-print">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8 no-print">
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
               <div className="lg:col-span-2 space-y-8">
                 <Card id="employee-details-card">
@@ -1600,7 +1597,7 @@ export default function Home() {
                    </CardDescription>
                 </div>
                 <div className="flex flex-wrap gap-2 no-print">
-                   <Button onClick={handleSaveOrUpdate} variant="outline" disabled={isLoading || authStatus === 'guest'}>
+                   <Button onClick={handleSaveOrUpdate} variant="outline" disabled={isLoading}>
                       {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (loadedStatementId ? <Edit className="mr-2 h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />)}
                       {loadedStatementId ? "Update Arrear" : "Save Arrear"}
                    </Button>

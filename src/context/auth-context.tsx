@@ -1,55 +1,94 @@
 
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { auth, db, isFirebaseConfigured } from '@/lib/firebase';
 import { 
     onAuthStateChanged, 
-    RecaptchaVerifier, 
-    signInWithPhoneNumber,
     signOut,
+    sendSignInLinkToEmail,
+    isSignInWithEmailLink,
+    signInWithEmailLink,
+    updateProfile,
     type User, 
-    type ConfirmationResult 
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 
-type AuthStatus = 'authenticated' | 'guest' | 'unauthenticated' | 'loading';
+type AuthStatus = 'authenticated' | 'unauthenticated' | 'loading';
 
 interface AuthContextType {
     user: User | null;
     authStatus: AuthStatus;
     loading: boolean;
     logout: () => void;
-    openAuthModal: (callback?: () => void) => void;
+    openAuthModal: () => void;
     closeAuthModal: () => void;
-    openGuestModal: (callback?: () => void) => void;
-    closeGuestModal: () => void;
     isAuthModalOpen: boolean;
-    isGuestModalOpen: boolean;
-    isOtpModalOpen: boolean;
-    handleFullSignup: (name: string, email: string, phone: string) => Promise<void>;
-    handleGuestSignin: (name: string, phone: string) => Promise<void>;
-    handleOtpSubmit: (otp: string) => Promise<void>;
-    resendOtp: () => Promise<void>;
+    handleEmailSignIn: (email: string) => Promise<void>;
+    authMessage: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const EMAIL_FOR_SIGN_IN_KEY = 'emailForSignIn';
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [user, setUser] = useState<User | null>(null);
     const [authStatus, setAuthStatus] = useState<AuthStatus>('loading');
     const [loading, setLoading] = useState(true);
     const [isAuthModalOpen, setAuthModalOpen] = useState(false);
-    const [isGuestModalOpen, setGuestModalOpen] = useState(false);
-    const [isOtpModalOpen, setOtpModalOpen] = useState(false);
-    const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
-    const [pendingAuthData, setPendingAuthData] = useState<{name: string; email?: string; phone: string} | null>(null);
-    const [onSuccessCallback, setOnSuccessCallback] = useState<(() => void) | null>(() => null);
+    const [authMessage, setAuthMessage] = useState<string | null>(null);
 
     const { toast } = useToast();
     const router = useRouter();
+
+    useEffect(() => {
+        const processSignIn = async () => {
+            if (isFirebaseConfigured() && auth && isSignInWithEmailLink(auth, window.location.href)) {
+                setLoading(true);
+                let email = window.localStorage.getItem(EMAIL_FOR_SIGN_IN_KEY);
+                if (!email) {
+                    // This can happen if the user opens the link on a different device.
+                    // We can ask them to provide their email again.
+                    email = window.prompt('Please provide your email for confirmation');
+                }
+
+                if(email) {
+                    try {
+                        const result = await signInWithEmailLink(auth, email, window.location.href);
+                        window.localStorage.removeItem(EMAIL_FOR_SIGN_IN_KEY);
+                        
+                        const firebaseUser = result.user;
+                        const userDoc = await getDoc(doc(db!, 'users', firebaseUser.uid));
+                        if (!userDoc.exists()) {
+                            await setDoc(doc(db!, 'users', firebaseUser.uid), {
+                                email: firebaseUser.email,
+                                createdAt: new Date(),
+                            });
+                             if (!firebaseUser.displayName) {
+                                const name = firebaseUser.email?.split('@')[0] || 'New User';
+                                await updateProfile(firebaseUser, { displayName: name });
+                            }
+                        }
+                        setUser(firebaseUser);
+                        setAuthStatus('authenticated');
+                        toast({ title: 'Successfully signed in!', description: 'Welcome back.'});
+
+                    } catch(error) {
+                        console.error("Sign in with email link error:", error);
+                        toast({ variant: 'destructive', title: 'Sign In Failed', description: 'The sign-in link is invalid or has expired.' });
+                    }
+                }
+                // Clean the URL
+                router.replace('/');
+                setLoading(false);
+            }
+        }
+        processSignIn();
+    }, [router, toast]);
+
 
     useEffect(() => {
         if (!isFirebaseConfigured() || !auth) {
@@ -59,118 +98,30 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
 
         const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-            if (currentUser) {
-                const userDoc = await getDoc(doc(db!, "users", currentUser.uid));
-                if (userDoc.exists()) {
-                    // This is a fully signed-up user
-                    setUser(currentUser);
-                    setAuthStatus('authenticated');
-                } else {
-                    // This is a temporary/guest user
-                    setUser(currentUser);
-                    setAuthStatus('guest');
-                }
-            } else {
-                setUser(null);
-                setAuthStatus('unauthenticated');
-            }
+            setUser(currentUser);
+            setAuthStatus(currentUser ? 'authenticated' : 'unauthenticated');
             setLoading(false);
         });
 
         return () => unsubscribe();
     }, []);
 
-    const setupRecaptcha = () => {
+    const handleEmailSignIn = async (email: string) => {
         if (!auth) return;
-        if (!window.recaptchaVerifier) {
-            window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-                'size': 'invisible',
-                'callback': (response: any) => {
-                    // reCAPTCHA solved, allow signInWithPhoneNumber.
-                }
-            });
-        }
-    };
-    
-    const sendOtp = async (phone: string) => {
-        if (!auth) throw new Error("Firebase Auth not configured.");
-        setupRecaptcha();
-        const appVerifier = window.recaptchaVerifier;
+        const actionCodeSettings = {
+            url: window.location.origin,
+            handleCodeInApp: true,
+        };
         try {
-            const result = await signInWithPhoneNumber(auth, `+${phone}`, appVerifier);
-            setConfirmationResult(result);
-            return result;
-        } catch (error) {
-            console.error("Error sending OTP:", error);
-            toast({ variant: "destructive", title: "OTP Error", description: "Failed to send OTP. Please check the phone number and try again." });
-            window.recaptchaVerifier.render().then((widgetId: any) => {
-                grecaptcha.reset(widgetId);
-            });
-            throw error;
+            await sendSignInLinkToEmail(auth, email, actionCodeSettings);
+            window.localStorage.setItem(EMAIL_FOR_SIGN_IN_KEY, email);
+            setAuthMessage(`A sign-in link has been sent to ${email}. Please check your inbox.`);
+        } catch(error) {
+            console.error("Error sending sign in link:", error);
+            toast({ variant: 'destructive', title: 'Failed to Send Link', description: 'Could not send sign-in link. Please try again.'});
         }
     };
 
-    const handleFullSignup = async (name: string, email: string, phone: string) => {
-        try {
-            setPendingAuthData({ name, email, phone });
-            await sendOtp(phone);
-            setAuthModalOpen(false);
-            setOtpModalOpen(true);
-        } catch (error) {
-            // Error is handled in sendOtp
-        }
-    };
-
-    const handleGuestSignin = async (name: string, phone: string) => {
-        try {
-            setPendingAuthData({ name, phone });
-            await sendOtp(phone);
-            setGuestModalOpen(false);
-            setOtpModalOpen(true);
-        } catch (error) {
-             // Error is handled in sendOtp
-        }
-    };
-
-    const handleOtpSubmit = async (otp: string) => {
-        if (!confirmationResult || !pendingAuthData) return;
-        try {
-            const result = await confirmationResult.confirm(otp);
-            const firebaseUser = result.user;
-
-            if (pendingAuthData.email) { // Full signup
-                await setDoc(doc(db!, "users", firebaseUser.uid), {
-                    name: pendingAuthData.name,
-                    email: pendingAuthData.email,
-                    phone: pendingAuthData.phone,
-                });
-                toast({ title: "Signup Successful", description: "Welcome to ArrearEase!" });
-            } else { // Guest signin
-                 toast({ title: "Verification Successful", description: "You can now calculate arrears." });
-            }
-            
-            setOtpModalOpen(false);
-            if (onSuccessCallback) {
-                onSuccessCallback();
-                setOnSuccessCallback(null);
-            }
-
-        } catch (error) {
-            console.error("OTP verification failed:", error);
-            toast({ variant: "destructive", title: "Invalid OTP", description: "The OTP you entered is incorrect. Please try again." });
-        }
-    };
-    
-    const resendOtp = async () => {
-      if (!pendingAuthData) return;
-      toast({ title: "Resending OTP..." });
-      try {
-        await sendOtp(pendingAuthData.phone);
-        toast({ title: "OTP Resent", description: "A new OTP has been sent to your phone." });
-      } catch (error) {
-        // Error handled in sendOtp
-      }
-    };
 
     const logout = async () => {
         if (!auth) return;
@@ -181,17 +132,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         toast({ title: "Logged Out", description: "You have been successfully logged out." });
     };
 
-    const openAuthModal = (callback?: () => void) => {
-        if (callback) setOnSuccessCallback(() => callback);
-        setAuthModalOpen(true);
-    }
-    const closeAuthModal = () => setAuthModalOpen(false);
+    const openAuthModal = () => setAuthModalOpen(true);
 
-    const openGuestModal = (callback?: () => void) => {
-        if (callback) setOnSuccessCallback(() => callback);
-        setGuestModalOpen(true);
-    };
-    const closeGuestModal = () => setGuestModalOpen(false);
+    const closeAuthModal = () => {
+        setAuthModalOpen(false);
+        setAuthMessage(null);
+    }
+
 
     return (
         <AuthContext.Provider value={{ 
@@ -201,18 +148,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             logout,
             openAuthModal,
             closeAuthModal,
-            openGuestModal,
-            closeGuestModal,
             isAuthModalOpen,
-            isGuestModalOpen,
-            isOtpModalOpen,
-            handleFullSignup,
-            handleGuestSignin,
-            handleOtpSubmit,
-            resendOtp,
+            handleEmailSignIn,
+            authMessage
         }}>
             {children}
-            <div id="recaptcha-container"></div>
         </AuthContext.Provider>
     );
 };
@@ -224,5 +164,3 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
-
-    
