@@ -9,9 +9,11 @@ import {
     signOut,
     updateProfile,
     type User, 
-    signInAnonymously,
+    createUserWithEmailAndPassword,
+    signInWithEmailAndPassword,
+    type AuthError
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 
 type AuthStatus = 'authenticated' | 'unauthenticated' | 'loading';
@@ -24,10 +26,10 @@ interface AuthContextType {
     openAuthModal: () => void;
     closeAuthModal: () => void;
     isAuthModalOpen: boolean;
-    handleEmailSignIn: (email: string) => Promise<void>;
-    verifyOtp: (otp: string) => void;
-    isAwaitingOtp: boolean;
-    authMessage: string | null;
+    signUpWithEmailPassword: (email: string, password: string) => Promise<void>;
+    signInWithEmailPassword: (email: string, password: string) => Promise<void>;
+    authError: string | null;
+    clearAuthError: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -37,11 +39,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [authStatus, setAuthStatus] = useState<AuthStatus>('loading');
     const [loading, setLoading] = useState(true);
     const [isAuthModalOpen, setAuthModalOpen] = useState(false);
-    const [authMessage, setAuthMessage] = useState<string | null>(null);
-    const [isAwaitingOtp, setIsAwaitingOtp] = useState(false);
-    const [sessionOtp, setSessionOtp] = useState<string | null>(null);
-    const [sessionEmail, setSessionEmail] = useState<string | null>(null);
-
+    const [authError, setAuthError] = useState<string | null>(null);
 
     const { toast } = useToast();
     const router = useRouter();
@@ -54,7 +52,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
 
         const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-            if (currentUser && !currentUser.isAnonymous) {
+            if (currentUser) {
                 setUser(currentUser);
                 setAuthStatus('authenticated');
             } else {
@@ -67,51 +65,64 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         return () => unsubscribe();
     }, []);
 
-    const handleEmailSignIn = async (email: string) => {
-        const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
-        setSessionOtp(generatedOtp);
-        setSessionEmail(email);
+    const handleAuthError = (error: AuthError) => {
+        switch (error.code) {
+            case 'auth/user-not-found':
+            case 'auth/wrong-password':
+                setAuthError('Invalid email or password. Please try again.');
+                break;
+            case 'auth/email-already-in-use':
+                setAuthError('An account with this email already exists.');
+                break;
+            case 'auth/weak-password':
+                setAuthError('The password is too weak. Please use a stronger password.');
+                break;
+            default:
+                setAuthError('An unexpected error occurred. Please try again.');
+                console.error(error);
+        }
+    }
+    
+    const clearAuthError = () => setAuthError(null);
 
-        console.log(`OTP for ${email}: ${generatedOtp}`);
-        toast({
-            title: "OTP Sent (Simulated)",
-            description: `Your OTP is: ${generatedOtp}`,
-            duration: 10000 // Keep it on screen longer
-        });
-        
-        setIsAwaitingOtp(true);
-    };
+    const signUpWithEmailPassword = async (email: string, password: string) => {
+        if (!auth || !db) return;
+        clearAuthError();
+        try {
+            const result = await createUserWithEmailAndPassword(auth, email, password);
+            const firebaseUser = result.user;
 
-    const verifyOtp = async (otp: string) => {
-        if (otp === sessionOtp && sessionEmail) {
-            try {
-                if (!auth) throw new Error("Auth not initialized");
+            await updateProfile(firebaseUser, { displayName: email.split('@')[0] });
+            
+            await setDoc(doc(db, 'users', firebaseUser.uid), {
+                email: email,
+                displayName: email.split('@')[0],
+                createdAt: serverTimestamp(),
+            });
 
-                const result = await signInAnonymously(auth);
-                const firebaseUser = result.user;
+            const updatedUser: User = { ...firebaseUser, email: email, displayName: email.split('@')[0] };
+            setUser(updatedUser);
 
-                await updateProfile(firebaseUser, { displayName: sessionEmail.split('@')[0] });
-                
-                await setDoc(doc(db!, 'users', firebaseUser.uid), {
-                    email: sessionEmail,
-                    createdAt: serverTimestamp(),
-                }, { merge: true });
-
-                const updatedUser: User = { ...firebaseUser, email: sessionEmail, displayName: sessionEmail.split('@')[0] };
-                setUser(updatedUser);
-
-                toast({ title: "Successfully signed in!", description: 'Welcome!' });
-                closeAuthModal();
-                setAuthStatus('authenticated');
-            } catch (error) {
-                console.error("Error creating user session:", error);
-                toast({ variant: 'destructive', title: 'Sign In Failed', description: 'Could not create a user session.' });
-            }
-
-        } else {
-            toast({ variant: 'destructive', title: 'Invalid OTP', description: 'The OTP you entered is incorrect. Please try again.' });
+            toast({ title: "Account Created!", description: 'Welcome! You are now signed in.' });
+            closeAuthModal();
+            setAuthStatus('authenticated');
+        } catch (error) {
+            handleAuthError(error as AuthError);
         }
     };
+
+    const signInWithEmailPassword = async (email: string, password: string) => {
+        if (!auth) return;
+        clearAuthError();
+        try {
+            await signInWithEmailAndPassword(auth, email, password);
+            toast({ title: "Successfully signed in!", description: 'Welcome back!' });
+            closeAuthModal();
+        } catch (error) {
+            handleAuthError(error as AuthError);
+        }
+    };
+
 
     const logout = async () => {
         if (!auth) return;
@@ -126,10 +137,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const closeAuthModal = () => {
         setAuthModalOpen(false);
-        setAuthMessage(null);
-        setIsAwaitingOtp(false);
-        setSessionEmail(null);
-        setSessionOtp(null);
+        clearAuthError();
     }
 
     return (
@@ -141,10 +149,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             openAuthModal,
             closeAuthModal,
             isAuthModalOpen,
-            handleEmailSignIn,
-            verifyOtp,
-            isAwaitingOtp,
-            authMessage
+            signUpWithEmailPassword,
+            signInWithEmailPassword,
+            authError,
+            clearAuthError
         }}>
             {children}
         </AuthContext.Provider>

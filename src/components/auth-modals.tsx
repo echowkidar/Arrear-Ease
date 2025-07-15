@@ -11,13 +11,20 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from './ui/form';
 import { Input } from './ui/input';
 import { Loader2 } from 'lucide-react';
+import { Alert, AlertDescription } from './ui/alert';
 
-const emailSchema = z.object({
+const loginSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email address." }),
+  password: z.string().min(1, "Password is required."),
 });
 
-const otpSchema = z.object({
-    otp: z.string().min(6, "OTP must be 6 digits.").max(6, "OTP must be 6 digits."),
+const signupSchema = z.object({
+  email: z.string().email({ message: "Please enter a valid email address." }),
+  password: z.string().min(6, "Password must be at least 6 characters long."),
+  confirmPassword: z.string()
+}).refine(data => data.password === data.confirmPassword, {
+  message: "Passwords do not match.",
+  path: ["confirmPassword"],
 });
 
 
@@ -25,113 +32,97 @@ export function AuthModal() {
   const { 
     isAuthModalOpen, 
     closeAuthModal, 
-    handleEmailSignIn, 
-    authMessage, 
-    isAwaitingOtp,
-    verifyOtp
+    signUpWithEmailPassword,
+    signInWithEmailPassword,
+    authError,
+    clearAuthError,
   } = useAuth();
 
   const [isLoading, setIsLoading] = useState(false);
+  const [isSignup, setIsSignup] = useState(false);
 
-  const emailForm = useForm<z.infer<typeof emailSchema>>({
-    resolver: zodResolver(emailSchema),
-    defaultValues: { email: "" },
+  const form = useForm<z.infer<typeof (isSignup ? signupSchema : loginSchema)>>({
+    resolver: zodResolver(isSignup ? signupSchema : loginSchema),
+    defaultValues: {
+      email: "",
+      password: "",
+      ...(isSignup && { confirmPassword: "" }),
+    },
   });
-
-  const otpForm = useForm<z.infer<typeof otpSchema>>({
-    resolver: zodResolver(otpSchema),
-    defaultValues: { otp: "" },
-  });
-
-  const onEmailSubmit = async (values: z.infer<typeof emailSchema>) => {
+  
+  const onSubmit = async (values: z.infer<typeof loginSchema> | z.infer<typeof signupSchema>) => {
     setIsLoading(true);
-    await handleEmailSignIn(values.email);
+    if (isSignup) {
+      // We know this is signup schema because of the isSignup flag
+      const signupValues = values as z.infer<typeof signupSchema>;
+      await signUpWithEmailPassword(signupValues.email, signupValues.password);
+    } else {
+      await signInWithEmailPassword(values.email, values.password);
+    }
     setIsLoading(false);
   };
-  
-  const onOtpSubmit = (values: z.infer<typeof otpSchema>) => {
-    setIsLoading(true);
-    verifyOtp(values.otp);
-    setIsLoading(false);
-  }
 
   const handleOpenChange = (isOpen: boolean) => {
     if (!isOpen) {
-      emailForm.reset();
-      otpForm.reset();
+      form.reset();
+      clearAuthError();
       closeAuthModal();
+      setIsSignup(false);
     }
   };
 
-  const renderContent = () => {
-      if (authMessage) {
-        return (
-             <DialogDescription>
-                {authMessage}
-            </DialogDescription>
-        )
-      }
-
-      if (isAwaitingOtp) {
-        return (
-            <>
-            <DialogDescription>
-                An OTP has been sent to your email. Please enter it below to sign in.
-            </DialogDescription>
-            <Form {...otpForm}>
-                <form onSubmit={otpForm.handleSubmit(onOtpSubmit)} className="space-y-4 pt-4">
-                    <FormField control={otpForm.control} name="otp" render={({ field }) => (
-                        <FormItem>
-                            <FormLabel>One-Time Password (OTP)</FormLabel>
-                            <FormControl><Input type="text" placeholder="123456" {...field} maxLength={6} /></FormControl>
-                            <FormMessage />
-                        </FormItem>
-                    )} />
-                    <DialogFooter>
-                        <Button type="submit" disabled={isLoading}>
-                            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            Verify & Sign In
-                        </Button>
-                    </DialogFooter>
-                </form>
-            </Form>
-            </>
-        )
-      }
-
-      return (
-        <>
-        <DialogDescription>
-            Enter your email to sign in or create an account. An OTP will be sent to your inbox.
-        </DialogDescription>
-        <Form {...emailForm}>
-            <form onSubmit={emailForm.handleSubmit(onEmailSubmit)} className="space-y-4 pt-4">
-                <FormField control={emailForm.control} name="email" render={({ field }) => (
-                <FormItem>
-                    <FormLabel>Email</FormLabel>
-                    <FormControl><Input type="email" placeholder="your.email@example.com" {...field} /></FormControl>
-                    <FormMessage />
-                </FormItem>
-                )} />
-                <DialogFooter>
-                <Button type="submit" disabled={isLoading}>
-                    {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Send OTP
-                </Button>
-                </DialogFooter>
-            </form>
-        </Form>
-        </>
-      )
+  const toggleMode = () => {
+      setIsSignup(!isSignup);
+      form.reset();
+      clearAuthError();
   }
 
   return (
     <Dialog open={isAuthModalOpen} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Login or Signup</DialogTitle>
+          <DialogTitle>{isSignup ? "Create an Account" : "Login"}</DialogTitle>
+           <DialogDescription>
+            {isSignup ? "Enter your details to create a new account." : "Enter your email and password to sign in."}
+          </DialogDescription>
         </DialogHeader>
-        {renderContent()}
+        <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 pt-4">
+                {authError && <Alert variant="destructive"><AlertDescription>{authError}</AlertDescription></Alert>}
+                <FormField control={form.control} name="email" render={({ field }) => (
+                <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl><Input type="email" placeholder="your.email@example.com" {...field} /></FormControl>
+                    <FormMessage />
+                </FormItem>
+                )} />
+                 <FormField control={form.control} name="password" render={({ field }) => (
+                <FormItem>
+                    <FormLabel>Password</FormLabel>
+                    <FormControl><Input type="password" placeholder="••••••••" {...field} /></FormControl>
+                    <FormMessage />
+                </FormItem>
+                )} />
+                {isSignup && (
+                    <FormField control={form.control} name="confirmPassword" render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>Confirm Password</FormLabel>
+                        <FormControl><Input type="password" placeholder="••••••••" {...field} /></FormControl>
+                        <FormMessage />
+                    </FormItem>
+                    )} />
+                )}
+                <DialogFooter className="flex-col !space-y-2 sm:!space-y-0 sm:flex-row sm:!justify-between">
+                    <Button type="button" variant="link" onClick={toggleMode} className="p-0 h-auto">
+                        {isSignup ? "Already have an account? Login" : "Don't have an account? Sign Up"}
+                    </Button>
+                    <Button type="submit" disabled={isLoading}>
+                        {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        {isSignup ? "Sign Up" : "Login"}
+                    </Button>
+                </DialogFooter>
+            </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );
