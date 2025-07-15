@@ -90,10 +90,6 @@ import { Rate, useRates } from "@/context/rates-context";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Switch } from "@/components/ui/switch";
-<<<<<<< HEAD
-
-=======
->>>>>>> 973c44c8d8dad1da3a0eae3ff25f0b43f4993a77
 
 const salaryComponentSchema = z.object({
   cpc: z.enum(["6th", "7th"], { required_error: "CPC selection is required." }),
@@ -103,19 +99,6 @@ const salaryComponentSchema = z.object({
   incrementDate: z.date().optional(),
   
   daApplicable: z.boolean().default(false),
-<<<<<<< HEAD
-  daFixed: z.boolean().default(false),
-  daFixedRate: z.coerce.number().min(0).optional(),
-  daFixedFromDate: z.date().optional(),
-  daFixedToDate: z.date().optional(),
-  hraApplicable: z.boolean().default(false),
-  hraFromDate: z.date().optional(),
-  hraToDate: z.date().optional(),
-  hraFixed: z.boolean().default(false),
-  hraFixedRate: z.coerce.number().min(0).optional(),
-  hraFixedFromDate: z.date().optional(),
-  hraFixedToDate: z.date().optional(),
-=======
   daFixedRateApplicable: z.boolean().default(false),
   daFixedRate: z.coerce.number().min(0).optional(),
   daFixedRateFromDate: z.date().optional(),
@@ -129,7 +112,6 @@ const salaryComponentSchema = z.object({
   hraFixedRateFromDate: z.date().optional(),
   hraFixedRateToDate: z.date().optional(),
 
->>>>>>> 973c44c8d8dad1da3a0eae3ff25f0b43f4993a77
   npaApplicable: z.boolean().default(false),
   npaFromDate: z.date().optional(),
   npaToDate: z.date().optional(),
@@ -138,34 +120,20 @@ const salaryComponentSchema = z.object({
   doubleTaApplicable: z.boolean().default(false),
   taFromDate: z.date().optional(),
   taToDate: z.date().optional(),
-<<<<<<< HEAD
-  taFixed: z.boolean().default(false),
-  taFixedRate: z.coerce.number().min(0).optional(),
-  taFixedFromDate: z.date().optional(),
-  taFixedToDate: z.date().optional(),
-=======
   taFixedRateApplicable: z.boolean().default(false),
   taFixedRate: z.coerce.number().min(0).optional(),
   taFixedRateFromDate: z.date().optional(),
   taFixedRateToDate: z.date().optional(),
 
->>>>>>> 973c44c8d8dad1da3a0eae3ff25f0b43f4993a77
   otherAllowanceName: z.string().optional(),
   otherAllowance: z.coerce.number().min(0).optional().default(0),
   otherAllowanceFromDate: z.date().optional(),
   otherAllowanceToDate: z.date().optional(),
-<<<<<<< HEAD
-  otherAllowanceFixed: z.boolean().default(false),
-  otherAllowanceFixedRate: z.coerce.number().min(0).optional(),
-  otherAllowanceFixedFromDate: z.date().optional(),
-  otherAllowanceFixedToDate: z.date().optional(),
-=======
   otherAllowanceFixedRateApplicable: z.boolean().default(false),
   otherAllowanceFixedRate: z.coerce.number().min(0).optional(),
   otherAllowanceFixedRateFromDate: z.date().optional(),
   otherAllowanceFixedRateToDate: z.date().optional(),
   
->>>>>>> 973c44c8d8dad1da3a0eae3ff25f0b43f4993a77
   refixedBasicPay: z.coerce.number().min(0).optional(),
   refixedBasicPayDate: z.date().optional(),
 });
@@ -458,27 +426,16 @@ export default function Home() {
         payLevel: undefined,
         incrementMonth: undefined,
         daApplicable: false,
-<<<<<<< HEAD
-        daFixed: false,
-        hraApplicable: false,
-        hraFixed: false,
-=======
         daFixedRateApplicable: false,
         hraApplicable: false,
         hraFixedRateApplicable: false,
->>>>>>> 973c44c8d8dad1da3a0eae3ff25f0b43f4993a77
         npaApplicable: false,
         taApplicable: false,
-        taFixed: false,
         doubleTaApplicable: false,
         taFixedRateApplicable: false,
         otherAllowance: '' as any,
         otherAllowanceName: "",
-<<<<<<< HEAD
-        otherAllowanceFixed: false,
-=======
         otherAllowanceFixedRateApplicable: false,
->>>>>>> 973c44c8d8dad1da3a0eae3ff25f0b43f4993a77
       },
       toBePaid: {
         cpc: undefined,
@@ -486,27 +443,16 @@ export default function Home() {
         payLevel: undefined,
         incrementMonth: undefined,
         daApplicable: false,
-<<<<<<< HEAD
-        daFixed: false,
-        hraApplicable: false,
-        hraFixed: false,
-=======
         daFixedRateApplicable: false,
         hraApplicable: false,
         hraFixedRateApplicable: false,
->>>>>>> 973c44c8d8dad1da3a0eae3ff25f0b43f4993a77
         npaApplicable: false,
         taApplicable: false,
-        taFixed: false,
         doubleTaApplicable: false,
         taFixedRateApplicable: false,
         otherAllowance: '' as any,
         otherAllowanceName: "",
-<<<<<<< HEAD
-        otherAllowanceFixed: false,
-=======
         otherAllowanceFixedRateApplicable: false,
->>>>>>> 973c44c8d8dad1da3a0eae3ff25f0b43f4993a77
         refixedBasicPay: '' as any,
       },
     },
@@ -611,44 +557,6 @@ export default function Home() {
 
             const handleIncrement = (side: 'paid' | 'toBePaid', trackerBasic: number): { newTrackerValue: number } => {
                 const sideData = data[side];
-<<<<<<< HEAD
-                if (!sideData.incrementMonth) return [newBasicForMonth, newBasicTracker];
-
-                const incrementMonthValue = parseInt(sideData.incrementMonth, 10);
-                const firstIncrementDate = sideData.incrementDate;
-
-                // Determine the trigger date for this year's increment
-                let incrementTriggerDate: Date | null = null;
-                if (firstIncrementDate) {
-                    if (currentYear > firstIncrementDate.getFullYear() && currentMonth === firstIncrementDate.getMonth() + 1) {
-                         incrementTriggerDate = new Date(currentYear, firstIncrementDate.getMonth(), 1);
-                    } else if (currentYear === firstIncrementDate.getFullYear() && currentMonth >= firstIncrementDate.getMonth() + 1) {
-                         if(currentMonth === firstIncrementDate.getMonth() + 1) {
-                            incrementTriggerDate = firstIncrementDate;
-                         } else {
-                            // This branch may not be strictly necessary if increments are always on the 1st after the first year
-                            // but kept for robustness.
-                         }
-                    }
-                } else if (currentMonth === incrementMonthValue) {
-                     const potentialDate = new Date(currentYear, incrementMonthValue - 1, 1);
-                     if (potentialDate >= startOfMonth(arrearFromDate)) {
-                         incrementTriggerDate = potentialDate;
-                     }
-                }
-                
-                // Check if the increment has already been applied by comparing with the tracker
-                if (incrementTriggerDate && newBasicTracker === currentBasic) {
-                    let incrementedBasicValue: number;
-                    if (sideData.cpc === '7th' && sideData.payLevel) {
-                        const levelData = cpcData['7th'].payLevels.find(l => l.level === sideData.payLevel);
-                        if (levelData) {
-                            const currentBasicIndex = levelData.values.indexOf(newBasicTracker);
-                            if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
-                                incrementedBasicValue = levelData.values[currentBasicIndex + 1];
-                            } else {
-                                incrementedBasicValue = newBasicTracker; // No more increments in this level
-=======
                 let newTracker = trackerBasic;
                 
                 if (sideData.incrementMonth) {
@@ -671,59 +579,15 @@ export default function Home() {
                                 if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
                                     newTracker = levelData.values[currentBasicIndex + 1];
                                 }
->>>>>>> 973c44c8d8dad1da3a0eae3ff25f0b43f4993a77
                             }
                         } else {
                             newTracker = Math.round(trackerBasic * 1.03);
                         }
                     }
-<<<<<<< HEAD
-            
-                    const incrementDay = incrementTriggerDate.getDate();
-                    if (incrementDay > 1 && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd })) {
-                        const daysBefore = incrementDay - 1;
-                        const daysAfter = daysInMonth - daysBefore;
-                        newBasicForMonth = ((currentBasic * daysBefore) + (incrementedBasicValue * daysAfter)) / daysInMonth;
-                    } else if (currentDate >= incrementTriggerDate) {
-                        newBasicForMonth = incrementedBasicValue;
-                    }
-                    if (currentDate >= incrementTriggerDate) {
-                        newBasicTracker = incrementedBasicValue;
-                    }
-=======
->>>>>>> 973c44c8d8dad1da3a0eae3ff25f0b43f4993a77
                 }
                 
                 return { newTrackerValue: newTracker };
             };
-<<<<<<< HEAD
-
-            const [drawnBasicForMonthTemp, updatedDrawnBasicTracker] = handleIncrement('paid', drawnBasicTracker);
-            drawnBasicTracker = updatedDrawnBasicTracker;
-
-            const [dueBasicForMonthTemp, updatedDueBasicTracker] = handleIncrement('toBePaid', dueBasicTracker);
-            dueBasicTracker = updatedDueBasicTracker;
-            
-            let drawnBasicForMonth = drawnBasicForMonthTemp;
-            let dueBasicForMonth = dueBasicForMonthTemp;
-           
-            if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPay > 0 && data.toBePaid.refixedBasicPayDate) {
-                const refixDate = data.toBePaid.refixedBasicPayDate;
-                if (isWithinInterval(refixDate, { start: monthStart, end: monthEnd })) {
-                    const refixDay = refixDate.getDate();
-                    const basicBeforeRefix = dueBasicTracker; 
-                    
-                    if (refixDay > 1) {
-                        const daysBefore = refixDay - 1;
-                        const daysAfter = daysInMonth - daysBefore;
-                        dueBasicForMonth = ((basicBeforeRefix * daysBefore) + (data.toBePaid.refixedBasicPay * daysAfter)) / daysInMonth;
-                    } else {
-                        dueBasicForMonth = data.toBePaid.refixedBasicPay;
-                    }
-                    dueBasicTracker = data.toBePaid.refixedBasicPay;
-                } else if (currentDate > refixDate) {
-                    dueBasicForMonth = dueBasicTracker;
-=======
             
             let drawnBasicForMonth = drawnBasicTracker;
             const drawnIncrementResult = handleIncrement('paid', drawnBasicTracker);
@@ -751,7 +615,6 @@ export default function Home() {
                     } else if (currentDate > refixDate) {
                         dueBasicForMonth = dueBasicTracker;
                     }
->>>>>>> 973c44c8d8dad1da3a0eae3ff25f0b43f4993a77
                 }
             }
            
@@ -763,166 +626,6 @@ export default function Home() {
             const proratedDrawnBasic = drawnBasicForMonth * monthProRataFactor;
             const proratedDueBasic = dueBasicForMonth * monthProRataFactor;
             
-<<<<<<< HEAD
-            const getProratedAmount = (allowanceType: 'da' | 'hra' | 'npa' | 'ta' | 'otherAllowance', side: 'paid' | 'toBePaid') => {
-                const sideData = data[side];
-                const isApplicable = (sideData as any)[`${allowanceType}Applicable`];
-                const isFixed = (sideData as any)[`${allowanceType}Fixed`];
-                const fixedRate = (sideData as any)[`${allowanceType}FixedRate`];
-                const fixedFrom = (sideData as any)[`${allowanceType}FixedFromDate`];
-                const fixedTo = (sideData as any)[`${allowanceType}FixedToDate`];
-                
-                const fromDate = (sideData as any)[`${allowanceType}FromDate`];
-                const toDate = (sideData as any)[`${allowanceType}ToDate`];
-                const otherAllowanceAmount = sideData.otherAllowance || 0;
-                
-                if (allowanceType !== 'otherAllowance' && !isApplicable) return 0;
-                if (allowanceType === 'otherAllowance' && otherAllowanceAmount <= 0) return 0;
-                
-                const baseBasicForMonth = side === 'paid' ? drawnBasicForMonth : dueBasicForMonth;
-                const baseTrackerBasic = side === 'paid' ? drawnBasicTracker : dueBasicTracker;
-                const basePayLevel = side === 'paid' ? data.paid.payLevel : data.toBePaid.payLevel;
-                
-                let totalAmount = 0;
-            
-                if (isFixed && fixedFrom && fixedTo && fixedRate > 0) {
-                    const fixedPeriodStart = max([monthStart, fixedFrom]);
-                    const fixedPeriodEnd = min([monthEnd, fixedTo]);
-            
-                    if (fixedPeriodStart <= fixedPeriodEnd) {
-                        const fixedDays = differenceInDays(fixedPeriodEnd, fixedPeriodStart) + 1;
-                        const fixedProrationFactor = fixedDays / daysInMonth;
-
-                        let fixedAmount = 0;
-                        if(allowanceType === 'da' || allowanceType === 'npa' || allowanceType === 'hra') {
-                            fixedAmount = baseBasicForMonth * (fixedRate / 100);
-                        } else {
-                            fixedAmount = fixedRate;
-                        }
-                         totalAmount += fixedAmount * fixedProrationFactor;
-                    }
-                    
-                    const regularPeriod1Start = monthStart;
-                    const regularPeriod1End = addDays(fixedFrom, -1);
-                    if (regularPeriod1Start <= regularPeriod1End) {
-                        const regularProrationFactor = (differenceInDays(regularPeriod1End, regularPeriod1Start) + 1) / daysInMonth;
-                        totalAmount += calculateRegularAmount(allowanceType, side, regularProrationFactor, currentDate, baseBasicForMonth, baseTrackerBasic, basePayLevel, fromDate, toDate, otherAllowanceAmount);
-                    }
-            
-                    const regularPeriod2Start = addDays(fixedTo, 1);
-                    const regularPeriod2End = monthEnd;
-                    if (regularPeriod2Start <= regularPeriod2End) {
-                         const regularProrationFactor = (differenceInDays(regularPeriod2End, regularPeriod2Start) + 1) / daysInMonth;
-                         totalAmount += calculateRegularAmount(allowanceType, side, regularProrationFactor, currentDate, baseBasicForMonth, baseTrackerBasic, basePayLevel, fromDate, toDate, otherAllowanceAmount);
-                    }
-
-                } else {
-                     const prorationFactor = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fromDate, toDate);
-                     if (prorationFactor > 0) {
-                        totalAmount = calculateRegularAmount(allowanceType, side, prorationFactor, currentDate, baseBasicForMonth, baseTrackerBasic, basePayLevel, fromDate, toDate, otherAllowanceAmount);
-                     }
-                }
-                 
-                const allowanceProrationFactor = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fromDate, toDate);
-                
-                // Special handling for DA which depends on NPA
-                if (allowanceType === 'da') {
-                    const npaAmount = getProratedAmount('npa', side);
-                    const daBase = (side === 'paid' ? proratedDrawnBasic : proratedDueBasic) + npaAmount;
-                    
-                    if (isFixed && fixedFrom && fixedTo && fixedRate > 0) {
-                        let totalDA = 0;
-                         const fixedPeriodStart = max([monthStart, fixedFrom]);
-                         const fixedPeriodEnd = min([monthEnd, fixedTo]);
-                         if (fixedPeriodStart <= fixedPeriodEnd) {
-                             const fixedDays = differenceInDays(fixedPeriodEnd, fixedPeriodStart) + 1;
-                             totalDA += (daBase * (fixedRate/100) * (fixedDays / daysInMonth));
-                         }
-
-                         const regularPeriod1Start = monthStart;
-                         const regularPeriod1End = addDays(fixedFrom, -1);
-                         if(regularPeriod1Start <= regularPeriod1End){
-                             const daRateDetails = getRateForDate(daRates, currentDate);
-                             const daRate = daRateDetails ? daRateDetails.rate : 0;
-                             const days = differenceInDays(regularPeriod1End, regularPeriod1Start) + 1;
-                             totalDA += (daBase * (daRate / 100) * (days/daysInMonth));
-                         }
-
-                         const regularPeriod2Start = addDays(fixedTo, 1);
-                         const regularPeriod2End = monthEnd;
-                         if(regularPeriod2Start <= regularPeriod2End){
-                             const daRateDetails = getRateForDate(daRates, currentDate);
-                             const daRate = daRateDetails ? daRateDetails.rate : 0;
-                             const days = differenceInDays(regularPeriod2End, regularPeriod2Start) + 1;
-                             totalDA += (daBase * (daRate / 100) * (days/daysInMonth));
-                         }
-                        return totalDA;
-
-                    } else {
-                         const daRateDetails = getRateForDate(daRates, currentDate);
-                         const daRate = daRateDetails ? daRateDetails.rate : 0;
-                         return daBase * (daRate / 100) * allowanceProrationFactor;
-                    }
-                }
-                
-                return totalAmount * monthProRataFactor;
-            };
-
-            const calculateRegularAmount = (allowanceType: 'da' | 'hra' | 'npa' | 'ta' | 'otherAllowance', side: 'paid' | 'toBePaid', prorationFactor: number, currentDate: Date, baseBasicForMonth: number, baseTrackerBasic: number, basePayLevel: string | undefined, fromDate: Date | undefined, toDate: Date | undefined, otherAllowanceAmount: number) => {
-                 let amount = 0;
-                 const sideData = data[side];
-                 switch(allowanceType) {
-                    case 'hra': {
-                        const rateDetails = getRateForDate(hraRates, currentDate, baseTrackerBasic);
-                        if (!rateDetails) return 0;
-                        const rate = rateDetails.rate;
-                        let hraAmount = baseBasicForMonth * (rate / 100);
-                        
-                        if (rateDetails.minAmount && rateDetails.minAmount > 0) {
-                             const daysInCurrentMonth = getDaysInMonth(currentDate);
-                             const proratedMinHRA = (rateDetails.minAmount / daysInCurrentMonth) * (daysInCurrentMonth * prorationFactor);
-                             hraAmount = Math.max(hraAmount, proratedMinHRA);
-                        }
-                        amount = hraAmount;
-                        break;
-                    }
-                    case 'npa': {
-                        const rateDetails = getRateForDate(npaRates, currentDate);
-                        if (!rateDetails) return 0;
-                        const rate = rateDetails.rate;
-                        amount = baseBasicForMonth * (rate / 100);
-                        break;
-                    }
-                    case 'ta': {
-                         const rateDetails = getRateForDate(taRates, currentDate, baseTrackerBasic, basePayLevel);
-                         if (!rateDetails) return 0;
-                         const taBaseAmount = rateDetails.rate;
-                         const daRateDetails = getRateForDate(daRates, currentDate);
-                         const daRateForTa = daRateDetails ? daRateDetails.rate / 100 : 0;
-                         amount = taBaseAmount * (1 + daRateForTa);
-                         if(sideData.doubleTaApplicable) {
-                             amount *= 2;
-                         }
-                        break;
-                    }
-                    case 'otherAllowance':
-                        amount = otherAllowanceAmount;
-                        break;
-                    case 'da':
-                         // DA is handled separately due to dependency on NPA.
-                         return 0;
-                }
-                return amount * prorationFactor;
-            }
-
-            const drawnNPA = getProratedAmount('npa', 'paid');
-            const drawnHRA = getProratedAmount('hra', 'paid');
-            const drawnTA = getProratedAmount('ta', 'paid');
-            const drawnOther = getProratedAmount('otherAllowance', 'paid');
-            
-            const dueNPA = getProratedAmount('npa', 'toBePaid');
-            const dueHRA = getProratedAmount('hra', 'toBePaid');
-=======
             const getProratedAmount = (allowanceType: 'hra' | 'npa' | 'ta' | 'otherAllowance' | 'da', side: 'paid' | 'toBePaid') => {
               const sideData = data[side];
               const isApplicable = (sideData as any)[`${allowanceType}Applicable`];
@@ -1059,27 +762,14 @@ export default function Home() {
             const dueHRA = getProratedAmount('hra', 'toBePaid');
 
             const drawnTA = getProratedAmount('ta', 'paid');
->>>>>>> 973c44c8d8dad1da3a0eae3ff25f0b43f4993a77
             const dueTA = getProratedAmount('ta', 'toBePaid');
 
             const drawnOther = getProratedAmount('otherAllowance', 'paid');
             const dueOther = getProratedAmount('otherAllowance', 'toBePaid');
 
-<<<<<<< HEAD
-            let drawnDA = 0;
-            if (data.paid.daApplicable) {
-                drawnDA = getProratedAmount('da', 'paid');
-            }
-            
-            let dueDA = 0;
-            if (data.toBePaid.daApplicable) {
-                dueDA = getProratedAmount('da', 'toBePaid');
-            }
-=======
             let drawnDA = getProratedAmount('da', 'paid');
             let dueDA = getProratedAmount('da', 'toBePaid');
 
->>>>>>> 973c44c8d8dad1da3a0eae3ff25f0b43f4993a77
 
             const drawnTotal = proratedDrawnBasic + drawnDA + drawnHRA + drawnNPA + drawnTA + drawnOther;
             const dueTotal = proratedDueBasic + dueDA + dueHRA + dueNPA + dueTA + dueOther;
@@ -1208,14 +898,7 @@ export default function Home() {
     // Recalculate to get the latest data
     const newCalculation = onSubmit(currentFormData);
     
-<<<<<<< HEAD
-    if (newCalculation) {
-        const { rows, totals } = newCalculation;
-=======
-    // We need to wait for the statement state to be updated by onSubmit
-    // A better approach is to not rely on statement state here
-    const recalculatedStatement = calculateStatement(currentFormData);
-    if (!recalculatedStatement) {
+    if (!newCalculation) {
         setIsLoading(false);
         return;
     }
@@ -1223,60 +906,50 @@ export default function Home() {
     const docToUpdate: Omit<SavedStatement, 'isLocal'> = {
         id: loadedStatementId,
         savedAt: new Date().toISOString(),
-        rows: recalculatedStatement.rows,
-        totals: recalculatedStatement.totals,
+        rows: newCalculation.rows,
+        totals: newCalculation.totals,
         employeeInfo: currentFormData,
     };
->>>>>>> 973c44c8d8dad1da3a0eae3ff25f0b43f4993a77
 
-        const docToUpdate: Omit<SavedStatement, 'isLocal'> = {
-            id: loadedStatementId,
-            savedAt: new Date().toISOString(),
-            rows: rows,
-            totals: totals,
-            employeeInfo: currentFormData,
-        };
+    // This ensures the UI updates with the new calculation
+    setStatement({ rows: newCalculation.rows, totals: newCalculation.totals, employeeInfo: currentFormData });
 
-        // This ensures the UI updates with the new calculation
-        setStatement({ rows, totals, employeeInfo: currentFormData });
+    // Update local storage first
+    const localStatements = getLocalStatements();
+    const updatedLocalStatements = localStatements.map(s => 
+        s.id === loadedStatementId ? { ...docToUpdate, rows: newCalculation.rows, totals: newCalculation.totals, isLocal: s.isLocal ?? true } : s
+    );
+    saveLocalStatements(updatedLocalStatements);
+    setSavedStatements(updatedLocalStatements.sort((a,b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()));
 
-        // Update local storage first
-        const localStatements = getLocalStatements();
-        const updatedLocalStatements = localStatements.map(s => 
-            s.id === loadedStatementId ? { ...docToUpdate, isLocal: s.isLocal ?? true } : s
-        );
-        saveLocalStatements(updatedLocalStatements);
-        setSavedStatements(updatedLocalStatements.sort((a,b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()));
+    if (isOnline && dbConfigured && db) {
+        try {
+            const docRef = doc(db, FIRESTORE_STATEMENTS_COLLECTION, loadedStatementId);
+            await updateDoc(docRef, sanitizeForFirebase({ ...docToUpdate, rows: newCalculation.rows, totals: newCalculation.totals }));
+            // Mark as not local anymore
+            const finalLocalStatements = getLocalStatements().map(s => 
+                s.id === loadedStatementId ? { ...docToUpdate, rows: newCalculation.rows, totals: newCalculation.totals, isLocal: false } : s
+            );
+            saveLocalStatements(finalLocalStatements);
+            setSavedStatements(finalLocalStatements.sort((a,b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()));
 
-        if (isOnline && dbConfigured && db) {
-            try {
-                const docRef = doc(db, FIRESTORE_STATEMENTS_COLLECTION, loadedStatementId);
-                await updateDoc(docRef, sanitizeForFirebase(docToUpdate));
-                // Mark as not local anymore
-                const finalLocalStatements = getLocalStatements().map(s => 
-                    s.id === loadedStatementId ? { ...docToUpdate, isLocal: false } : s
-                );
-                saveLocalStatements(finalLocalStatements);
-                setSavedStatements(finalLocalStatements.sort((a,b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()));
-
-                toast({
-                    title: "Arrear Updated",
-                    description: "The statement has been updated successfully.",
-                });
-            } catch (error) {
-                console.error("Failed to update statement in Firestore:", error);
-                toast({
-                    variant: "destructive",
-                    title: "Update Failed",
-                    description: "Could not update in database, but saved locally.",
-                });
-            }
-        } else {
             toast({
-                title: "Updated Locally",
-                description: "Your changes have been saved to your browser and will sync when online.",
+                title: "Arrear Updated",
+                description: "The statement has been updated successfully.",
+            });
+        } catch (error) {
+            console.error("Failed to update statement in Firestore:", error);
+            toast({
+                variant: "destructive",
+                title: "Update Failed",
+                description: "Could not update in database, but saved locally.",
             });
         }
+    } else {
+        toast({
+            title: "Updated Locally",
+            description: "Your changes have been saved to your browser and will sync when online.",
+        });
     }
 
     setIsLoading(false);
@@ -1522,57 +1195,6 @@ export default function Home() {
     </div>
   );
 
-  const FixedRateFields = ({ type, name, watchValues }: { type: 'paid' | 'toBePaid', name: string, watchValues: any }) => (
-     <>
-      <FormField
-        control={form.control}
-        name={`${type}.${name}Fixed`}
-        render={({ field }) => (
-            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm bg-muted/30">
-                <div className="space-y-0.5">
-                    <FormLabel>Override with Fixed Rate</FormLabel>
-                </div>
-                <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-            </FormItem>
-        )}
-      />
-      {watchValues?.[`${name}Fixed`] && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pl-2 pt-2 border-l-2 ml-2 border-muted">
-              <FormField
-                control={form.control}
-                name={`${type}.${name}FixedRate`}
-                render={({ field }) => (
-                  <FormItem>
-                      <FormLabel className="text-xs">Fixed Rate {name !== 'ta' && name !== 'otherAllowance' ? '(%)' : ''}</FormLabel>
-                      <FormControl><Input type="number" placeholder="e.g. 10" {...field} /></FormControl>
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name={`${type}.${name}FixedFromDate`}
-                render={({ field }) => (
-                  <FormItem>
-                      <FormLabel className="text-xs">From Date</FormLabel>
-                      <FormDateInput field={field} />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name={`${type}.${name}FixedToDate`}
-                render={({ field }) => (
-                  <FormItem>
-                      <FormLabel className="text-xs">To Date</FormLabel>
-                      <FormDateInput field={field} />
-                  </FormItem>
-                )}
-              />
-          </div>
-      )}
-      </>
-  );
-
   const renderSalaryFields = (type: "paid" | "toBePaid") => {
       const currentWatchValues = type === 'paid' ? paidWatch : toBePaidWatch;
       if (!currentWatchValues) return null; // Guard clause
@@ -1669,35 +1291,20 @@ export default function Home() {
           )}
           <div className="space-y-4 rounded-md border p-4">
               <h4 className="font-medium">Applicable Allowances</h4>
-<<<<<<< HEAD
-              <div>
-=======
               <div className="space-y-2">
->>>>>>> 973c44c8d8dad1da3a0eae3ff25f0b43f4993a77
                 <FormField control={form.control} name={`${type}.daApplicable`} render={({ field }) => (
                   <FormItem className="flex flex-row items-start space-x-3 space-y-0">
                       <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
                       <FormLabel className="font-normal">DA (Dearness Allowance)</FormLabel>
                   </FormItem>
                 )} />
-<<<<<<< HEAD
-                {currentWatchValues?.daApplicable && (
-                    <div className="space-y-2 pl-7 pt-2">
-                         <FixedRateFields type={type} name="da" watchValues={currentWatchValues}/>
-                    </div>
-                )}
-              </div>
-              <AllowanceField type={type} name="hra" label="HRA (House Rent Allowance)" watchValues={currentWatchValues}/>
-=======
                 {currentWatchValues?.daApplicable && <FixedRateFields type={type} name="da" watchValues={currentWatchValues} />}
               </div>
              
               <div className="space-y-2">
                 <AllowanceField type={type} name="hra" label="HRA (House Rent Allowance)" watchValues={currentWatchValues}/>
-                {currentWatchValues?.hraApplicable && <FixedRateFields type={type} name="hra" watchValues={currentWatchValues} />}
               </div>
 
->>>>>>> 973c44c8d8dad1da3a0eae3ff25f0b43f4993a77
               <AllowanceField type={type} name="npa" label="NPA (Non-Practicing Allowance)" watchValues={currentWatchValues}/>
               
               <div className="space-y-2">
@@ -1739,53 +1346,11 @@ export default function Home() {
                             )}
                             />
                         </div>
-<<<<<<< HEAD
-                        <FixedRateFields type={type} name="ta" watchValues={currentWatchValues}/>
-=======
                         <FixedRateFields type={type} name="ta" isAmount watchValues={currentWatchValues} />
->>>>>>> 973c44c8d8dad1da3a0eae3ff25f0b43f4993a77
                     </div>
                 )}
               </div>
           </div>
-<<<<<<< HEAD
-          <div className="space-y-2">
-             <FormField control={form.control} name={`${type}.otherAllowanceName`} render={({ field }) => (
-              <FormItem>
-                  <FormLabel>Other Allowance Name</FormLabel>
-                  <FormControl><Input placeholder="e.g., Special Duty Allowance" {...field} /></FormControl>
-                  <FormMessage />
-              </FormItem>
-              )} />
-            <FormField control={form.control} name={`${type}.otherAllowance`} render={({ field }) => (
-              <FormItem>
-                <FormLabel>Other Allowance Amount</FormLabel>
-                <FormControl><Input type="number" placeholder="e.g., 1500" {...field} value={field.value ?? ''} /></FormControl>
-                <FormMessage />
-              </FormItem>
-            )} />
-            {currentWatchValues?.otherAllowance > 0 && (
-              <div className="space-y-2 pt-2">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <FormField
-                        control={form.control}
-                        name={`${type}.otherAllowanceFromDate`}
-                        render={({ field }) => (
-                          <FormItem><FormDateInput field={field} label="From Date"/></FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name={`${type}.otherAllowanceToDate`}
-                        render={({ field }) => (
-                          <FormItem><FormDateInput field={field} label="To Date" /></FormItem>
-                        )}
-                      />
-                  </div>
-                  <FixedRateFields type={type} name="otherAllowance" watchValues={currentWatchValues}/>
-              </div>
-            )}
-=======
           <div className="space-y-2 rounded-md border p-4">
               <h4 className="font-medium">Other Allowance</h4>
               <FormField control={form.control} name={`${type}.otherAllowanceName`} render={({ field }) => (
@@ -1821,7 +1386,6 @@ export default function Home() {
                 </div>
               )}
                <FixedRateFields type={type} name="otherAllowance" isAmount watchValues={currentWatchValues} />
->>>>>>> 973c44c8d8dad1da3a0eae3ff25f0b43f4993a77
           </div>
         </div>
       );
@@ -2064,9 +1628,4 @@ export default function Home() {
       </main>
     </div>
   );
-<<<<<<< HEAD
-=======
 }
->>>>>>> 973c44c8d8dad1da3a0eae3ff25f0b43f4993a77
-
-    
