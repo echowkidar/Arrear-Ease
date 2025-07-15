@@ -16,13 +16,13 @@ import { Loader2 } from 'lucide-react';
 const signupSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters." }),
   email: z.string().email({ message: "Please enter a valid email address." }),
-  phone: z.string().min(10, { message: "Phone number must be at least 10 digits." }).regex(/^\d+$/, "Phone number must contain only digits."),
+  phone: z.string().min(10, { message: "Phone number must be at least 10 digits." }).regex(/^\d+$/, "Phone number must contain only digits and country code."),
 });
 
 // Guest form schema
 const guestSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters." }),
-  phone: z.string().min(10, { message: "Phone number must be at least 10 digits." }).regex(/^\d+$/, "Phone number must contain only digits."),
+  phone: z.string().min(10, { message: "Phone number must be at least 10 digits." }).regex(/^\d+$/, "Phone number must contain only digits and country code."),
 });
 
 // OTP form schema
@@ -72,10 +72,7 @@ export function AuthModal() {
             <FormField control={form.control} name="phone" render={({ field }) => (
               <FormItem>
                 <FormLabel>Phone Number</FormLabel>
-                <div className='flex items-center gap-2'>
-                    <span className='text-sm text-muted-foreground'>+</span>
-                    <FormControl><Input type="tel" placeholder="91XXXXXXXXXX" {...field} /></FormControl>
-                </div>
+                <FormControl><Input type="tel" placeholder="e.g. 919876543210" {...field} /></FormControl>
                 <FormMessage />
               </FormItem>
             )} />
@@ -128,10 +125,7 @@ export function GuestInfoModal() {
             <FormField control={form.control} name="phone" render={({ field }) => (
               <FormItem>
                 <FormLabel>Phone Number</FormLabel>
-                 <div className='flex items-center gap-2'>
-                    <span className='text-sm text-muted-foreground'>+</span>
-                    <FormControl><Input type="tel" placeholder="91XXXXXXXXXX" {...field} /></FormControl>
-                </div>
+                <FormControl><Input type="tel" placeholder="e.g. 919876543210" {...field} /></FormControl>
                 <FormMessage />
               </FormItem>
             )} />
