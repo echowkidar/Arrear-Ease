@@ -50,7 +50,7 @@ export function AuthModal() {
     defaultValues: {
       email: "",
       password: "",
-      ...(isSignup && { confirmPassword: "" }),
+      confirmPassword: "", // Ensure this is always defined
     },
   });
   
@@ -81,7 +81,7 @@ export function AuthModal() {
       form.reset({
         email: "",
         password: "",
-         ...(isSignup ? {} : { confirmPassword: undefined })
+        confirmPassword: "" // Ensure this is always defined
       });
       clearAuthError();
   }
