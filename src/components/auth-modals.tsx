@@ -31,6 +31,13 @@ const signupSchema = z.object({
 
 type SignupFormValues = z.infer<typeof signupSchema>;
 
+const forgotPasswordSchema = z.object({
+  email: z.string().email({ message: "Please enter a valid email address." }),
+});
+
+type ForgotPasswordFormValues = z.infer<typeof forgotPasswordSchema>;
+
+type AuthMode = 'login' | 'signup' | 'forgot_password';
 
 export function AuthModal() {
   const { 
@@ -38,31 +45,36 @@ export function AuthModal() {
     closeAuthModal, 
     signUpWithEmailPassword,
     signInWithEmailPassword,
+    sendPasswordReset,
     authError,
-    clearAuthError,
+    authMessage,
+    clearAuthMessages,
   } = useAuth();
 
   const [isLoading, setIsLoading] = useState(false);
-  const [isSignup, setIsSignup] = useState(false);
+  const [mode, setMode] = useState<AuthMode>('login');
 
-  const form = useForm<LoginFormValues | SignupFormValues>({
-    resolver: zodResolver(isSignup ? signupSchema : loginSchema),
+  const form = useForm<LoginFormValues | SignupFormValues | ForgotPasswordFormValues>({
+    resolver: zodResolver(
+      mode === 'login' ? loginSchema :
+      mode === 'signup' ? signupSchema :
+      forgotPasswordSchema
+    ),
     defaultValues: {
       email: "",
       password: "",
-      confirmPassword: "", // Ensure this is always defined
+      confirmPassword: "",
     },
   });
   
-  const onSubmit = async (values: LoginFormValues | SignupFormValues) => {
+  const onSubmit = async (values: any) => {
     setIsLoading(true);
-    if (isSignup) {
-      // We know this is signup schema because of the isSignup flag
-      const signupValues = values as SignupFormValues;
-      await signUpWithEmailPassword(signupValues.email, signupValues.password);
-    } else {
-      const loginValues = values as LoginFormValues;
-      await signInWithEmailPassword(loginValues.email, loginValues.password);
+    if (mode === 'signup') {
+      await signUpWithEmailPassword(values.email, values.password);
+    } else if (mode === 'login') {
+      await signInWithEmailPassword(values.email, values.password);
+    } else if (mode === 'forgot_password') {
+        await sendPasswordReset(values.email);
     }
     setIsLoading(false);
   };
@@ -70,64 +82,109 @@ export function AuthModal() {
   const handleOpenChange = (isOpen: boolean) => {
     if (!isOpen) {
       form.reset();
-      clearAuthError();
+      clearAuthMessages();
       closeAuthModal();
-      setIsSignup(false);
+      setMode('login');
     }
   };
 
-  const toggleMode = () => {
-      setIsSignup(!isSignup);
+  const toggleMode = (newMode: AuthMode) => {
+      setMode(newMode);
       form.reset({
         email: "",
         password: "",
-        confirmPassword: "" // Ensure this is always defined
+        confirmPassword: ""
       });
-      clearAuthError();
+      clearAuthMessages();
+  }
+  
+  const getTitle = () => {
+      if (mode === 'signup') return "Create an Account";
+      if (mode === 'forgot_password') return "Reset Password";
+      return "Login";
+  }
+
+  const getDescription = () => {
+    if (mode === 'signup') return "Enter your details to create a new account.";
+    if (mode === 'forgot_password') return "Enter your email to receive a password reset link.";
+    return "Enter your email and password to sign in.";
+  }
+  
+  const renderFormFields = () => {
+    if (mode === 'forgot_password') {
+        return (
+             <FormField control={form.control} name="email" render={({ field }) => (
+                <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl><Input type="email" placeholder="your.email@example.com" {...field} /></FormControl>
+                    <FormMessage />
+                </FormItem>
+            )} />
+        )
+    }
+
+    return (
+        <>
+            <FormField control={form.control} name="email" render={({ field }) => (
+                <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl><Input type="email" placeholder="your.email@example.com" {...field} /></FormControl>
+                    <FormMessage />
+                </FormItem>
+            )} />
+             <FormField control={form.control} name="password" render={({ field }) => (
+                <FormItem>
+                    <FormLabel>Password</FormLabel>
+                    <FormControl><Input type="password" placeholder="••••••••" {...field} /></FormControl>
+                    <FormMessage />
+                </FormItem>
+            )} />
+            {mode === 'signup' && (
+                <FormField control={form.control} name="confirmPassword" render={({ field }) => (
+                <FormItem>
+                    <FormLabel>Confirm Password</FormLabel>
+                    <FormControl><Input type="password" placeholder="••••••••" {...field} /></FormControl>
+                    <FormMessage />
+                </FormItem>
+                )} />
+            )}
+        </>
+    )
   }
 
   return (
     <Dialog open={isAuthModalOpen} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{isSignup ? "Create an Account" : "Login"}</DialogTitle>
-           <DialogDescription>
-            {isSignup ? "Enter your details to create a new account." : "Enter your email and password to sign in."}
-          </DialogDescription>
+          <DialogTitle>{getTitle()}</DialogTitle>
+           <DialogDescription>{getDescription()}</DialogDescription>
         </DialogHeader>
         <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 pt-4">
                 {authError && <Alert variant="destructive"><AlertDescription>{authError}</AlertDescription></Alert>}
-                <FormField control={form.control} name="email" render={({ field }) => (
-                <FormItem>
-                    <FormLabel>Email</FormLabel>
-                    <FormControl><Input type="email" placeholder="your.email@example.com" {...field} /></FormControl>
-                    <FormMessage />
-                </FormItem>
-                )} />
-                 <FormField control={form.control} name="password" render={({ field }) => (
-                <FormItem>
-                    <FormLabel>Password</FormLabel>
-                    <FormControl><Input type="password" placeholder="••••••••" {...field} /></FormControl>
-                    <FormMessage />
-                </FormItem>
-                )} />
-                {isSignup && (
-                    <FormField control={form.control} name="confirmPassword" render={({ field }) => (
-                    <FormItem>
-                        <FormLabel>Confirm Password</FormLabel>
-                        <FormControl><Input type="password" placeholder="••••••••" {...field} /></FormControl>
-                        <FormMessage />
-                    </FormItem>
-                    )} />
+                {authMessage && <Alert variant="default" className="border-green-500 text-green-700"><AlertDescription>{authMessage}</AlertDescription></Alert>}
+                
+                {renderFormFields()}
+
+                {mode === 'login' && (
+                     <div className="text-sm">
+                        <Button type="button" variant="link" onClick={() => toggleMode('forgot_password')} className="p-0 h-auto">
+                           Forgot Password?
+                        </Button>
+                     </div>
                 )}
+                
                 <DialogFooter className="flex-col !space-y-2 sm:!space-y-0 sm:flex-row sm:!justify-between">
-                    <Button type="button" variant="link" onClick={toggleMode} className="p-0 h-auto">
-                        {isSignup ? "Already have an account? Login" : "Don't have an account? Sign Up"}
+                    <Button type="button" variant="link" onClick={() => toggleMode(mode === 'login' ? 'signup' : 'login')} className="p-0 h-auto">
+                        {mode === 'login' && "Don't have an account? Sign Up"}
+                        {mode === 'signup' && "Already have an account? Login"}
+                        {mode === 'forgot_password' && "Back to Login"}
                     </Button>
                     <Button type="submit" disabled={isLoading}>
                         {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        {isSignup ? "Sign Up" : "Login"}
+                        {mode === 'signup' && "Sign Up"}
+                        {mode === 'login' && "Login"}
+                        {mode === 'forgot_password' && "Send Reset Link"}
                     </Button>
                 </DialogFooter>
             </form>

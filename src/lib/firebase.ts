@@ -1,7 +1,7 @@
 
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
 import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, type Auth } from "firebase/auth";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, type Auth, sendPasswordResetEmail } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -39,4 +39,4 @@ if (db) {
 }
 
 
-export { db, auth, app, createUserWithEmailAndPassword, signInWithEmailAndPassword };
+export { db, auth, app, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail };

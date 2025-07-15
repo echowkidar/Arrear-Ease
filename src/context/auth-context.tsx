@@ -3,7 +3,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { auth, db, isFirebaseConfigured } from '@/lib/firebase';
+import { auth, db, isFirebaseConfigured, sendPasswordResetEmail } from '@/lib/firebase';
 import { 
     onAuthStateChanged, 
     signOut,
@@ -28,11 +28,15 @@ interface AuthContextType {
     isAuthModalOpen: boolean;
     signUpWithEmailPassword: (email: string, password: string) => Promise<void>;
     signInWithEmailPassword: (email: string, password: string) => Promise<void>;
+    sendPasswordReset: (email: string) => Promise<void>;
     authError: string | null;
-    clearAuthError: () => void;
+    authMessage: string | null;
+    clearAuthMessages: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const EMAIL_FOR_SIGN_IN_KEY = 'emailForSignIn';
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [user, setUser] = useState<User | null>(null);
@@ -40,6 +44,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [loading, setLoading] = useState(true);
     const [isAuthModalOpen, setAuthModalOpen] = useState(false);
     const [authError, setAuthError] = useState<string | null>(null);
+    const [authMessage, setAuthMessage] = useState<string | null>(null);
 
     const { toast } = useToast();
     const router = useRouter();
@@ -83,11 +88,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
     }
     
-    const clearAuthError = () => setAuthError(null);
+    const clearAuthMessages = () => {
+      setAuthError(null);
+      setAuthMessage(null);
+    };
 
     const signUpWithEmailPassword = async (email: string, password: string) => {
         if (!auth || !db) return;
-        clearAuthError();
+        clearAuthMessages();
         try {
             const result = await createUserWithEmailAndPassword(auth, email, password);
             const firebaseUser = result.user;
@@ -113,7 +121,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const signInWithEmailPassword = async (email: string, password: string) => {
         if (!auth) return;
-        clearAuthError();
+        clearAuthMessages();
         try {
             await signInWithEmailAndPassword(auth, email, password);
             toast({ title: "Successfully signed in!", description: 'Welcome back!' });
@@ -122,7 +130,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             handleAuthError(error as AuthError);
         }
     };
-
+    
+    const sendPasswordReset = async (email: string) => {
+        if (!auth) return;
+        clearAuthMessages();
+        try {
+            await sendPasswordResetEmail(auth, email);
+            setAuthMessage("Password reset email sent. Please check your inbox.");
+        } catch (error) {
+            handleAuthError(error as AuthError);
+        }
+    };
 
     const logout = async () => {
         if (!auth) return;
@@ -137,7 +155,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const closeAuthModal = () => {
         setAuthModalOpen(false);
-        clearAuthError();
+        clearAuthMessages();
     }
 
     return (
@@ -151,8 +169,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             isAuthModalOpen,
             signUpWithEmailPassword,
             signInWithEmailPassword,
+            sendPasswordReset,
             authError,
-            clearAuthError
+            authMessage,
+            clearAuthMessages
         }}>
             {children}
         </AuthContext.Provider>
