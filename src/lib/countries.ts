@@ -7,7 +7,6 @@ export type Country = {
 
 export const countries: Country[] = [
     { name: "Afghanistan", dial_code: "+93", code: "AF" },
-    { name: "Aland Islands", dial_code: "+358", code: "AX" },
     { name: "Albania", dial_code: "+355", code: "AL" },
     { name: "Algeria", dial_code: "+213", code: "DZ" },
     { name: "AmericanSamoa", dial_code: "+1684", code: "AS" },
@@ -184,11 +183,9 @@ export const countries: Country[] = [
     { name: "Romania", dial_code: "+40", code: "RO" },
     { name: "Russia", dial_code: "+7", code: "RU" },
     { name: "Rwanda", dial_code: "+250", code: "RW" },
-    { name: "Saint Barthelemy", dial_code: "+590", code: "BL" },
     { name: "Saint Helena, Ascension and Tristan Da Cunha", dial_code: "+290", code: "SH" },
     { name: "Saint Kitts and Nevis", dial_code: "+1869", code: "KN" },
     { name: "Saint Lucia", dial_code: "+1758", code: "LC" },
-    { name: "Saint Martin", dial_code: "+590", code: "MF" },
     { name: "Saint Pierre and Miquelon", dial_code: "+508", code: "PM" },
     { name: "Saint Vincent and the Grenadines", dial_code: "+1784", code: "VC" },
     { name: "Samoa", dial_code: "+685", code: "WS" },
