@@ -300,16 +300,16 @@ const ProtectedRatesPage = () => {
 }
 
 export default function RatesPage() {
-    const { authStatus, loading } = useAuth();
+    const { authStatus, loading, user } = useAuth();
     const router = useRouter();
 
     React.useEffect(() => {
-        if (!loading && authStatus !== 'authenticated') {
+        if (!loading && (authStatus !== 'authenticated' || user?.email !== "amulivealigarh@gmail.com")) {
             router.push('/');
         }
-    }, [authStatus, loading, router]);
+    }, [authStatus, loading, router, user]);
 
-    if (loading || authStatus !== 'authenticated') {
+    if (loading || authStatus !== 'authenticated' || user?.email !== "amulivealigarh@gmail.com") {
         return (
             <div className="flex justify-center items-center min-h-screen">
                 <p>Loading...</p>

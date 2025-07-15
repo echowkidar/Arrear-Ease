@@ -236,6 +236,8 @@ export default function Home() {
   const { toast } = useToast();
   const { daRates, hraRates, npaRates, taRates } = useRates();
 
+  const isAdmin = user?.email === "amulivealigarh@gmail.com";
+
   React.useEffect(() => {
     const updateOnlineStatus = () => setIsOnline(navigator.onLine);
     window.addEventListener('online', updateOnlineStatus);
@@ -1523,7 +1525,7 @@ export default function Home() {
                     </div>
                 </DialogContent>
             </Dialog>
-            {authStatus === 'authenticated' && (
+            {authStatus === 'authenticated' && isAdmin && (
               <Button variant="outline" asChild>
                   <Link href="/rates">
                       <Settings className="mr-2 h-4 w-4" /> Rate Configuration
