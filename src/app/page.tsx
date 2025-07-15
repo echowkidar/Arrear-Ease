@@ -573,7 +573,7 @@ export default function Home() {
                     
                     if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd })) {
                         if (sideData.cpc === '7th' && sideData.payLevel) {
-                            const levelData = cpcData['7th'].payLevels.find(l => l.level === sideData.payLevel);
+                            const levelData = cpcData['7th'].payLevels.find(l => l.level.includes(sideData.payLevel));
                             if (levelData) {
                                 const currentBasicIndex = levelData.values.indexOf(trackerBasic);
                                 if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
@@ -626,6 +626,51 @@ export default function Home() {
             const proratedDrawnBasic = drawnBasicForMonth * monthProRataFactor;
             const proratedDueBasic = dueBasicForMonth * monthProRataFactor;
             
+             const calculateAllowanceAmount = (allowanceType: 'hra' | 'npa' | 'ta' | 'otherAllowance' | 'da', side: 'paid' | 'toBePaid', basic: number, trackerBasic: number, payLevel: string, npaAmountForDA: number = 0) => {
+              const sideData = data[side];
+              const otherAllowanceAmount = sideData.otherAllowance || 0;
+              let amount = 0;
+              switch (allowanceType) {
+                  case 'da': {
+                      const rateDetails = getRateForDate(daRates, currentDate);
+                      const rate = rateDetails ? rateDetails.rate : 0;
+                      const baseForDA = basic + npaAmountForDA;
+                      amount = baseForDA * (rate / 100);
+                      break;
+                  }
+                  case 'hra': {
+                      const rateDetails = getRateForDate(hraRates, currentDate, trackerBasic);
+                      if (!rateDetails) return 0;
+                      const rate = rateDetails.rate;
+                      amount = basic * (rate / 100);
+                      if (rateDetails.minAmount && rateDetails.minAmount > 0) {
+                          amount = Math.max(amount, rateDetails.minAmount);
+                      }
+                      break;
+                  }
+                  case 'npa': {
+                      const rateDetails = getRateForDate(npaRates, currentDate);
+                      if (!rateDetails) return 0;
+                      amount = basic * (rateDetails.rate / 100);
+                      break;
+                  }
+                  case 'ta': {
+                      const rateDetails = getRateForDate(taRates, currentDate, trackerBasic, payLevel);
+                      if (!rateDetails) return 0;
+                      const taBaseAmount = rateDetails.rate;
+                      const daRateDetails = getRateForDate(daRates, currentDate);
+                      const daRateForTa = daRateDetails ? daRateDetails.rate / 100 : 0;
+                      amount = taBaseAmount + (taBaseAmount * daRateForTa);
+                      if (sideData.doubleTaApplicable) amount *= 2;
+                      break;
+                  }
+                  case 'otherAllowance':
+                      amount = otherAllowanceAmount;
+                      break;
+              }
+              return amount;
+            };
+
             const getProratedAmount = (allowanceType: 'hra' | 'npa' | 'ta' | 'otherAllowance' | 'da', side: 'paid' | 'toBePaid') => {
               const sideData = data[side];
               const isApplicable = (sideData as any)[`${allowanceType}Applicable`];
@@ -644,49 +689,6 @@ export default function Home() {
               const baseBasicForMonth = side === 'paid' ? drawnBasicForMonth : dueBasicForMonth;
               const baseTrackerBasic = side === 'paid' ? drawnBasicTracker : dueBasicTracker;
               const basePayLevel = side === 'paid' ? data.paid.payLevel : data.toBePaid.payLevel;
-
-              const calculateAmount = (basic: number, trackerBasic: number, date: Date, level: string, npaAmountForDA: number = 0) => {
-                  let amount = 0;
-                  switch (allowanceType) {
-                      case 'da': {
-                          const rateDetails = getRateForDate(daRates, date);
-                          const rate = rateDetails ? rateDetails.rate : 0;
-                          const baseForDA = basic + npaAmountForDA;
-                          amount = baseForDA * (rate / 100);
-                          break;
-                      }
-                      case 'hra': {
-                          const rateDetails = getRateForDate(hraRates, date, trackerBasic);
-                          if (!rateDetails) return 0;
-                          const rate = rateDetails.rate;
-                          amount = basic * (rate / 100);
-                          if (rateDetails.minAmount && rateDetails.minAmount > 0) {
-                              amount = Math.max(amount, rateDetails.minAmount);
-                          }
-                          break;
-                      }
-                      case 'npa': {
-                          const rateDetails = getRateForDate(npaRates, date);
-                          if (!rateDetails) return 0;
-                          amount = basic * (rateDetails.rate / 100);
-                          break;
-                      }
-                      case 'ta': {
-                          const rateDetails = getRateForDate(taRates, date, trackerBasic, level);
-                          if (!rateDetails) return 0;
-                          const taBaseAmount = rateDetails.rate;
-                          const daRateDetails = getRateForDate(daRates, date);
-                          const daRateForTa = daRateDetails ? daRateDetails.rate / 100 : 0;
-                          amount = taBaseAmount + (taBaseAmount * daRateForTa);
-                          if (sideData.doubleTaApplicable) amount *= 2;
-                          break;
-                      }
-                      case 'otherAllowance':
-                          amount = otherAllowanceAmount;
-                          break;
-                  }
-                  return amount;
-              };
 
               const calculateFixedAmount = (basic: number, npaAmountForDA: number = 0) => {
                   let amount = 0;
@@ -710,7 +712,7 @@ export default function Home() {
               if (allowanceType === 'da' && (data[side].npaApplicable)) {
                   const npaProrationFactor = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data[side].npaFromDate, data[side].npaToDate);
                   if (npaProrationFactor > 0) {
-                      npaAmount = calculateAmount(baseBasicForMonth * npaProrationFactor, baseTrackerBasic, currentDate, basePayLevel)
+                      npaAmount = calculateAllowanceAmount('npa', side, baseBasicForMonth * npaProrationFactor, baseTrackerBasic, basePayLevel)
                   }
               }
               const npaForDA = npaAmount;
@@ -720,12 +722,12 @@ export default function Home() {
               if(isFixedRate && fixedRateValue && fixedFrom && fixedTo && isWithinInterval(currentDate, {start: startOfMonth(fixedFrom), end: endOfMonth(fixedTo)})) {
                 
                 const regularPeriodStart = monthStart;
-                const regularPeriodEnd = addDays(max([monthStart, fixedFrom]), -1);
+                const regularPeriodEnd = addDays(fixedFrom, -1);
                 
-                if (regularPeriodStart <= regularPeriodEnd) {
+                if (isWithinInterval(regularPeriodStart, {start: monthStart, end: regularPeriodEnd})) {
                     const days = differenceInDays(regularPeriodEnd, regularPeriodStart) + 1;
                     const factor = days > 0 ? days / daysInMonth : 0;
-                    totalAmount += calculateAmount(baseBasicForMonth, baseTrackerBasic, currentDate, basePayLevel, npaForDA) * factor;
+                    totalAmount += calculateAllowanceAmount(allowanceType, side, baseBasicForMonth, baseTrackerBasic, basePayLevel, npaForDA) * factor;
                 }
                 
                 const fixedPeriodStartInMonth = max([monthStart, fixedFrom]);
@@ -743,14 +745,14 @@ export default function Home() {
                 if (postFixedPeriodStart <= postFixedPeriodEnd) {
                     const days = differenceInDays(postFixedPeriodEnd, postFixedPeriodStart) + 1;
                     const factor = days > 0 ? days/daysInMonth : 0;
-                    totalAmount += calculateAmount(baseBasicForMonth, baseTrackerBasic, currentDate, basePayLevel, npaForDA) * factor;
+                    totalAmount += calculateAllowanceAmount(allowanceType, side, baseBasicForMonth, baseTrackerBasic, basePayLevel, npaForDA) * factor;
                 }
                  
                 return totalAmount * monthProRataFactor;
               } else {
                  const regularProrationFactor = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fromDate, toDate);
                  if (regularProrationFactor <= 0) return 0;
-                 const calculatedAmount = calculateAmount(baseBasicForMonth, baseTrackerBasic, currentDate, basePayLevel, npaForDA);
+                 const calculatedAmount = calculateAllowanceAmount(allowanceType, side, baseBasicForMonth, baseTrackerBasic, basePayLevel, npaForDA);
                  return calculatedAmount * regularProrationFactor * monthProRataFactor;
               }
             };
@@ -805,11 +807,8 @@ export default function Home() {
         totals.due.total = rows.reduce((acc, row) => acc + row.due.total, 0);
         totals.difference = rows.reduce((acc, row) => acc + row.difference, 0);
 
-        setStatement({
-            rows,
-            totals,
-            employeeInfo: data
-        });
+        const newStatement = { rows, totals, employeeInfo: data };
+        setStatement(newStatement);
         toast({
             title: "Calculation Complete",
             description: "Arrear statement has been generated below.",
@@ -903,7 +902,7 @@ export default function Home() {
         return;
     }
 
-    const docToUpdate: Omit<SavedStatement, 'isLocal'> = {
+    const docToUpdate: Omit<SavedStatement, 'isLocal' | 'employeeInfo'> & { employeeInfo: ArrearFormData } = {
         id: loadedStatementId,
         savedAt: new Date().toISOString(),
         rows: newCalculation.rows,
@@ -917,7 +916,7 @@ export default function Home() {
     // Update local storage first
     const localStatements = getLocalStatements();
     const updatedLocalStatements = localStatements.map(s => 
-        s.id === loadedStatementId ? { ...docToUpdate, rows: newCalculation.rows, totals: newCalculation.totals, isLocal: s.isLocal ?? true } : s
+        s.id === loadedStatementId ? { ...docToUpdate, isLocal: s.isLocal ?? true } : s
     );
     saveLocalStatements(updatedLocalStatements);
     setSavedStatements(updatedLocalStatements.sort((a,b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()));
@@ -925,10 +924,10 @@ export default function Home() {
     if (isOnline && dbConfigured && db) {
         try {
             const docRef = doc(db, FIRESTORE_STATEMENTS_COLLECTION, loadedStatementId);
-            await updateDoc(docRef, sanitizeForFirebase({ ...docToUpdate, rows: newCalculation.rows, totals: newCalculation.totals }));
+            await updateDoc(docRef, sanitizeForFirebase(docToUpdate));
             // Mark as not local anymore
             const finalLocalStatements = getLocalStatements().map(s => 
-                s.id === loadedStatementId ? { ...docToUpdate, rows: newCalculation.rows, totals: newCalculation.totals, isLocal: false } : s
+                s.id === loadedStatementId ? { ...docToUpdate, isLocal: false } : s
             );
             saveLocalStatements(finalLocalStatements);
             setSavedStatements(finalLocalStatements.sort((a,b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()));
@@ -955,23 +954,6 @@ export default function Home() {
     setIsLoading(false);
   }
 
-  const calculateStatement = (data: ArrearFormData): Omit<SavedStatement, 'id' | 'savedAt' | 'isLocal' | 'employeeInfo'> | null => {
-      // This is a simplified duplication of onSubmit logic for getting the result synchronously
-      // In a real app this would be refactored to be a single pure function
-      try {
-        const rows: StatementRow[] = [];
-        const totals: StatementTotals = { drawn: { total: 0 }, due: { total: 0 }, difference: 0 };
-        // ... (Full calculation logic from onSubmit)
-        // ... for brevity, this is assumed to be the same as in onSubmit
-        // The real implementation would have the full logic here.
-        // Returning null for now as this is a placeholder
-        const statementResult = { rows: statement?.rows || [], totals: statement?.totals || { drawn: { total: 0 }, due: { total: 0 }, difference: 0 } };
-        return statementResult;
-      } catch {
-        return null;
-      }
-  }
-  
   const handleCopy = () => {
     if (!statement) return;
 
@@ -1475,7 +1457,7 @@ export default function Home() {
         </div>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8 no-print">
+          <form onSubmit={form.handleSubmit(data => onSubmit(data))} className="space-y-8 no-print">
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
               <div className="lg:col-span-2 space-y-8">
                 <Card id="employee-details-card">
@@ -1629,3 +1611,5 @@ export default function Home() {
     </div>
   );
 }
+
+    
