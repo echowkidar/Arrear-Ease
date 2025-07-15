@@ -4,30 +4,23 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Rules for user-specific data
+    // Rules for user profiles
     match /users/{userId} {
-      // A user can create their own profile document upon signup.
-      // They can also read and update their own data.
-      // They cannot delete their profile or access others' data.
-      allow create, read, update: if request.auth != null && request.auth.uid == userId;
-      allow delete: if false;
+      // A user can create, read, and update their own profile.
+      // They cannot delete it or access other users' profiles.
+      allow read, update, create: if request.auth != null && request.auth.uid == userId;
     }
 
     // Rules for saved arrear statements
     match /savedStatements/{statementId} {
-      // Users can only access (create, read, update, delete) their own statements.
-      allow read, write: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow read, create, update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
     }
-
+    
     // Rules for global rate configurations
     match /configurations/{configId} {
-        // Logged-in users can read the rates.
-        allow read: if request.auth != null;
-        
-        // For simplicity in this app, any authenticated user can write to configurations.
-        // In a production app, you might restrict this to admin users.
-        // e.g., allow write: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
-        allow write: if request.auth != null;
+      // Only authenticated users can read and write to the configurations.
+      // The configId is a fixed value, e.g., "allRates".
+      allow read, write: if request.auth != null;
     }
   }
 }
