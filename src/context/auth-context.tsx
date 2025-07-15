@@ -26,7 +26,7 @@ interface AuthContextType {
     openAuthModal: () => void;
     closeAuthModal: () => void;
     isAuthModalOpen: boolean;
-    signUpWithEmailPassword: (email: string, password: string) => Promise<void>;
+    signUpWithEmailPassword: (email: string, password: string, phoneNumber: string) => Promise<void>;
     signInWithEmailPassword: (email: string, password: string) => Promise<void>;
     sendPasswordReset: (email: string) => Promise<void>;
     authError: string | null;
@@ -93,7 +93,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setAuthMessage(null);
     };
 
-    const signUpWithEmailPassword = async (email: string, password: string) => {
+    const signUpWithEmailPassword = async (email: string, password: string, phoneNumber: string) => {
         if (!auth || !db) return;
         clearAuthMessages();
         try {
@@ -105,6 +105,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             await setDoc(doc(db, 'users', firebaseUser.uid), {
                 email: email,
                 displayName: email.split('@')[0],
+                phoneNumber: phoneNumber,
                 createdAt: serverTimestamp(),
             });
 

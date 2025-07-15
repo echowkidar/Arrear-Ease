@@ -22,6 +22,7 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 
 const signupSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email address." }),
+  phoneNumber: z.string().min(1, "Phone number is required."),
   password: z.string().min(6, "Password must be at least 6 characters long."),
   confirmPassword: z.string()
 }).refine(data => data.password === data.confirmPassword, {
@@ -64,13 +65,14 @@ export function AuthModal() {
       email: "",
       password: "",
       confirmPassword: "",
+      phoneNumber: "",
     },
   });
   
   const onSubmit = async (values: any) => {
     setIsLoading(true);
     if (mode === 'signup') {
-      await signUpWithEmailPassword(values.email, values.password);
+      await signUpWithEmailPassword(values.email, values.password, values.phoneNumber);
     } else if (mode === 'login') {
       await signInWithEmailPassword(values.email, values.password);
     } else if (mode === 'forgot_password') {
@@ -93,7 +95,8 @@ export function AuthModal() {
       form.reset({
         email: "",
         password: "",
-        confirmPassword: ""
+        confirmPassword: "",
+        phoneNumber: "",
       });
       clearAuthMessages();
   }
@@ -128,14 +131,23 @@ export function AuthModal() {
             <FormField control={form.control} name="email" render={({ field }) => (
                 <FormItem>
                     <FormLabel>Email</FormLabel>
-                    <FormControl><Input type="email" placeholder="your.email@example.com" {...field} /></FormControl>
+                    <FormControl><Input type="email" placeholder="your.email@example.com" {...field} value={field.value ?? ''} /></FormControl>
                     <FormMessage />
                 </FormItem>
             )} />
+            {mode === 'signup' && (
+                <FormField control={form.control} name="phoneNumber" render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>Phone Number</FormLabel>
+                        <FormControl><Input type="tel" placeholder="+1 123 456 7890" {...field} value={field.value ?? ''} /></FormControl>
+                        <FormMessage />
+                    </FormItem>
+                )} />
+            )}
              <FormField control={form.control} name="password" render={({ field }) => (
                 <FormItem>
                     <FormLabel>Password</FormLabel>
-                    <FormControl><Input type="password" placeholder="••••••••" {...field} /></FormControl>
+                    <FormControl><Input type="password" placeholder="••••••••" {...field} value={field.value ?? ''} /></FormControl>
                     <FormMessage />
                 </FormItem>
             )} />
@@ -143,7 +155,7 @@ export function AuthModal() {
                 <FormField control={form.control} name="confirmPassword" render={({ field }) => (
                 <FormItem>
                     <FormLabel>Confirm Password</FormLabel>
-                    <FormControl><Input type="password" placeholder="••••••••" {...field} /></FormControl>
+                    <FormControl><Input type="password" placeholder="••••••••" {...field} value={field.value ?? ''} /></FormControl>
                     <FormMessage />
                 </FormItem>
                 )} />
