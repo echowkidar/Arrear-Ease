@@ -13,7 +13,7 @@ export const countries: Country[] = [
     { name: "Andorra", dial_code: "+376", code: "AD" },
     { name: "Angola", dial_code: "+244", code: "AO" },
     { name: "Anguilla", dial_code: "+1264", code: "AI" },
-    { name: "Antarctica", dial_code: "+672", code: "AQ" },
+    
     { name: "Antigua and Barbuda", dial_code: "+1268", code: "AG" },
     { name: "Argentina", dial_code: "+54", code: "AR" },
     { name: "Armenia", dial_code: "+374", code: "AM" },
@@ -42,7 +42,7 @@ export const countries: Country[] = [
     { name: "Burundi", dial_code: "+257", code: "BI" },
     { name: "Cambodia", dial_code: "+855", code: "KH" },
     { name: "Cameroon", dial_code: "+237", code: "CM" },
-    { name: "Canada", dial_code: "+1", code: "CA" },
+
     { name: "Cape Verde", dial_code: "+238", code: "CV" },
     { name: "Cayman Islands", dial_code: "+ 345", code: "KY" },
     { name: "Central African Republic", dial_code: "+236", code: "CF" },
@@ -71,7 +71,7 @@ export const countries: Country[] = [
     { name: "Eritrea", dial_code: "+291", code: "ER" },
     { name: "Estonia", dial_code: "+372", code: "EE" },
     { name: "Ethiopia", dial_code: "+251", code: "ET" },
-    { name: "Falkland Islands (Malvinas)", dial_code: "+500", code: "FK" },
+    
     { name: "Faroe Islands", dial_code: "+298", code: "FO" },
     { name: "Fiji", dial_code: "+679", code: "FJ" },
     { name: "Finland", dial_code: "+358", code: "FI" },
@@ -137,7 +137,7 @@ export const countries: Country[] = [
     { name: "Martinique", dial_code: "+596", code: "MQ" },
     { name: "Mauritania", dial_code: "+222", code: "MR" },
     { name: "Mauritius", dial_code: "+230", code: "MU" },
-    { name: "Mayotte", dial_code: "+262", code: "YT" },
+    
     { name: "Mexico", dial_code: "+52", code: "MX" },
     { name: "Micronesia, Federated States of", dial_code: "+691", code: "FM" },
     { name: "Moldova, Republic of", dial_code: "+373", code: "MD" },
@@ -168,7 +168,7 @@ export const countries: Country[] = [
     { name: "Palestinian Territory, Occupied", dial_code: "+970", code: "PS" },
     { name: "Panama", dial_code: "+507", code: "PA" },
     { name: "Papua New Guinea", dial_code: "+675", code: "PG" },
-    { name: "Paraguay", dial_code: "+595", code: "PY" },
+   
     { name: "Peru", dial_code: "+51", code: "PE" },
     { name: "Philippines", dial_code: "+63", code: "PH" },
     { name: "Pitcairn", dial_code: "+872", code: "PN" },
@@ -204,7 +204,7 @@ export const countries: Country[] = [
     { name: "Sri Lanka", dial_code: "+94", code: "LK" },
     { name: "Sudan", dial_code: "+249", code: "SD" },
     { name: "Suriname", dial_code: "+597", code: "SR" },
-    { name: "Svalbard and Jan Mayen", dial_code: "+47", code: "SJ" },
+    
     { name: "Swaziland", dial_code: "+268", code: "SZ" },
     { name: "Sweden", dial_code: "+46", code: "SE" },
     { name: "Switzerland", dial_code: "+41", code: "CH" },
