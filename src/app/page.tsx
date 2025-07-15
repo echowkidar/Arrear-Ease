@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import Link from "next/link";
-import { format, addMonths, differenceInCalendarMonths, getDaysInMonth, startOfMonth, endOfMonth, max, min, isWithinInterval, differenceInDays } from "date-fns";
+import { format, addMonths, differenceInCalendarMonths, getDaysInMonth, startOfMonth, endOfMonth, max, min, isWithinInterval, differenceInDays, addDays } from "date-fns";
 import {
   User,
   Building,
@@ -89,6 +89,8 @@ import { cpcData } from "@/lib/cpc-data";
 import { Rate, useRates } from "@/context/rates-context";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Switch } from "@/components/ui/switch";
+
 
 const salaryComponentSchema = z.object({
   cpc: z.enum(["6th", "7th"], { required_error: "CPC selection is required." }),
@@ -97,9 +99,17 @@ const salaryComponentSchema = z.object({
   incrementMonth: z.string({ required_error: "Increment month is required." }),
   incrementDate: z.date().optional(),
   daApplicable: z.boolean().default(false),
+  daFixed: z.boolean().default(false),
+  daFixedRate: z.coerce.number().min(0).optional(),
+  daFixedFromDate: z.date().optional(),
+  daFixedToDate: z.date().optional(),
   hraApplicable: z.boolean().default(false),
   hraFromDate: z.date().optional(),
   hraToDate: z.date().optional(),
+  hraFixed: z.boolean().default(false),
+  hraFixedRate: z.coerce.number().min(0).optional(),
+  hraFixedFromDate: z.date().optional(),
+  hraFixedToDate: z.date().optional(),
   npaApplicable: z.boolean().default(false),
   npaFromDate: z.date().optional(),
   npaToDate: z.date().optional(),
@@ -107,10 +117,18 @@ const salaryComponentSchema = z.object({
   doubleTaApplicable: z.boolean().default(false),
   taFromDate: z.date().optional(),
   taToDate: z.date().optional(),
+  taFixed: z.boolean().default(false),
+  taFixedRate: z.coerce.number().min(0).optional(),
+  taFixedFromDate: z.date().optional(),
+  taFixedToDate: z.date().optional(),
   otherAllowanceName: z.string().optional(),
   otherAllowance: z.coerce.number().min(0).optional().default(0),
   otherAllowanceFromDate: z.date().optional(),
   otherAllowanceToDate: z.date().optional(),
+  otherAllowanceFixed: z.boolean().default(false),
+  otherAllowanceFixedRate: z.coerce.number().min(0).optional(),
+  otherAllowanceFixedFromDate: z.date().optional(),
+  otherAllowanceFixedToDate: z.date().optional(),
   refixedBasicPay: z.coerce.number().min(0).optional(),
   refixedBasicPayDate: z.date().optional(),
 });
@@ -403,12 +421,16 @@ export default function Home() {
         payLevel: undefined,
         incrementMonth: undefined,
         daApplicable: false,
+        daFixed: false,
         hraApplicable: false,
+        hraFixed: false,
         npaApplicable: false,
         taApplicable: false,
+        taFixed: false,
         doubleTaApplicable: false,
         otherAllowance: '' as any,
         otherAllowanceName: "",
+        otherAllowanceFixed: false,
       },
       toBePaid: {
         cpc: undefined,
@@ -416,12 +438,16 @@ export default function Home() {
         payLevel: undefined,
         incrementMonth: undefined,
         daApplicable: false,
+        daFixed: false,
         hraApplicable: false,
+        hraFixed: false,
         npaApplicable: false,
         taApplicable: false,
+        taFixed: false,
         doubleTaApplicable: false,
         otherAllowance: '' as any,
         otherAllowanceName: "",
+        otherAllowanceFixed: false,
         refixedBasicPay: '' as any,
       },
     },
@@ -499,7 +525,7 @@ export default function Home() {
     return daysToCalculate > 0 ? daysToCalculate / daysInMonth : 0;
   };
   
-  const onSubmit = (data: ArrearFormData) => {
+  const onSubmit = (data: ArrearFormData): Omit<SavedStatement, 'id' | 'savedAt' | 'isLocal' | 'employeeInfo'> | null => {
     try {
         const rows: StatementRow[] = [];
         const totals: StatementTotals = { drawn: { total: 0 }, due: { total: 0 }, difference: 0 };
@@ -537,21 +563,25 @@ export default function Home() {
                 // Determine the trigger date for this year's increment
                 let incrementTriggerDate: Date | null = null;
                 if (firstIncrementDate) {
-                    if (currentYear === firstIncrementDate.getFullYear() && currentMonth === firstIncrementDate.getMonth() + 1) {
-                        incrementTriggerDate = firstIncrementDate;
-                    } else if (currentYear > firstIncrementDate.getFullYear() && currentMonth === firstIncrementDate.getMonth() + 1) {
-                        // For subsequent years, increment happens on the 1st of the same month
-                        incrementTriggerDate = new Date(currentYear, firstIncrementDate.getMonth(), 1);
+                    if (currentYear > firstIncrementDate.getFullYear() && currentMonth === firstIncrementDate.getMonth() + 1) {
+                         incrementTriggerDate = new Date(currentYear, firstIncrementDate.getMonth(), 1);
+                    } else if (currentYear === firstIncrementDate.getFullYear() && currentMonth >= firstIncrementDate.getMonth() + 1) {
+                         if(currentMonth === firstIncrementDate.getMonth() + 1) {
+                            incrementTriggerDate = firstIncrementDate;
+                         } else {
+                            // This branch may not be strictly necessary if increments are always on the 1st after the first year
+                            // but kept for robustness.
+                         }
                     }
                 } else if (currentMonth === incrementMonthValue) {
-                    // Fallback to month if no specific date is provided
                      const potentialDate = new Date(currentYear, incrementMonthValue - 1, 1);
                      if (potentialDate >= startOfMonth(arrearFromDate)) {
                          incrementTriggerDate = potentialDate;
                      }
                 }
-
-                if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd })) {
+                
+                // Check if the increment has already been applied by comparing with the tracker
+                if (incrementTriggerDate && newBasicTracker === currentBasic) {
                     let incrementedBasicValue: number;
                     if (sideData.cpc === '7th' && sideData.payLevel) {
                         const levelData = cpcData['7th'].payLevels.find(l => l.level === sideData.payLevel);
@@ -570,43 +600,46 @@ export default function Home() {
                     }
             
                     const incrementDay = incrementTriggerDate.getDate();
-                    if (incrementDay > 1) {
+                    if (incrementDay > 1 && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd })) {
                         const daysBefore = incrementDay - 1;
                         const daysAfter = daysInMonth - daysBefore;
                         newBasicForMonth = ((currentBasic * daysBefore) + (incrementedBasicValue * daysAfter)) / daysInMonth;
-                    } else {
+                    } else if (currentDate >= incrementTriggerDate) {
                         newBasicForMonth = incrementedBasicValue;
                     }
-                    newBasicTracker = incrementedBasicValue;
+                    if (currentDate >= incrementTriggerDate) {
+                        newBasicTracker = incrementedBasicValue;
+                    }
                 }
             
                 return [newBasicForMonth, newBasicTracker];
             };
 
-            const [drawnBasicForMonth, updatedDrawnBasicTracker] = handleIncrement('paid', drawnBasicTracker);
+            const [drawnBasicForMonthTemp, updatedDrawnBasicTracker] = handleIncrement('paid', drawnBasicTracker);
             drawnBasicTracker = updatedDrawnBasicTracker;
 
-            const [dueBasicForMonth, updatedDueBasicTracker] = handleIncrement('toBePaid', dueBasicTracker);
+            const [dueBasicForMonthTemp, updatedDueBasicTracker] = handleIncrement('toBePaid', dueBasicTracker);
             dueBasicTracker = updatedDueBasicTracker;
             
-            let finalDueBasicForMonth = dueBasicForMonth;
-
+            let drawnBasicForMonth = drawnBasicForMonthTemp;
+            let dueBasicForMonth = dueBasicForMonthTemp;
+           
             if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPay > 0 && data.toBePaid.refixedBasicPayDate) {
                 const refixDate = data.toBePaid.refixedBasicPayDate;
                 if (isWithinInterval(refixDate, { start: monthStart, end: monthEnd })) {
                     const refixDay = refixDate.getDate();
-                    const basicBeforeRefix = dueBasicForMonth;
+                    const basicBeforeRefix = dueBasicTracker; 
                     
                     if (refixDay > 1) {
                         const daysBefore = refixDay - 1;
                         const daysAfter = daysInMonth - daysBefore;
-                        finalDueBasicForMonth = ((basicBeforeRefix * daysAfter) + (data.toBePaid.refixedBasicPay * daysBefore)) / daysInMonth;
+                        dueBasicForMonth = ((basicBeforeRefix * daysBefore) + (data.toBePaid.refixedBasicPay * daysAfter)) / daysInMonth;
                     } else {
-                        finalDueBasicForMonth = data.toBePaid.refixedBasicPay;
+                        dueBasicForMonth = data.toBePaid.refixedBasicPay;
                     }
                     dueBasicTracker = data.toBePaid.refixedBasicPay;
                 } else if (currentDate > refixDate) {
-                    finalDueBasicForMonth = dueBasicTracker;
+                    dueBasicForMonth = dueBasicTracker;
                 }
             }
            
@@ -616,28 +649,116 @@ export default function Home() {
             const monthProRataFactor = daysToCalculateForMonth / daysInMonth;
 
             const proratedDrawnBasic = drawnBasicForMonth * monthProRataFactor;
-            const proratedDueBasic = finalDueBasicForMonth * monthProRataFactor;
+            const proratedDueBasic = dueBasicForMonth * monthProRataFactor;
             
-            const getProratedAmount = (allowanceType: 'hra' | 'npa' | 'ta' | 'otherAllowance', side: 'paid' | 'toBePaid') => {
+            const getProratedAmount = (allowanceType: 'da' | 'hra' | 'npa' | 'ta' | 'otherAllowance', side: 'paid' | 'toBePaid') => {
                 const sideData = data[side];
                 const isApplicable = (sideData as any)[`${allowanceType}Applicable`];
+                const isFixed = (sideData as any)[`${allowanceType}Fixed`];
+                const fixedRate = (sideData as any)[`${allowanceType}FixedRate`];
+                const fixedFrom = (sideData as any)[`${allowanceType}FixedFromDate`];
+                const fixedTo = (sideData as any)[`${allowanceType}FixedToDate`];
+                
                 const fromDate = (sideData as any)[`${allowanceType}FromDate`];
                 const toDate = (sideData as any)[`${allowanceType}ToDate`];
                 const otherAllowanceAmount = sideData.otherAllowance || 0;
-
+                
                 if (allowanceType !== 'otherAllowance' && !isApplicable) return 0;
                 if (allowanceType === 'otherAllowance' && otherAllowanceAmount <= 0) return 0;
                 
-                const prorationFactor = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fromDate, toDate);
-                if (prorationFactor === 0) return 0;
-                
-                const baseBasicForMonth = side === 'paid' ? drawnBasicForMonth : finalDueBasicForMonth;
+                const baseBasicForMonth = side === 'paid' ? drawnBasicForMonth : dueBasicForMonth;
                 const baseTrackerBasic = side === 'paid' ? drawnBasicTracker : dueBasicTracker;
                 const basePayLevel = side === 'paid' ? data.paid.payLevel : data.toBePaid.payLevel;
                 
-                let amount = 0;
+                let totalAmount = 0;
+            
+                if (isFixed && fixedFrom && fixedTo && fixedRate > 0) {
+                    const fixedPeriodStart = max([monthStart, fixedFrom]);
+                    const fixedPeriodEnd = min([monthEnd, fixedTo]);
+            
+                    if (fixedPeriodStart <= fixedPeriodEnd) {
+                        const fixedDays = differenceInDays(fixedPeriodEnd, fixedPeriodStart) + 1;
+                        const fixedProrationFactor = fixedDays / daysInMonth;
+
+                        let fixedAmount = 0;
+                        if(allowanceType === 'da' || allowanceType === 'npa' || allowanceType === 'hra') {
+                            fixedAmount = baseBasicForMonth * (fixedRate / 100);
+                        } else {
+                            fixedAmount = fixedRate;
+                        }
+                         totalAmount += fixedAmount * fixedProrationFactor;
+                    }
+                    
+                    const regularPeriod1Start = monthStart;
+                    const regularPeriod1End = addDays(fixedFrom, -1);
+                    if (regularPeriod1Start <= regularPeriod1End) {
+                        const regularProrationFactor = (differenceInDays(regularPeriod1End, regularPeriod1Start) + 1) / daysInMonth;
+                        totalAmount += calculateRegularAmount(allowanceType, side, regularProrationFactor, currentDate, baseBasicForMonth, baseTrackerBasic, basePayLevel, fromDate, toDate, otherAllowanceAmount);
+                    }
+            
+                    const regularPeriod2Start = addDays(fixedTo, 1);
+                    const regularPeriod2End = monthEnd;
+                    if (regularPeriod2Start <= regularPeriod2End) {
+                         const regularProrationFactor = (differenceInDays(regularPeriod2End, regularPeriod2Start) + 1) / daysInMonth;
+                         totalAmount += calculateRegularAmount(allowanceType, side, regularProrationFactor, currentDate, baseBasicForMonth, baseTrackerBasic, basePayLevel, fromDate, toDate, otherAllowanceAmount);
+                    }
+
+                } else {
+                     const prorationFactor = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fromDate, toDate);
+                     if (prorationFactor > 0) {
+                        totalAmount = calculateRegularAmount(allowanceType, side, prorationFactor, currentDate, baseBasicForMonth, baseTrackerBasic, basePayLevel, fromDate, toDate, otherAllowanceAmount);
+                     }
+                }
+                 
+                const allowanceProrationFactor = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fromDate, toDate);
                 
-                switch(allowanceType) {
+                // Special handling for DA which depends on NPA
+                if (allowanceType === 'da') {
+                    const npaAmount = getProratedAmount('npa', side);
+                    const daBase = (side === 'paid' ? proratedDrawnBasic : proratedDueBasic) + npaAmount;
+                    
+                    if (isFixed && fixedFrom && fixedTo && fixedRate > 0) {
+                        let totalDA = 0;
+                         const fixedPeriodStart = max([monthStart, fixedFrom]);
+                         const fixedPeriodEnd = min([monthEnd, fixedTo]);
+                         if (fixedPeriodStart <= fixedPeriodEnd) {
+                             const fixedDays = differenceInDays(fixedPeriodEnd, fixedPeriodStart) + 1;
+                             totalDA += (daBase * (fixedRate/100) * (fixedDays / daysInMonth));
+                         }
+
+                         const regularPeriod1Start = monthStart;
+                         const regularPeriod1End = addDays(fixedFrom, -1);
+                         if(regularPeriod1Start <= regularPeriod1End){
+                             const daRateDetails = getRateForDate(daRates, currentDate);
+                             const daRate = daRateDetails ? daRateDetails.rate : 0;
+                             const days = differenceInDays(regularPeriod1End, regularPeriod1Start) + 1;
+                             totalDA += (daBase * (daRate / 100) * (days/daysInMonth));
+                         }
+
+                         const regularPeriod2Start = addDays(fixedTo, 1);
+                         const regularPeriod2End = monthEnd;
+                         if(regularPeriod2Start <= regularPeriod2End){
+                             const daRateDetails = getRateForDate(daRates, currentDate);
+                             const daRate = daRateDetails ? daRateDetails.rate : 0;
+                             const days = differenceInDays(regularPeriod2End, regularPeriod2Start) + 1;
+                             totalDA += (daBase * (daRate / 100) * (days/daysInMonth));
+                         }
+                        return totalDA;
+
+                    } else {
+                         const daRateDetails = getRateForDate(daRates, currentDate);
+                         const daRate = daRateDetails ? daRateDetails.rate : 0;
+                         return daBase * (daRate / 100) * allowanceProrationFactor;
+                    }
+                }
+                
+                return totalAmount * monthProRataFactor;
+            };
+
+            const calculateRegularAmount = (allowanceType: 'da' | 'hra' | 'npa' | 'ta' | 'otherAllowance', side: 'paid' | 'toBePaid', prorationFactor: number, currentDate: Date, baseBasicForMonth: number, baseTrackerBasic: number, basePayLevel: string | undefined, fromDate: Date | undefined, toDate: Date | undefined, otherAllowanceAmount: number) => {
+                 let amount = 0;
+                 const sideData = data[side];
+                 switch(allowanceType) {
                     case 'hra': {
                         const rateDetails = getRateForDate(hraRates, currentDate, baseTrackerBasic);
                         if (!rateDetails) return 0;
@@ -674,34 +795,31 @@ export default function Home() {
                     case 'otherAllowance':
                         amount = otherAllowanceAmount;
                         break;
+                    case 'da':
+                         // DA is handled separately due to dependency on NPA.
+                         return 0;
                 }
                 return amount * prorationFactor;
-            };
+            }
 
-            const drawnHRA = getProratedAmount('hra', 'paid');
             const drawnNPA = getProratedAmount('npa', 'paid');
+            const drawnHRA = getProratedAmount('hra', 'paid');
             const drawnTA = getProratedAmount('ta', 'paid');
             const drawnOther = getProratedAmount('otherAllowance', 'paid');
             
-            const dueHRA = getProratedAmount('hra', 'toBePaid');
             const dueNPA = getProratedAmount('npa', 'toBePaid');
+            const dueHRA = getProratedAmount('hra', 'toBePaid');
             const dueTA = getProratedAmount('ta', 'toBePaid');
             const dueOther = getProratedAmount('otherAllowance', 'toBePaid');
 
             let drawnDA = 0;
             if (data.paid.daApplicable) {
-                const daRateDetails = getRateForDate(daRates, currentDate);
-                const daRate = daRateDetails ? daRateDetails.rate : 0;
-                const drawnBaseForDA = proratedDrawnBasic + drawnNPA;
-                drawnDA = drawnBaseForDA * (daRate / 100);
+                drawnDA = getProratedAmount('da', 'paid');
             }
             
             let dueDA = 0;
             if (data.toBePaid.daApplicable) {
-                const daRateDetails = getRateForDate(daRates, currentDate);
-                const daRate = daRateDetails ? daRateDetails.rate : 0;
-                const dueBaseForDA = proratedDueBasic + dueNPA;
-                dueDA = dueBaseForDA * (daRate / 100);
+                dueDA = getProratedAmount('da', 'toBePaid');
             }
 
             const drawnTotal = proratedDrawnBasic + drawnDA + drawnHRA + drawnNPA + drawnTA + drawnOther;
@@ -755,6 +873,8 @@ export default function Home() {
             document.getElementById("statement-section")?.scrollIntoView({ behavior: 'smooth' });
         }, 100);
 
+        return { rows, totals };
+
     } catch (error) {
         console.error(error);
         toast({
@@ -762,6 +882,7 @@ export default function Home() {
             title: "Calculation Failed",
             description: "An unexpected error occurred. Please check your inputs.",
         });
+        return null;
     }
   };
   
@@ -824,55 +945,65 @@ export default function Home() {
   };
   
   const updateStatement = async () => {
-    if (!statement || !loadedStatementId) return;
+    if (!loadedStatementId) return;
     setIsLoading(true);
 
-    // Get the current form data to ensure we save the latest changes
     const currentFormData = form.getValues();
     
-    // Recalculate based on new form data before saving
-    onSubmit(currentFormData); // This will update the `statement` state if successful
+    // Recalculate to get the latest data
+    const newCalculation = onSubmit(currentFormData);
     
-    const docToUpdate: Omit<SavedStatement, 'isLocal'> = {
-        id: loadedStatementId,
-        savedAt: new Date().toISOString(),
-        rows: statement.rows, // Use the newly calculated rows
-        totals: statement.totals, // Use the newly calculated totals
-        employeeInfo: currentFormData,
-    };
+    if (newCalculation) {
+        const { rows, totals } = newCalculation;
 
-    // Update local storage first
-    const localStatements = getLocalStatements();
-    const updatedLocalStatements = localStatements.map(s => s.id === loadedStatementId ? { ...docToUpdate, isLocal: s.isLocal ?? true } : s);
-    saveLocalStatements(updatedLocalStatements);
-    setSavedStatements(updatedLocalStatements.sort((a,b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()));
+        const docToUpdate: Omit<SavedStatement, 'isLocal'> = {
+            id: loadedStatementId,
+            savedAt: new Date().toISOString(),
+            rows: rows,
+            totals: totals,
+            employeeInfo: currentFormData,
+        };
 
-    if (isOnline && dbConfigured && db) {
-        try {
-            const docRef = doc(db, FIRESTORE_STATEMENTS_COLLECTION, loadedStatementId);
-            await updateDoc(docRef, sanitizeForFirebase(docToUpdate));
-             // Mark as not local anymore
-            const finalLocalStatements = getLocalStatements().map(s => s.id === loadedStatementId ? { ...docToUpdate, isLocal: false } : s);
-            saveLocalStatements(finalLocalStatements);
-            setSavedStatements(finalLocalStatements.sort((a,b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()));
+        // This ensures the UI updates with the new calculation
+        setStatement({ rows, totals, employeeInfo: currentFormData });
 
+        // Update local storage first
+        const localStatements = getLocalStatements();
+        const updatedLocalStatements = localStatements.map(s => 
+            s.id === loadedStatementId ? { ...docToUpdate, isLocal: s.isLocal ?? true } : s
+        );
+        saveLocalStatements(updatedLocalStatements);
+        setSavedStatements(updatedLocalStatements.sort((a,b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()));
+
+        if (isOnline && dbConfigured && db) {
+            try {
+                const docRef = doc(db, FIRESTORE_STATEMENTS_COLLECTION, loadedStatementId);
+                await updateDoc(docRef, sanitizeForFirebase(docToUpdate));
+                // Mark as not local anymore
+                const finalLocalStatements = getLocalStatements().map(s => 
+                    s.id === loadedStatementId ? { ...docToUpdate, isLocal: false } : s
+                );
+                saveLocalStatements(finalLocalStatements);
+                setSavedStatements(finalLocalStatements.sort((a,b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()));
+
+                toast({
+                    title: "Arrear Updated",
+                    description: "The statement has been updated successfully.",
+                });
+            } catch (error) {
+                console.error("Failed to update statement in Firestore:", error);
+                toast({
+                    variant: "destructive",
+                    title: "Update Failed",
+                    description: "Could not update in database, but saved locally.",
+                });
+            }
+        } else {
             toast({
-                title: "Arrear Updated",
-                description: "The statement has been updated successfully.",
-            });
-        } catch (error) {
-            console.error("Failed to update statement in Firestore:", error);
-            toast({
-                variant: "destructive",
-                title: "Update Failed",
-                description: "Could not update in database, but saved locally.",
+                title: "Updated Locally",
+                description: "Your changes have been saved to your browser and will sync when online.",
             });
         }
-    } else {
-        toast({
-            title: "Updated Locally",
-            description: "Your changes have been saved to your browser and will sync when online.",
-        });
     }
 
     setIsLoading(false);
@@ -912,8 +1043,8 @@ export default function Home() {
     const fullyProcessedInfo = processFirestoreDataRecursive(employeeInfo);
 
     const { paid, toBePaid, ...restInfo } = fullyProcessedInfo;
-    const { payLevel: paidPayLevel, ...restPaid } = paid;
-    const { payLevel: toBePaidPayLevel, ...restToBePaid } = toBePaid;
+    const { payLevel: paidPayLevel, ...restPaid } = paid || {};
+    const { payLevel: toBePaidPayLevel, ...restToBePaid } = toBePaid || {};
     
     const formDataToReset = {
       ...restInfo,
@@ -1018,7 +1149,7 @@ export default function Home() {
           </PopoverContent>
       </Popover>
   );
-
+  
   const AllowanceField = ({ type, name, label, watchValues }: { type: 'paid' | 'toBePaid', name: 'hra' | 'npa', label: string, watchValues: any }) => (
     <>
       <FormField
@@ -1032,24 +1163,78 @@ export default function Home() {
         )}
       />
       {watchValues?.[`${name}Applicable`] && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-7 pt-2">
-            <FormField
-              control={form.control}
-              name={`${type}.${name}FromDate`}
-              render={({ field }) => (
-                <FormItem><FormDateInput field={field} label="From Date"/></FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name={`${type}.${name}ToDate`}
-              render={({ field }) => (
-                <FormItem><FormDateInput field={field} label="To Date" /></FormItem>
-              )}
-            />
+        <div className="space-y-2 pl-7 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <FormField
+                  control={form.control}
+                  name={`${type}.${name}FromDate`}
+                  render={({ field }) => (
+                    <FormItem><FormDateInput field={field} label="From Date"/></FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name={`${type}.${name}ToDate`}
+                  render={({ field }) => (
+                    <FormItem><FormDateInput field={field} label="To Date" /></FormItem>
+                  )}
+                />
+            </div>
+             <FixedRateFields type={type} name={name} watchValues={watchValues}/>
         </div>
       )}
     </>
+  );
+
+  const FixedRateFields = ({ type, name, watchValues }: { type: 'paid' | 'toBePaid', name: string, watchValues: any }) => (
+     <>
+      <FormField
+        control={form.control}
+        name={`${type}.${name}Fixed`}
+        render={({ field }) => (
+            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm bg-muted/30">
+                <div className="space-y-0.5">
+                    <FormLabel>Override with Fixed Rate</FormLabel>
+                </div>
+                <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+            </FormItem>
+        )}
+      />
+      {watchValues?.[`${name}Fixed`] && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pl-2 pt-2 border-l-2 ml-2 border-muted">
+              <FormField
+                control={form.control}
+                name={`${type}.${name}FixedRate`}
+                render={({ field }) => (
+                  <FormItem>
+                      <FormLabel className="text-xs">Fixed Rate {name !== 'ta' && name !== 'otherAllowance' ? '(%)' : ''}</FormLabel>
+                      <FormControl><Input type="number" placeholder="e.g. 10" {...field} /></FormControl>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name={`${type}.${name}FixedFromDate`}
+                render={({ field }) => (
+                  <FormItem>
+                      <FormLabel className="text-xs">From Date</FormLabel>
+                      <FormDateInput field={field} />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name={`${type}.${name}FixedToDate`}
+                render={({ field }) => (
+                  <FormItem>
+                      <FormLabel className="text-xs">To Date</FormLabel>
+                      <FormDateInput field={field} />
+                  </FormItem>
+                )}
+              />
+          </div>
+      )}
+      </>
   );
 
   const renderSalaryFields = (type: "paid" | "toBePaid") => {
@@ -1148,12 +1333,19 @@ export default function Home() {
           )}
           <div className="space-y-4 rounded-md border p-4">
               <h4 className="font-medium">Applicable Allowances</h4>
-              <FormField control={form.control} name={`${type}.daApplicable`} render={({ field }) => (
-                <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                    <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                    <FormLabel className="font-normal">DA (Dearness Allowance)</FormLabel>
-                </FormItem>
-              )} />
+              <div>
+                <FormField control={form.control} name={`${type}.daApplicable`} render={({ field }) => (
+                  <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                      <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                      <FormLabel className="font-normal">DA (Dearness Allowance)</FormLabel>
+                  </FormItem>
+                )} />
+                {currentWatchValues?.daApplicable && (
+                    <div className="space-y-2 pl-7 pt-2">
+                         <FixedRateFields type={type} name="da" watchValues={currentWatchValues}/>
+                    </div>
+                )}
+              </div>
               <AllowanceField type={type} name="hra" label="HRA (House Rent Allowance)" watchValues={currentWatchValues}/>
               <AllowanceField type={type} name="npa" label="NPA (Non-Practicing Allowance)" watchValues={currentWatchValues}/>
               
@@ -1196,43 +1388,49 @@ export default function Home() {
                             )}
                             />
                         </div>
+                        <FixedRateFields type={type} name="ta" watchValues={currentWatchValues}/>
                     </div>
                 )}
               </div>
 
           </div>
-           <FormField control={form.control} name={`${type}.otherAllowanceName`} render={({ field }) => (
-            <FormItem>
-                <FormLabel>Other Allowance Name</FormLabel>
-                <FormControl><Input placeholder="e.g., Special Duty Allowance" {...field} /></FormControl>
+          <div className="space-y-2">
+             <FormField control={form.control} name={`${type}.otherAllowanceName`} render={({ field }) => (
+              <FormItem>
+                  <FormLabel>Other Allowance Name</FormLabel>
+                  <FormControl><Input placeholder="e.g., Special Duty Allowance" {...field} /></FormControl>
+                  <FormMessage />
+              </FormItem>
+              )} />
+            <FormField control={form.control} name={`${type}.otherAllowance`} render={({ field }) => (
+              <FormItem>
+                <FormLabel>Other Allowance Amount</FormLabel>
+                <FormControl><Input type="number" placeholder="e.g., 1500" {...field} value={field.value ?? ''} /></FormControl>
                 <FormMessage />
-            </FormItem>
+              </FormItem>
             )} />
-          <FormField control={form.control} name={`${type}.otherAllowance`} render={({ field }) => (
-            <FormItem>
-              <FormLabel>Other Allowance Amount</FormLabel>
-              <FormControl><Input type="number" placeholder="e.g., 1500" {...field} value={field.value ?? ''} /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
-          {currentWatchValues?.otherAllowance > 0 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
-                <FormField
-                  control={form.control}
-                  name={`${type}.otherAllowanceFromDate`}
-                  render={({ field }) => (
-                    <FormItem><FormDateInput field={field} label="From Date"/></FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name={`${type}.otherAllowanceToDate`}
-                  render={({ field }) => (
-                    <FormItem><FormDateInput field={field} label="To Date" /></FormItem>
-                  )}
-                />
-            </div>
-          )}
+            {currentWatchValues?.otherAllowance > 0 && (
+              <div className="space-y-2 pt-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <FormField
+                        control={form.control}
+                        name={`${type}.otherAllowanceFromDate`}
+                        render={({ field }) => (
+                          <FormItem><FormDateInput field={field} label="From Date"/></FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name={`${type}.otherAllowanceToDate`}
+                        render={({ field }) => (
+                          <FormItem><FormDateInput field={field} label="To Date" /></FormItem>
+                        )}
+                      />
+                  </div>
+                  <FixedRateFields type={type} name="otherAllowance" watchValues={currentWatchValues}/>
+              </div>
+            )}
+          </div>
         </div>
       );
   }
@@ -1474,4 +1672,5 @@ export default function Home() {
       </main>
     </div>
   );
-}
+
+    
