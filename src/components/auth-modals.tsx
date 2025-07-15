@@ -18,6 +18,8 @@ const loginSchema = z.object({
   password: z.string().min(1, "Password is required."),
 });
 
+type LoginFormValues = z.infer<typeof loginSchema>;
+
 const signupSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email address." }),
   password: z.string().min(6, "Password must be at least 6 characters long."),
@@ -26,6 +28,8 @@ const signupSchema = z.object({
   message: "Passwords do not match.",
   path: ["confirmPassword"],
 });
+
+type SignupFormValues = z.infer<typeof signupSchema>;
 
 
 export function AuthModal() {
@@ -41,7 +45,7 @@ export function AuthModal() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSignup, setIsSignup] = useState(false);
 
-  const form = useForm<z.infer<typeof (isSignup ? signupSchema : loginSchema)>>({
+  const form = useForm<LoginFormValues | SignupFormValues>({
     resolver: zodResolver(isSignup ? signupSchema : loginSchema),
     defaultValues: {
       email: "",
@@ -50,14 +54,15 @@ export function AuthModal() {
     },
   });
   
-  const onSubmit = async (values: z.infer<typeof loginSchema> | z.infer<typeof signupSchema>) => {
+  const onSubmit = async (values: LoginFormValues | SignupFormValues) => {
     setIsLoading(true);
     if (isSignup) {
       // We know this is signup schema because of the isSignup flag
-      const signupValues = values as z.infer<typeof signupSchema>;
+      const signupValues = values as SignupFormValues;
       await signUpWithEmailPassword(signupValues.email, signupValues.password);
     } else {
-      await signInWithEmailPassword(values.email, values.password);
+      const loginValues = values as LoginFormValues;
+      await signInWithEmailPassword(loginValues.email, loginValues.password);
     }
     setIsLoading(false);
   };
@@ -73,7 +78,11 @@ export function AuthModal() {
 
   const toggleMode = () => {
       setIsSignup(!isSignup);
-      form.reset();
+      form.reset({
+        email: "",
+        password: "",
+         ...(isSignup ? {} : { confirmPassword: undefined })
+      });
       clearAuthError();
   }
 
