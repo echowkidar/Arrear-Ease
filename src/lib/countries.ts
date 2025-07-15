@@ -50,8 +50,6 @@ export const countries: Country[] = [
     { name: "Chad", dial_code: "+235", code: "TD" },
     { name: "Chile", dial_code: "+56", code: "CL" },
     { name: "China", dial_code: "+86", code: "CN" },
-    { name: "Christmas Island", dial_code: "+61", code: "CX" },
-    { name: "Cocos (Keeling) Islands", dial_code: "+61", code: "CC" },
     { name: "Colombia", dial_code: "+57", code: "CO" },
     { name: "Comoros", dial_code: "+269", code: "KM" },
     { name: "Congo", dial_code: "+242", code: "CG" },
@@ -248,5 +246,3 @@ export const countries: Country[] = [
     { name: "Zambia", dial_code: "+260", code: "ZM" },
     { name: "Zimbabwe", dial_code: "+263", code: "ZW" }
 ];
-
-    
