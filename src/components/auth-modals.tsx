@@ -11,18 +11,26 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from './ui/form';
 import { Input } from './ui/input';
 import { Loader2 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { ScrollArea } from './ui/scroll-area';
+import { countries } from '@/lib/countries';
+
+const phoneSchemaFields = {
+  countryCode: z.string().default("+91"),
+  phone: z.string().min(10, { message: "Phone number must be at least 10 digits." }).regex(/^\d+$/, "Phone number must contain only digits."),
+};
 
 // Signup form schema
 const signupSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters." }),
   email: z.string().email({ message: "Please enter a valid email address." }),
-  phone: z.string().min(10, { message: "Phone number must be at least 10 digits." }).regex(/^\d+$/, "Phone number must contain only digits and country code."),
+  ...phoneSchemaFields,
 });
 
 // Guest form schema
 const guestSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters." }),
-  phone: z.string().min(10, { message: "Phone number must be at least 10 digits." }).regex(/^\d+$/, "Phone number must contain only digits and country code."),
+  ...phoneSchemaFields,
 });
 
 // OTP form schema
@@ -30,17 +38,37 @@ const otpSchema = z.object({
   otp: z.string().min(6, { message: "OTP must be 6 digits." }).max(6),
 });
 
+const CountryCodeSelect = ({ field }: { field: any }) => (
+    <Select onValueChange={field.onChange} defaultValue={field.value}>
+        <FormControl>
+            <SelectTrigger className="w-[80px]">
+                <SelectValue placeholder="Code" />
+            </SelectTrigger>
+        </FormControl>
+        <SelectContent>
+            <ScrollArea className="h-72">
+                {countries.map(country => (
+                    <SelectItem key={country.code} value={country.dial_code}>
+                        {country.dial_code}
+                    </SelectItem>
+                ))}
+            </ScrollArea>
+        </SelectContent>
+    </Select>
+);
+
 export function AuthModal() {
   const { isAuthModalOpen, closeAuthModal, handleFullSignup } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const form = useForm<z.infer<typeof signupSchema>>({
     resolver: zodResolver(signupSchema),
-    defaultValues: { name: "", email: "", phone: "" },
+    defaultValues: { name: "", email: "", countryCode: "+91", phone: "" },
   });
 
   const onSubmit = async (values: z.infer<typeof signupSchema>) => {
     setIsLoading(true);
-    await handleFullSignup(values.name, values.email, values.phone);
+    const fullPhoneNumber = `${values.countryCode}${values.phone}`;
+    await handleFullSignup(values.name, values.email, fullPhoneNumber.replace('+', ''));
     setIsLoading(false);
   };
 
@@ -69,13 +97,28 @@ export function AuthModal() {
                 <FormMessage />
               </FormItem>
             )} />
-            <FormField control={form.control} name="phone" render={({ field }) => (
-              <FormItem>
+             <FormItem>
                 <FormLabel>Phone Number</FormLabel>
-                <FormControl><Input type="tel" placeholder="e.g. 919876543210" {...field} /></FormControl>
-                <FormMessage />
-              </FormItem>
-            )} />
+                <div className="flex gap-2">
+                    <FormField
+                        control={form.control}
+                        name="countryCode"
+                        render={({ field }) => <CountryCodeSelect field={field} />}
+                    />
+                    <FormField
+                        control={form.control}
+                        name="phone"
+                        render={({ field }) => (
+                            <FormControl>
+                                <Input type="tel" placeholder="9876543210" {...field} />
+                            </FormControl>
+                        )}
+                    />
+                </div>
+                 <FormMessage>
+                    {form.formState.errors.phone?.message}
+                </FormMessage>
+            </FormItem>
             <DialogFooter>
               <Button type="submit" disabled={isLoading}>
                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -95,12 +138,13 @@ export function GuestInfoModal() {
   const [isLoading, setIsLoading] = useState(false);
   const form = useForm<z.infer<typeof guestSchema>>({
     resolver: zodResolver(guestSchema),
-    defaultValues: { name: "", phone: "" },
+    defaultValues: { name: "", countryCode: "+91", phone: "" },
   });
 
   const onSubmit = async (values: z.infer<typeof guestSchema>) => {
     setIsLoading(true);
-    await handleGuestSignin(values.name, values.phone);
+    const fullPhoneNumber = `${values.countryCode}${values.phone}`;
+    await handleGuestSignin(values.name, fullPhoneNumber.replace('+', ''));
     setIsLoading(false);
   };
 
@@ -122,13 +166,28 @@ export function GuestInfoModal() {
                 <FormMessage />
               </FormItem>
             )} />
-            <FormField control={form.control} name="phone" render={({ field }) => (
-              <FormItem>
+            <FormItem>
                 <FormLabel>Phone Number</FormLabel>
-                <FormControl><Input type="tel" placeholder="e.g. 919876543210" {...field} /></FormControl>
-                <FormMessage />
-              </FormItem>
-            )} />
+                <div className="flex gap-2">
+                    <FormField
+                        control={form.control}
+                        name="countryCode"
+                        render={({ field }) => <CountryCodeSelect field={field} />}
+                    />
+                    <FormField
+                        control={form.control}
+                        name="phone"
+                        render={({ field }) => (
+                            <FormControl>
+                                <Input type="tel" placeholder="9876543210" {...field} />
+                            </FormControl>
+                        )}
+                    />
+                </div>
+                <FormMessage>
+                    {form.formState.errors.phone?.message}
+                </FormMessage>
+            </FormItem>
             <DialogFooter>
               <Button type="submit" disabled={isLoading}>
                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -203,3 +262,5 @@ export function OtpModal() {
     </Dialog>
   );
 }
+
+    
