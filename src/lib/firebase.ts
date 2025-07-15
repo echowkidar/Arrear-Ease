@@ -1,6 +1,6 @@
 
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
-import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
+import { getFirestore, enableIndexedDbPersistence, CACHE_SIZE_UNLIMITED } from "firebase/firestore";
 import { getAuth, type Auth } from "firebase/auth";
 
 const firebaseConfig = {
@@ -22,14 +22,14 @@ const app: FirebaseApp | null = isFirebaseConfigured() && !getApps().length ? in
 const db = app ? getFirestore(app) : null;
 const auth: Auth | null = app ? getAuth(app) : null;
 
-// Enable offline persistence if db is initialized
+// Enable offline persistence with multi-tab support if db is initialized
 if (db) {
-    enableIndexedDbPersistence(db)
+    enableIndexedDbPersistence(db, { synchronizeTabs: true })
       .catch((err) => {
         if (err.code == 'failed-precondition') {
-          // Multiple tabs open, persistence can only be enabled in one.
-          // Silently fail, or log if you want.
-          console.warn("Firebase persistence failed: multiple tabs open.");
+          // This can happen if the user has multiple tabs open with different
+          // persistence settings.
+          console.warn("Firebase persistence failed: failed-precondition. Please close other tabs and refresh.");
         } else if (err.code == 'unimplemented') {
           // The current browser does not support all of the
           // features required to enable persistence
