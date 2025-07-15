@@ -1,26 +1,34 @@
 
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
-
+    
     // Rules for user profiles
     match /users/{userId} {
-      // A user can create, read, and update their own profile.
-      // They cannot delete it or access other users' profiles.
-      allow read, update, create: if request.auth != null && request.auth.uid == userId;
-    }
-
-    // Rules for saved arrear statements
-    match /savedStatements/{statementId} {
-      allow read, create, update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+      // A user can create their own document if they are authenticated.
+      allow create: if request.auth != null && request.auth.uid == userId;
+      
+      // A user can read or update their own document if they are authenticated.
+      allow read, update: if request.auth != null && request.auth.uid == userId;
     }
     
-    // Rules for global rate configurations
-    match /configurations/{configId} {
-      // Only authenticated users can read and write to the configurations.
-      // The configId is a fixed value, e.g., "allRates".
-      allow read, write: if request.auth != null;
+    // Rules for saved arrear statements
+    match /savedStatements/{statementId} {
+      // Logged-in users can only access statements where their UID matches the userId field.
+      allow read, write, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+      
+      // Logged-in users can create new statements for themselves.
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+    }
+    
+    // Rules for application-wide configurations (like rates)
+    match /configurations/{docId} {
+      // Any authenticated user can read configurations.
+      allow read: if request.auth != null;
+      
+      // Writing configurations is restricted (e.g., to admins), but for now, we'll allow any authenticated user to write.
+      // For production, you would restrict this further.
+      allow write: if request.auth != null;
     }
   }
 }
