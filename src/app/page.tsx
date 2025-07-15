@@ -567,13 +567,18 @@ export default function Home() {
                         if (currentMonth === sideData.incrementDate.getMonth() + 1 && currentYear === sideData.incrementDate.getFullYear()) {
                             incrementTriggerDate = sideData.incrementDate;
                         }
-                    } else if (currentMonth === incrementMonthValue && currentDate > (sideData.incrementDate ?? new Date(0))) { // Full month increment
+                    } else if (currentMonth === incrementMonthValue && currentDate >= new Date(currentYear, incrementMonthValue - 1, 1)) { // Full month increment
                        incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
                     }
                     
                     if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd })) {
                         if (sideData.cpc === '7th' && sideData.payLevel) {
-                            const levelData = cpcData['7th'].payLevels.find(l => l.level.includes(sideData.payLevel));
+                            const levelData = cpcData['7th'].payLevels.find(l => {
+                                if (l.level.includes('/')) {
+                                    return l.level.split('/').includes(sideData.payLevel);
+                                }
+                                return l.level === sideData.payLevel;
+                            });
                             if (levelData) {
                                 const currentBasicIndex = levelData.values.indexOf(trackerBasic);
                                 if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
