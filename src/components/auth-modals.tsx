@@ -72,7 +72,8 @@ export function AuthModal() {
   const onSubmit = async (values: any) => {
     setIsLoading(true);
     if (mode === 'signup') {
-      await signUpWithEmailPassword(values.email, values.password, values.phoneNumber);
+      const fullPhoneNumber = `+91${values.phoneNumber}`;
+      await signUpWithEmailPassword(values.email, values.password, fullPhoneNumber);
     } else if (mode === 'login') {
       await signInWithEmailPassword(values.email, values.password);
     } else if (mode === 'forgot_password') {
@@ -139,7 +140,20 @@ export function AuthModal() {
                 <FormField control={form.control} name="phoneNumber" render={({ field }) => (
                     <FormItem>
                         <FormLabel>Phone Number</FormLabel>
-                        <FormControl><Input type="tel" placeholder="+1 123 456 7890" {...field} value={field.value ?? ''} /></FormControl>
+                        <div className="flex items-center">
+                          <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-background text-muted-foreground text-sm h-10">
+                            +91
+                          </span>
+                          <FormControl>
+                            <Input 
+                              type="tel" 
+                              placeholder="9876543210" 
+                              className="rounded-l-none"
+                              {...field} 
+                              value={field.value ?? ''} 
+                            />
+                          </FormControl>
+                        </div>
                         <FormMessage />
                     </FormItem>
                 )} />
