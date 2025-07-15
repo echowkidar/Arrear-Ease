@@ -555,10 +555,10 @@ export default function Home() {
             if(currentDate < arrearFromDate && !isWithinInterval(arrearFromDate, { start: monthStart, end: monthEnd })) continue;
             if(currentDate > arrearToDate && !isWithinInterval(arrearToDate, { start: monthStart, end: monthEnd })) continue;
 
-            const handleIncrement = (side: 'paid' | 'toBePaid', currentBasic: number, basicTracker: number): { basicForMonth: number; newTrackerValue: number } => {
+            const handleIncrement = (side: 'paid' | 'toBePaid', currentBasic: number): { basicForMonth: number; newTrackerValue: number } => {
                 const sideData = data[side];
                 let newBasicForMonth = currentBasic;
-                let newTracker = basicTracker;
+                let newTracker = currentBasic;
             
                 if (sideData.incrementMonth) {
                     const incrementMonthValue = parseInt(sideData.incrementMonth, 10);
@@ -567,12 +567,12 @@ export default function Home() {
                     if (sideData.incrementDate) {
                         const firstIncrementYear = sideData.incrementDate.getFullYear();
                         if (currentYear > firstIncrementYear || (currentYear === firstIncrementYear && currentMonth >= sideData.incrementDate.getMonth() + 1)) {
-                            if (currentMonth === sideData.incrementDate.getMonth() + 1) {
+                           if (currentMonth === sideData.incrementDate.getMonth() + 1) {
                                 incrementTriggerDate = new Date(currentYear, sideData.incrementDate.getMonth(), sideData.incrementDate.getDate());
-                            }
+                           }
                         }
                     } else if (currentMonth === incrementMonthValue) {
-                        incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
+                       incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
                     }
                     
                     if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd })) {
@@ -580,42 +580,42 @@ export default function Home() {
                         if (sideData.cpc === '7th' && sideData.payLevel) {
                             const levelData = cpcData['7th'].payLevels.find(l => l.level === sideData.payLevel);
                             if (levelData) {
-                                const currentBasicIndex = levelData.values.indexOf(basicTracker);
+                                const currentBasicIndex = levelData.values.indexOf(currentBasic);
                                 if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
                                     incrementedBasicValue = levelData.values[currentBasicIndex + 1];
                                 } else {
-                                    incrementedBasicValue = basicTracker;
+                                    incrementedBasicValue = currentBasic;
                                 }
                             } else {
-                                incrementedBasicValue = basicTracker;
+                                incrementedBasicValue = currentBasic;
                             }
                         } else {
-                            incrementedBasicValue = Math.round(basicTracker * 1.03);
+                            incrementedBasicValue = Math.round(currentBasic * 1.03);
                         }
             
                         const incrementDay = incrementTriggerDate.getDate();
                         if (incrementDay > 1) {
                             const daysBefore = incrementDay - 1;
                             const daysAfter = daysInMonth - daysBefore;
-                            newBasicForMonth = ((basicTracker * daysBefore) + (incrementedBasicValue * daysAfter)) / daysInMonth;
+                            newBasicForMonth = ((currentBasic * daysBefore) + (incrementedBasicValue * daysAfter)) / daysInMonth;
                         } else {
                             newBasicForMonth = incrementedBasicValue;
                         }
                         newTracker = incrementedBasicValue;
                     }
                 }
-            
+                
                 return { basicForMonth: newBasicForMonth, newTrackerValue: newTracker };
             };
             
-            const drawnIncrementResult = handleIncrement('paid', drawnBasicTracker, drawnBasicTracker);
+            const drawnIncrementResult = handleIncrement('paid', drawnBasicTracker);
             let drawnBasicForMonth = drawnIncrementResult.basicForMonth;
             drawnBasicTracker = drawnIncrementResult.newTrackerValue;
             
-
-            const dueIncrementResult = handleIncrement('toBePaid', dueBasicTracker, dueBasicTracker);
+            const dueIncrementResult = handleIncrement('toBePaid', dueBasicTracker);
             let dueBasicForMonth = dueIncrementResult.basicForMonth;
             dueBasicTracker = dueIncrementResult.newTrackerValue;
+
 
             if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPay > 0 && data.toBePaid.refixedBasicPayDate) {
                 const refixDate = data.toBePaid.refixedBasicPayDate;
@@ -632,7 +632,7 @@ export default function Home() {
                            dueBasicForMonth = data.toBePaid.refixedBasicPay;
                         }
                         dueBasicTracker = data.toBePaid.refixedBasicPay;
-                    } else {
+                    } else if (currentDate > refixDate) {
                         dueBasicForMonth = dueBasicTracker;
                     }
                 }
@@ -654,25 +654,24 @@ export default function Home() {
               const otherAllowanceAmount = sideData.otherAllowance || 0;
           
               const isFixedRate = (sideData as any)[`${allowanceType}FixedRateApplicable`];
-              const fixedRate = (sideData as any)[`${allowanceType}FixedRate`];
+              const fixedRateValue = (sideData as any)[`${allowanceType}FixedRate`];
               const fixedFrom = (sideData as any)[`${allowanceType}FixedRateFromDate`];
               const fixedTo = (sideData as any)[`${allowanceType}FixedRateToDate`];
           
               if (allowanceType !== 'otherAllowance' && !isApplicable) return 0;
-              if (allowanceType === 'otherAllowance' && otherAllowanceAmount <= 0 && (!isFixedRate || !fixedRate)) return 0;
+              if (allowanceType === 'otherAllowance' && otherAllowanceAmount <= 0 && (!isFixedRate || !fixedRateValue)) return 0;
           
               const baseBasicForMonth = side === 'paid' ? drawnBasicForMonth : dueBasicForMonth;
               const baseTrackerBasic = side === 'paid' ? drawnBasicTracker : dueBasicTracker;
               const basePayLevel = side === 'paid' ? data.paid.payLevel : data.toBePaid.payLevel;
 
-              const calculateAmount = (basic: number, trackerBasic: number, proRataFactor: number, date: Date, level: string) => {
+              const calculateAmount = (basic: number, trackerBasic: number, proRataFactor: number, date: Date, level: string, npaAmountForDA: number = 0) => {
                   let amount = 0;
                   switch (allowanceType) {
                       case 'da': {
                           const rateDetails = getRateForDate(daRates, date);
                           const rate = rateDetails ? rateDetails.rate : 0;
-                          const npaAmount = getProratedAmount('npa', side) * proRataFactor; // Needs careful check for recursion
-                          const baseForDA = basic + npaAmount;
+                          const baseForDA = basic + npaAmountForDA;
                           amount = baseForDA * (rate / 100);
                           break;
                       }
@@ -710,58 +709,69 @@ export default function Home() {
                   return amount;
               };
 
-              const calculateFixedAmount = (basic: number, proRataFactor: number) => {
+              const calculateFixedAmount = (basic: number, proRataFactor: number, npaAmountForDA: number = 0) => {
                   let amount = 0;
                   switch (allowanceType) {
                       case 'da': {
-                          const npaAmount = getProratedAmount('npa', side) * proRataFactor;
-                          const baseForDA = basic + npaAmount;
-                          amount = baseForDA * (fixedRate! / 100);
+                          const baseForDA = basic + npaAmountForDA;
+                          amount = baseForDA * (fixedRateValue! / 100);
                           break;
                       }
                       case 'hra':
                       case 'ta':
                       case 'otherAllowance':
-                          amount = fixedRate! * proRataFactor;
+                          amount = fixedRateValue! * proRataFactor;
                           break;
                   }
                   return amount;
               };
 
-              let totalAmount = 0;
-              const regularProrationFactor = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fromDate, toDate);
-              
-              if(isFixedRate && fixedRate && fixedFrom && fixedTo && isWithinInterval(currentDate, {start: startOfMonth(fixedFrom), end: endOfMonth(fixedTo)})) {
-                
-                const fixedPeriodStart = max([monthStart, fixedFrom]);
-                const fixedPeriodEnd = min([monthEnd, fixedTo]);
+              // Pre-calculate NPA for DA calculation to avoid recursion
+              let npaAmount = 0;
+              if (allowanceType === 'da' && (data[side].npaApplicable)) {
+                  const npaProrationFactor = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data[side].npaFromDate, data[side].npaToDate);
+                  if (npaProrationFactor > 0) {
+                      npaAmount = calculateAmount(baseBasicForMonth, baseTrackerBasic, npaProrationFactor, currentDate, basePayLevel);
+                  }
+              }
+              const npaForDA = npaAmount;
 
-                // Part 1: Regular rate before fixed period
-                const regularPart1Start = monthStart;
-                const regularPart1End = addDays(fixedPeriodStart, -1);
-                if(regularPart1Start < regularPart1End) {
-                    const days = differenceInDays(regularPart1End, regularPart1Start) + 1;
-                    const factor = days > 0 ? days/daysInMonth : 0;
-                    totalAmount += calculateAmount(baseBasicForMonth * factor, baseTrackerBasic, factor, currentDate, basePayLevel);
+              let totalAmount = 0;
+              
+              if(isFixedRate && fixedRateValue && fixedFrom && fixedTo && isWithinInterval(currentDate, {start: startOfMonth(fixedFrom), end: endOfMonth(fixedTo)})) {
+                
+                const regularPeriodStart = monthStart;
+                const regularPeriodEnd = addDays(max([monthStart, fixedFrom]), -1);
+
+                if (regularPeriodStart <= regularPeriodEnd) {
+                    const days = differenceInDays(regularPeriodEnd, regularPeriodStart) + 1;
+                    const factor = days > 0 ? days / daysInMonth : 0;
+                    totalAmount += calculateAmount(baseBasicForMonth * factor, baseTrackerBasic, factor, currentDate, basePayLevel, npaForDA * factor);
                 }
                 
-                // Part 2: Fixed rate during fixed period
-                const daysInFixed = differenceInDays(fixedPeriodEnd, fixedPeriodStart) + 1;
-                const fixedFactor = daysInFixed > 0 ? daysInFixed / daysInMonth : 0;
-                totalAmount += calculateFixedAmount(baseBasicForMonth * fixedFactor, fixedFactor);
-                
-                // Part 3: Regular rate after fixed period
-                const regularPart2Start = addDays(fixedPeriodEnd, 1);
-                const regularPart2End = monthEnd;
-                 if(regularPart2Start < regularPart2End){
-                    const days = differenceInDays(regularPart2End, regularPart2Start) + 1;
+                const fixedPeriodStartInMonth = max([monthStart, fixedFrom]);
+                const fixedPeriodEndInMonth = min([monthEnd, fixedTo]);
+
+                if (fixedPeriodStartInMonth <= fixedPeriodEndInMonth) {
+                    const days = differenceInDays(fixedPeriodEndInMonth, fixedPeriodStartInMonth) + 1;
+                    const factor = days > 0 ? days / daysInMonth : 0;
+                    totalAmount += calculateFixedAmount(baseBasicForMonth * factor, factor, npaForDA * factor);
+                }
+
+                const postFixedPeriodStart = addDays(fixedPeriodEndInMonth, 1);
+                const postFixedPeriodEnd = monthEnd;
+
+                if (postFixedPeriodStart <= postFixedPeriodEnd) {
+                    const days = differenceInDays(postFixedPeriodEnd, postFixedPeriodStart) + 1;
                     const factor = days > 0 ? days/daysInMonth : 0;
-                    totalAmount += calculateAmount(baseBasicForMonth * factor, baseTrackerBasic, factor, currentDate, basePayLevel);
-                 }
-                 return totalAmount * monthProRataFactor;
+                    totalAmount += calculateAmount(baseBasicForMonth * factor, baseTrackerBasic, factor, currentDate, basePayLevel, npaForDA * factor);
+                }
+                 
+                return totalAmount * monthProRataFactor;
               } else {
+                 const regularProrationFactor = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fromDate, toDate);
                  if (regularProrationFactor <= 0) return 0;
-                 return calculateAmount(baseBasicForMonth, baseTrackerBasic, regularProrationFactor, currentDate, basePayLevel) * monthProRataFactor;
+                 return calculateAmount(baseBasicForMonth, baseTrackerBasic, regularProrationFactor, currentDate, basePayLevel, npaForDA) * monthProRataFactor;
               }
             };
 
@@ -809,10 +819,6 @@ export default function Home() {
                 },
                 difference: Math.round(difference),
             });
-
-            totals.drawn.total += drawnTotal;
-            totals.due.total += dueTotal;
-            totals.difference += difference;
         }
 
         totals.drawn.total = Math.round(totals.drawn.total);
@@ -1013,8 +1019,8 @@ export default function Home() {
     const fullyProcessedInfo = processFirestoreDataRecursive(employeeInfo);
 
     const { paid, toBePaid, ...restInfo } = fullyProcessedInfo;
-    const { payLevel: paidPayLevel, ...restPaid } = paid;
-    const { payLevel: toBePaidPayLevel, ...restToBePaid } = toBePaid;
+    const { payLevel: paidPayLevel, ...restPaid } = paid || {};
+    const { payLevel: toBePaidPayLevel, ...restToBePaid } = toBePaid || {};
     
     const formDataToReset = {
       ...restInfo,
@@ -1538,9 +1544,9 @@ export default function Home() {
                      For: {statement.employeeInfo.employeeName} ({statement.employeeInfo.employeeId}) <br />
                      {statement.employeeInfo.designation}, {statement.employeeInfo.department} <br/>
                      {statement.employeeInfo.payFixationRef && `Ref: ${statement.employeeInfo.payFixationRef}`} <br/>
-                     {statement.employeeInfo.fromDate && statement.employeeInfo.toDate &&
-                      `Period: ${format(new Date(statement.employeeInfo.fromDate), "dd/MM/yyyy")} to ${format(new Date(statement.employeeInfo.toDate), "dd/MM/yyyy")}`
-                     }
+                      {statement.employeeInfo.fromDate && statement.employeeInfo.toDate &&
+                       `Period: ${format(new Date(statement.employeeInfo.fromDate), "dd/MM/yyyy")} to ${format(new Date(statement.employeeInfo.toDate), "dd/MM/yyyy")}`
+                      }
                    </CardDescription>
                 </div>
                 <div className="flex flex-wrap gap-2 no-print">
@@ -1635,6 +1641,3 @@ export default function Home() {
   );
 }
 
-    
-
-    
