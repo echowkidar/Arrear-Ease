@@ -3,24 +3,30 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-  
+    
     function isAdmin() {
       return request.auth != null && request.auth.token.email == 'amulivealigarh@gmail.com';
     }
 
     match /users/{userId} {
-      allow get: if request.auth.uid == userId || isAdmin();
-      allow list: if isAdmin();
+      allow read: if isAdmin() || request.auth.uid == userId;
       allow create, update: if request.auth.uid == userId;
       allow delete: if isAdmin();
     }
-    
-    match /savedStatements/{statementId} {
-      allow get, delete: if request.auth != null && (isAdmin() || request.auth.uid == resource.data.userId);
-      allow list: if request.auth != null && (isAdmin() || (request.query.where.size == 1 && request.query.where.userId == request.auth.uid));
-      allow write: if request.auth != null && (isAdmin() || request.auth.uid == request.resource.data.userId);
-    }
 
+    match /savedStatements/{statementId} {
+      // Admin can read anything. User can read their own documents.
+      // This single rule covers get and list queries correctly.
+      allow read: if isAdmin() || (request.auth != null && resource.data.userId == request.auth.uid);
+
+      // Admin can write anything. User can write to documents where the userId matches their uid.
+      // This covers both create (request.resource) and update.
+      allow write: if isAdmin() || (request.auth != null && request.resource.data.userId == request.auth.uid);
+      
+      // Admin can delete anything. User can delete their own documents.
+      allow delete: if isAdmin() || (request.auth != null && resource.data.userId == request.auth.uid);
+    }
+    
     match /configurations/{docId} {
       allow read: if true;
       allow write: if isAdmin();
