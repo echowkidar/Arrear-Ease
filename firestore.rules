@@ -1,35 +1,35 @@
+
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    function isAdmin() {
-      return request.auth != null && request.auth.token.email == 'amulivealigarh@gmail.com';
-    }
-
-    function isOwner(userId) {
-      return request.auth != null && request.auth.uid == userId;
-    }
-
-    // Admin-only access for rate configurations
-    match /configurations/{docId} {
-      allow read: if request.auth != null;
-      allow write: if isAdmin();
-    }
-
+    
     // Rules for user profiles
     match /users/{userId} {
-      allow read, update: if isOwner(userId) || isAdmin();
-      allow create: if isOwner(userId);
-      allow list: if isAdmin();
+      // Admin has full access.
+      allow read, write: if request.auth != null && request.auth.token.email == "amulivealigarh@gmail.com";
+      
+      // Non-admin users can create, read, and update their OWN document, but cannot delete it.
+      allow create, read, update: if request.auth != null && request.auth.uid == userId;
+      allow delete: if false;
     }
 
     // Rules for saved arrear statements
     match /savedStatements/{statementId} {
-      // Admin can do anything
-      allow read, write, delete: if isAdmin();
+       // An admin can perform any action on any statement.
+      allow read, write: if request.auth != null && request.auth.token.email == "amulivealigarh@gmail.com";
       
-      // Users can manage their own statements
+      // A user can create, read, update, and delete their own statements.
       allow create, read, update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+    
+    // Rules for app-wide configurations like DA/HRA rates
+    match /configurations/{configId} {
+        // Any authenticated user can read configurations.
+        allow read: if request.auth != null;
+        
+        // Only an admin can write/update configurations.
+        allow write: if request.auth != null && request.auth.token.email == "amulivealigarh@gmail.com";
     }
   }
 }
