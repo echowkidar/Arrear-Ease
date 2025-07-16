@@ -51,6 +51,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/theme-toggle";
 
+export const dynamic = 'force-dynamic';
+
 type AppUser = {
   uid: string;
   displayName: string;
@@ -260,3 +262,5 @@ export default function UsersPage() {
     
     return <ProtectedUsersPage />;
 }
+
+    

@@ -61,6 +61,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { useAuth } from "@/context/auth-context";
 import { useRouter } from "next/navigation";
 
+export const dynamic = 'force-dynamic';
 
 const allPayLevels = [
     ...cpcData['6th'].payLevels.map(pl => ({ key: `6th-${pl.level}`, value: pl.level, label: `6th CPC: GP ${pl.gradePay} (${pl.payBand})`})),
@@ -319,3 +320,5 @@ export default function RatesPage() {
     
     return <ProtectedRatesPage />;
 }
+
+    
