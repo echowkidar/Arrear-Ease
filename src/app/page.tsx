@@ -500,16 +500,15 @@ export default function Home() {
   ): Rate | null => {
     const { basicPay, payLevel, daRate } = options;
 
-    const applicableRate = rates.find(r => {
+    const applicableRates = rates.filter(r => {
       let isMatch = true;
       
-      // Date-based matching (for DA, NPA, TA, etc.)
-      if (r.fromDate && r.toDate) {
-         const from = new Date(r.fromDate);
-         const to = new Date(r.toDate);
-         if (!(date >= from && date <= to)) {
-           isMatch = false;
-         }
+      if (r.fromDate && date < new Date(r.fromDate)) {
+        return false;
+      }
+
+      if (r.toDate && date > new Date(r.toDate)) {
+        return false;
       }
       
       // HRA DA Rate based matching
@@ -521,7 +520,7 @@ export default function Home() {
 
       if (!isMatch) return false;
 
-      // Basic Pay based matching (for HRA, TA)
+      // Basic Pay based matching (for TA)
       if (basicPay !== undefined) {
         if (r.basicFrom !== undefined && r.basicTo !== undefined && r.basicFrom > 0 && r.basicTo > 0) {
           if (!(basicPay >= r.basicFrom && basicPay <= r.basicTo)) {
@@ -548,7 +547,10 @@ export default function Home() {
 
       return isMatch;
     });
-    return applicableRate || null;
+
+    if (applicableRates.length === 0) return null;
+    // Return the most recent applicable rate if multiple match
+    return applicableRates.sort((a, b) => (new Date(b.fromDate!) as any) - (new Date(a.fromDate!) as any))[0];
   }
   
   const handlePrint = () => {

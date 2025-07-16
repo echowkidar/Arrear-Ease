@@ -54,7 +54,7 @@ import {
   DialogDescription,
   DialogFooter
 } from "@/components/ui/dialog";
-import { useRates, Rate } from "@/context/rates-context";
+import { Rate, useRates } from "@/context/rates-context";
 import { useToast } from "@/hooks/use-toast";
 import { cpcData } from "@/lib/cpc-data";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -69,7 +69,7 @@ const allPayLevels = [
 ];
 
 
-const DateInput = ({ value, onChange }: { value: Date | undefined; onChange: (date?: Date) => void }) => {
+const DateInput = ({ value, onChange, label = "Pick a date" }: { value: Date | undefined; onChange: (date?: Date) => void; label?: string; }) => {
     const [dateValue, setDateValue] = React.useState(value);
 
     React.useEffect(() => {
@@ -80,7 +80,7 @@ const DateInput = ({ value, onChange }: { value: Date | undefined; onChange: (da
         <Popover>
             <PopoverTrigger asChild>
                 <Button variant={"outline"} className={cn("w-full md:w-[240px] pl-3 text-left font-normal", !dateValue && "text-muted-foreground")}>
-                    {dateValue ? format(new Date(dateValue), "PPP") : <span>Pick a date</span>}
+                    {dateValue ? format(new Date(dateValue), "PPP") : <span>{label}</span>}
                     <CalendarDays className="ml-auto h-4 w-4 opacity-50" />
                 </Button>
             </PopoverTrigger>
@@ -96,6 +96,8 @@ const RateTable = ({
     description, 
     withBasicRange, 
     withDateRange = true,
+    withFromDateOnly,
+    fromDateLabel,
     withDaRateRange,
     isAmount, 
     withPayLevelRange, 
@@ -107,6 +109,8 @@ const RateTable = ({
     description?: string, 
     withBasicRange?: boolean, 
     withDateRange?: boolean,
+    withFromDateOnly?: boolean,
+    fromDateLabel?: string,
     withDaRateRange?: boolean,
     isAmount?: boolean, 
     withPayLevelRange?: boolean, 
@@ -231,7 +235,8 @@ const RateTable = ({
                     <Table>
                         <TableHeader>
                             <TableRow>
-                                {withDateRange && <><TableHead>From Date</TableHead><TableHead>To Date</TableHead></>}
+                                {withDateRange && !withFromDateOnly && <><TableHead>From Date</TableHead><TableHead>To Date</TableHead></>}
+                                {withFromDateOnly && <TableHead>{fromDateLabel || 'From Date'}</TableHead>}
                                 {withDaRateRange && <><TableHead>DA Rate From (%)</TableHead><TableHead>DA Rate To (%)</TableHead></>}
                                 {withBasicRange && <><TableHead>Basic From</TableHead><TableHead>Basic To</TableHead></>}
                                 {withPayLevelRange && <><TableHead>From Pay Level</TableHead><TableHead>To Pay Level</TableHead></>}
@@ -243,7 +248,7 @@ const RateTable = ({
                         <TableBody>
                             {localRates.map((field) => (
                                 <TableRow key={field.id}>
-                                    {withDateRange && <>
+                                    {withDateRange && !withFromDateOnly && <>
                                       <TableCell className="min-w-[160px]">
                                           <DateInput 
                                             value={field.fromDate} 
@@ -257,6 +262,15 @@ const RateTable = ({
                                           />
                                       </TableCell>
                                     </>}
+                                    {withFromDateOnly &&
+                                      <TableCell className="min-w-[160px]">
+                                          <DateInput 
+                                            value={field.fromDate} 
+                                            onChange={(date) => handleDateChange(field.id, 'fromDate', date)}
+                                            label={fromDateLabel || 'Pick a date'}
+                                          />
+                                      </TableCell>
+                                    }
                                     {withDaRateRange && <>
                                       <TableCell className="min-w-[120px]"><Input type="number" value={field.daRateFrom ?? ''} onChange={e => handleInputChange(field.id, 'daRateFrom', e)} onBlur={() => handleBlur(field.id, 'daRateFrom')}/></TableCell>
                                       <TableCell className="min-w-[120px]"><Input type="number" value={field.daRateTo ?? ''} onChange={e => handleInputChange(field.id, 'daRateTo', e)} onBlur={() => handleBlur(field.id, 'daRateTo')}/></TableCell>
@@ -336,8 +350,10 @@ const ProtectedRatesPage = () => {
                 <RateTable title="DA Rate Master" initialRates={daRates} setGlobalRates={setDaRates} />
                 <RateTable 
                   title="HRA Rate Master" 
-                  description="HRA rates are determined by the applicable DA rate."
+                  description="HRA rates are determined by the applicable DA rate from an effective date."
                   withDateRange={false}
+                  withFromDateOnly
+                  fromDateLabel="Effective Date"
                   withDaRateRange
                   withMinAmount 
                   initialRates={hraRates} 
