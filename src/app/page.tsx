@@ -26,6 +26,7 @@ import {
   Copy,
   Edit,
   LogOut,
+  Users,
 } from "lucide-react";
 import { db, isFirebaseConfigured } from "@/lib/firebase";
 import { collection, addDoc, getDocs, doc, deleteDoc, Timestamp, writeBatch, setDoc, updateDoc, query, where } from "firebase/firestore";
@@ -349,13 +350,17 @@ export default function Home() {
     // We only fetch from local for authenticated users if they are offline
     if (!isOnline) {
       const localStatements = getLocalStatements();
-      allStatements.push(...localStatements.filter(s => s.userId === user?.uid));
+      const filterFn = isAdmin ? () => true : (s: SavedStatement) => s.userId === user?.uid;
+      allStatements.push(...localStatements.filter(filterFn));
     }
 
     if (isOnline && dbConfigured && db && user?.uid) {
         try {
-            const q = query(collection(db, FIRESTORE_STATEMENTS_COLLECTION), where("userId", "==", user.uid));
-            const querySnapshot = await getDocs(q);
+            const statementsQuery = isAdmin
+                ? collection(db, FIRESTORE_STATEMENTS_COLLECTION)
+                : query(collection(db, FIRESTORE_STATEMENTS_COLLECTION), where("userId", "==", user.uid));
+
+            const querySnapshot = await getDocs(statementsQuery);
             const serverStatements: SavedStatement[] = [];
             querySnapshot.forEach((docSnap) => {
                 const data = docSnap.data();
@@ -378,7 +383,8 @@ export default function Home() {
                     rows: restOfData.rows,
                     totals: restOfData.totals,
                     employeeInfo: employeeInfo,
-                    isLocal: false
+                    isLocal: false,
+                    userId: data.userId,
                 });
             });
             allStatements = serverStatements;
@@ -392,7 +398,8 @@ export default function Home() {
                     description: "Displaying locally saved statements. Will sync when online.",
                 });
                  const localStatements = getLocalStatements();
-                 allStatements.push(...localStatements.filter(s => s.userId === user?.uid));
+                 const filterFn = isAdmin ? () => true : (s: SavedStatement) => s.userId === user?.uid;
+                 allStatements.push(...localStatements.filter(filterFn));
 
             } else {
                  toast({
@@ -401,7 +408,8 @@ export default function Home() {
                     description: "Could not fetch statements from the database. Showing local data.",
                 });
                  const localStatements = getLocalStatements();
-                 allStatements.push(...localStatements.filter(s => s.userId === user?.uid));
+                 const filterFn = isAdmin ? () => true : (s: SavedStatement) => s.userId === user?.uid;
+                 allStatements.push(...localStatements.filter(filterFn));
             }
         }
     }
@@ -414,7 +422,7 @@ export default function Home() {
     if(isLoadDialogOpen && authStatus === 'authenticated') {
       fetchSavedStatements();
     }
-  }, [isLoadDialogOpen, authStatus]);
+  }, [isLoadDialogOpen, authStatus, isAdmin]);
   
   React.useEffect(() => {
     if (isOnline && dbConfigured && authStatus === 'authenticated') {
@@ -1526,11 +1534,18 @@ export default function Home() {
                 </DialogContent>
             </Dialog>
             {authStatus === 'authenticated' && isAdmin && (
-              <Button variant="outline" asChild>
-                  <Link href="/rates">
-                      <Settings className="mr-2 h-4 w-4" /> Rate Configuration
-                  </Link>
-              </Button>
+              <>
+                <Button variant="outline" asChild>
+                    <Link href="/users">
+                        <Users className="mr-2 h-4 w-4" /> User Management
+                    </Link>
+                </Button>
+                <Button variant="outline" asChild>
+                    <Link href="/rates">
+                        <Settings className="mr-2 h-4 w-4" /> Rate Configuration
+                    </Link>
+                </Button>
+              </>
             )}
         </div>
 

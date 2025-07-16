@@ -21,6 +21,7 @@ const loginSchema = z.object({
 type LoginFormValues = z.infer<typeof loginSchema>;
 
 const signupSchema = z.object({
+  name: z.string().min(1, "Name is required."),
   email: z.string().email({ message: "Please enter a valid email address." }),
   phoneNumber: z.string().min(1, "Phone number is required."),
   password: z.string().min(6, "Password must be at least 6 characters long."),
@@ -64,6 +65,7 @@ export function AuthModal() {
     defaultValues: {
       email: "",
       password: "",
+      name: "",
       confirmPassword: "",
       phoneNumber: "",
     },
@@ -73,7 +75,7 @@ export function AuthModal() {
     setIsLoading(true);
     if (mode === 'signup') {
       const fullPhoneNumber = `+91${values.phoneNumber}`;
-      await signUpWithEmailPassword(values.email, values.password, fullPhoneNumber);
+      await signUpWithEmailPassword(values.email, values.password, values.name, fullPhoneNumber);
     } else if (mode === 'login') {
       await signInWithEmailPassword(values.email, values.password);
     } else if (mode === 'forgot_password') {
@@ -96,6 +98,7 @@ export function AuthModal() {
       form.reset({
         email: "",
         password: "",
+        name: "",
         confirmPassword: "",
         phoneNumber: "",
       });
@@ -129,6 +132,15 @@ export function AuthModal() {
 
     return (
         <>
+            {mode === 'signup' && (
+                <FormField control={form.control} name="name" render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>Full Name</FormLabel>
+                        <FormControl><Input placeholder="Your Name" {...field} value={field.value ?? ''} /></FormControl>
+                        <FormMessage />
+                    </FormItem>
+                )} />
+            )}
             <FormField control={form.control} name="email" render={({ field }) => (
                 <FormItem>
                     <FormLabel>Email</FormLabel>

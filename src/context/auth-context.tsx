@@ -26,7 +26,7 @@ interface AuthContextType {
     openAuthModal: () => void;
     closeAuthModal: () => void;
     isAuthModalOpen: boolean;
-    signUpWithEmailPassword: (email: string, password: string, phoneNumber: string) => Promise<void>;
+    signUpWithEmailPassword: (email: string, password: string, name: string, phoneNumber: string) => Promise<void>;
     signInWithEmailPassword: (email: string, password: string) => Promise<void>;
     sendPasswordReset: (email: string) => Promise<void>;
     authError: string | null;
@@ -93,23 +93,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setAuthMessage(null);
     };
 
-    const signUpWithEmailPassword = async (email: string, password: string, phoneNumber: string) => {
+    const signUpWithEmailPassword = async (email: string, password: string, name: string, phoneNumber: string) => {
         if (!auth || !db) return;
         clearAuthMessages();
         try {
             const result = await createUserWithEmailAndPassword(auth, email, password);
             const firebaseUser = result.user;
 
-            await updateProfile(firebaseUser, { displayName: email.split('@')[0] });
+            await updateProfile(firebaseUser, { displayName: name });
             
             await setDoc(doc(db, 'users', firebaseUser.uid), {
                 email: email,
-                displayName: email.split('@')[0],
+                displayName: name,
                 phoneNumber: phoneNumber,
                 createdAt: serverTimestamp(),
             });
 
-            const updatedUser: User = { ...firebaseUser, email: email, displayName: email.split('@')[0] };
+            const updatedUser: User = { ...firebaseUser, email: email, displayName: name };
             setUser(updatedUser);
 
             toast({ title: "Account Created!", description: 'Welcome! You are now signed in.' });
