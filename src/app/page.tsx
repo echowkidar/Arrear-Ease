@@ -796,19 +796,7 @@ export default function Home() {
               const basePayLevel = side === 'paid' ? data.paid.payLevel : data.toBePaid.payLevel;
 
               const getEffectiveDaRate = (isForHraLookup: boolean = false) => {
-                  let activeSide = side;
-                  // For HRA lookup, we need the *master* DA rate, not a potential fixed override on the "due" side.
-                  // However, if the "paid" side itself has a fixed rate, it should use that.
-                  if (isForHraLookup && side === 'toBePaid' && data.toBePaid.daFixedRateApplicable) {
-                    const masterDaRate = getRateForDate(daRates, currentDate);
-                    return masterDaRate ? masterDaRate.rate : 0;
-                  }
-                  if(isForHraLookup && side === 'paid') {
-                    const masterDaRate = getRateForDate(daRates, currentDate);
-                    return masterDaRate ? masterDaRate.rate : 0;
-                  }
-
-                  const daSideData = data[activeSide];
+                  const daSideData = data[side];
 
                   if (daSideData.daFixedRateApplicable && daSideData.daFixedRate && daSideData.daFixedRateFromDate && daSideData.daFixedRateToDate) {
                       if (isWithinInterval(currentDate, { start: daSideData.daFixedRateFromDate, end: daSideData.daFixedRateToDate })) {
