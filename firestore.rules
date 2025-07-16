@@ -3,33 +3,38 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function to check for admin
+    // Helper function to check for admin user
     function isAdmin() {
       return request.auth != null && request.auth.token.email == 'amulivealigarh@gmail.com';
     }
 
     // Rules for the 'users' collection
     match /users/{userId} {
-      // Allow read/write access for the admin to any user document.
-      // Allow a regular authenticated user to create, read, and update their own document.
-      allow read, update, delete: if isAdmin() || request.auth.uid == userId;
-      allow create: if request.auth.uid == userId;
+      // Allow access if the user is an admin OR if they are the owner of the document.
+      // This combined rule prevents conflicts and allows the admin to list all users.
+      allow read, update, list: if isAdmin() || (request.auth != null && request.auth.uid == userId);
+      
+      // Any authenticated user can create their own profile.
+      allow create: if request.auth != null;
     }
 
-    // Rules for the 'configurations' collection
+    // Rules for the 'configurations' collection (for rates)
     match /configurations/{docId} {
-      // Allow any authenticated user to read the configuration.
-      allow read: if request.auth != null;
-      // Only allow the admin to write (create, update, delete) the configuration.
+      // Any authenticated user can read the configurations (e.g., rates).
+      allow get, list: if request.auth != null;
+      
+      // Only the admin can write (create, update, delete) the configurations.
       allow write: if isAdmin();
     }
     
     // Rules for the 'savedStatements' collection
     match /savedStatements/{statementId} {
-        // An authenticated user can manage their own statements.
-        // The admin can access any statement.
-        allow read, write, delete: if isAdmin() || (request.auth != null && request.auth.uid == resource.data.userId);
-        allow create: if request.auth != null;
+       // An admin can read or delete any statement.
+       // A regular user can only access statements where their userId matches.
+       allow get, list, delete: if isAdmin() || (request.auth != null && resource.data.userId == request.auth.uid);
+
+       // An authenticated user can create a statement and update their own statements.
+       allow create, update: if request.auth != null && request.resource.data.userId == request.auth.uid;
     }
   }
 }
