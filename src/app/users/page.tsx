@@ -255,12 +255,10 @@ export default function UsersPage() {
     if (loading || authStatus !== 'authenticated' || user?.email !== "amulivealigarh@gmail.com") {
         return (
             <div className="flex justify-center items-center min-h-screen">
-                <p>Loading...</p>
+                <Loader2 className="h-8 w-8 animate-spin" />
             </div>
         );
     }
     
     return <ProtectedUsersPage />;
 }
-
-    

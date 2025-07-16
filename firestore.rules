@@ -4,32 +4,23 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Rules for user profiles
-    match /users/{userId} {
-      // Admin has full access.
-      allow read, write: if request.auth != null && request.auth.token.email == "amulivealigarh@gmail.com";
-      
-      // Non-admin users can create, read, and update their OWN document, but cannot delete it.
-      allow create, read, update: if request.auth != null && request.auth.uid == userId;
-      allow delete: if false;
+    function isAdmin() {
+      return request.auth.token.email == "amulivealigarh@gmail.com";
     }
 
-    // Rules for saved arrear statements
-    match /savedStatements/{statementId} {
-       // An admin can perform any action on any statement.
-      allow read, write: if request.auth != null && request.auth.token.email == "amulivealigarh@gmail.com";
+    match /users/{userId} {
+      // A user can manage their own document. The admin can manage any document.
+      allow get, update, create: if request.auth.uid == userId || isAdmin();
       
-      // A user can create, read, update, and delete their own statements.
-      allow create, read, update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+      // The admin can list and delete users.
+      allow list, delete: if isAdmin();
     }
     
-    // Rules for app-wide configurations like DA/HRA rates
-    match /configurations/{configId} {
-        // Any authenticated user can read configurations.
-        allow read: if request.auth != null;
-        
-        // Only an admin can write/update configurations.
-        allow write: if request.auth != null && request.auth.token.email == "amulivealigarh@gmail.com";
+    match /configurations/{docId} {
+      // Any authenticated user can read configurations.
+      allow get: if request.auth != null;
+      // Only the admin can write configurations.
+      allow write: if isAdmin();
     }
   }
 }
