@@ -1,40 +1,30 @@
+
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Helper function to check for admin user
+  
     function isAdmin() {
-      return request.auth != null && request.auth.token.email == 'amulivealigarh@gmail.com';
+      return request.auth.token.email == 'amulivealigarh@gmail.com';
     }
 
-    // Rules for the 'users' collection
     match /users/{userId} {
-      // Allow access if the user is an admin OR if they are the owner of the document.
-      // This combined rule prevents conflicts and allows the admin to list all users.
-      allow read, update, list: if isAdmin() || (request.auth != null && request.auth.uid == userId);
-      
-      // Any authenticated user can create their own profile.
-      allow create: if request.auth != null;
+      // Admin can do anything.
+      // A user can create their own profile, and read/update it.
+      allow read, write: if isAdmin() || (request.auth.uid == userId && (request.method == 'create' || request.method == 'get' || request.method == 'update'));
     }
 
-    // Rules for the 'configurations' collection (for rates)
-    match /configurations/{docId} {
-      // Any authenticated user can read the configurations (e.g., rates).
-      allow get, list: if request.auth != null;
-      
-      // Only the admin can write (create, update, delete) the configurations.
-      allow write: if isAdmin();
+    match /savedStatements/{statementId} {
+      // Admin can do anything.
+      // A user can read/write their own statements.
+      allow read, write: if isAdmin() || request.auth.uid == resource.data.userId;
     }
     
-    // Rules for the 'savedStatements' collection
-    match /savedStatements/{statementId} {
-       // An admin can read or delete any statement.
-       // A regular user can only access statements where their userId matches.
-       allow get, list, delete: if isAdmin() || (request.auth != null && resource.data.userId == request.auth.uid);
-
-       // An authenticated user can create a statement and update their own statements.
-       allow create, update: if request.auth != null && request.resource.data.userId == request.auth.uid;
+    match /configurations/{docId} {
+      // Any authenticated user can read rates.
+      // Only admin can write rates.
+      allow read: if request.auth.uid != null;
+      allow write: if isAdmin();
     }
   }
 }
