@@ -103,6 +103,11 @@ const salaryComponentSchema = z.object({
   incrementMonth: z.string({ required_error: "Increment month is required." }),
   incrementDate: z.date().optional(),
   
+  fixedBasicPayApplicable: z.boolean().default(false),
+  fixedBasicPayValue: z.coerce.number().min(0).optional(),
+  fixedBasicPayFromDate: z.date().optional(),
+  fixedBasicPayToDate: z.date().optional(),
+  
   daApplicable: z.boolean().default(false),
   daFixedRateApplicable: z.boolean().default(false),
   daFixedRate: z.coerce.number().min(0).optional(),
@@ -445,6 +450,7 @@ export default function Home() {
         basicPay: '' as any,
         payLevel: undefined,
         incrementMonth: undefined,
+        fixedBasicPayApplicable: false,
         daApplicable: false,
         daFixedRateApplicable: false,
         hraApplicable: false,
@@ -462,6 +468,7 @@ export default function Home() {
         basicPay: '' as any,
         payLevel: undefined,
         incrementMonth: undefined,
+        fixedBasicPayApplicable: false,
         daApplicable: false,
         daFixedRateApplicable: false,
         hraApplicable: false,
@@ -579,6 +586,15 @@ export default function Home() {
                 const sideData = data[side];
                 let newTracker = trackerBasic;
                 let basicForMonth = trackerBasic;
+                
+                // Check if fixed basic pay is applicable for this month
+                if (sideData.fixedBasicPayApplicable && sideData.fixedBasicPayValue && sideData.fixedBasicPayFromDate && sideData.fixedBasicPayToDate) {
+                  const fixedStart = startOfMonth(sideData.fixedBasicPayFromDate);
+                  const fixedEnd = endOfMonth(sideData.fixedBasicPayToDate);
+                  if (isWithinInterval(currentDate, { start: fixedStart, end: fixedEnd })) {
+                      return { newTrackerValue: sideData.fixedBasicPayValue, basicForMonth: sideData.fixedBasicPayValue };
+                  }
+                }
                 
                 if (sideData.incrementMonth) {
                     const incrementMonthValue = parseInt(sideData.incrementMonth, 10);
@@ -1304,6 +1320,50 @@ export default function Home() {
               </div>
            </div>
 
+          <div className="space-y-4 rounded-md border p-4 bg-muted/20">
+              <FormField
+                control={form.control}
+                name={`${type}.fixedBasicPayApplicable`}
+                render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between">
+                    <FormLabel>Fixed Basic Pay (Overrides Increment)</FormLabel>
+                    <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                </FormItem>
+                )}
+            />
+             {currentWatchValues.fixedBasicPayApplicable && (
+                <div className="space-y-4 pt-2">
+                    <FormField
+                        control={form.control}
+                        name={`${type}.fixedBasicPayValue`}
+                        render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>Fixed Basic Pay Amount</FormLabel>
+                            <FormControl><Input type="number" placeholder="e.g., 52000" {...field} value={field.value ?? ''} /></FormControl>
+                            <FormMessage />
+                        </FormItem>
+                        )}
+                    />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                         <FormField
+                            control={form.control}
+                            name={`${type}.fixedBasicPayFromDate`}
+                            render={({ field }) => (
+                                <FormItem><FormDateInput field={field} label="From Date"/></FormItem>
+                            )}
+                            />
+                            <FormField
+                            control={form.control}
+                            name={`${type}.fixedBasicPayToDate`}
+                            render={({ field }) => (
+                                <FormItem><FormDateInput field={field} label="To Date" /></FormItem>
+                            )}
+                            />
+                    </div>
+                </div>
+            )}
+          </div>
+          
           {type === 'toBePaid' && (
               <div className="space-y-4 rounded-md border p-4 bg-muted/20">
                   <h4 className="font-medium">Pay Refixation (Optional)</h4>
