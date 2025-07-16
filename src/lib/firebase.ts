@@ -1,6 +1,6 @@
 
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
-import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
+import { getFirestore, enableMultiTabIndexedDbPersistence } from "firebase/firestore";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, type Auth, sendPasswordResetEmail } from "firebase/auth";
 
 const firebaseConfig = {
@@ -24,7 +24,7 @@ const auth: Auth | null = app ? getAuth(app) : null;
 
 // Enable offline persistence with multi-tab support if db is initialized
 if (db) {
-    enableIndexedDbPersistence(db, { synchronizeTabs: true })
+    enableMultiTabIndexedDbPersistence(db)
       .catch((err) => {
         if (err.code == 'failed-precondition') {
           // This can happen if the user has multiple tabs open with different
