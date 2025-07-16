@@ -649,7 +649,7 @@ export default function Home() {
                             }
 
                             if (levelData) {
-                                const currentBasicIndex = levelData.values.indexOf(basicForMonth);
+                                const currentBasicIndex = levelData.values.indexOf(trackerBasic);
                                 if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
                                     newBasic = levelData.values[currentBasicIndex + 1];
                                 }
@@ -753,14 +753,18 @@ export default function Home() {
                       break;
                   }
                   case 'ta': {
-                    const taSideData = side === 'paid' ? data.paid : data.toBePaid;
+                    const taSideData = data[side];
                     let taEffectiveDaRate = effectiveDaRate;
 
-                    // If TA has its own fixed DA rate, it should use that. Otherwise use the global effective DA.
-                    if (taSideData.daFixedRateApplicable && taSideData.daFixedRate && taSideData.daFixedRateFromDate && taSideData.daFixedRateToDate) {
-                         if (isWithinInterval(currentDate, { start: taSideData.daFixedRateFromDate, end: taSideData.daFixedRateToDate })) {
-                            taEffectiveDaRate = taSideData.daFixedRate;
+                    // Use the effective DA rate of the *current side* for TA calculation.
+                    const currentSideDaData = data[side];
+                    if (currentSideDaData.daFixedRateApplicable && currentSideDaData.daFixedRate && currentSideDaData.daFixedRateFromDate && currentSideDaData.daFixedRateToDate) {
+                         if (isWithinInterval(currentDate, { start: currentSideDaData.daFixedRateFromDate, end: currentSideDaData.daFixedRateToDate })) {
+                            taEffectiveDaRate = currentSideDaData.daFixedRate;
                         }
+                    } else {
+                        const daRateDetails = getRateForDate(daRates, currentDate);
+                        taEffectiveDaRate = daRateDetails ? daRateDetails.rate : 0;
                     }
 
                     const rateDetails = getRateForDate(taRates, currentDate, { basicPay: trackerBasic, payLevel });
@@ -795,7 +799,7 @@ export default function Home() {
               const baseBasicForMonth = side === 'paid' ? drawnBasicForMonth : dueBasicForMonth;
               const basePayLevel = side === 'paid' ? data.paid.payLevel : data.toBePaid.payLevel;
 
-              const getEffectiveDaRate = (isForHraLookup: boolean = false) => {
+              const getEffectiveDaRate = () => {
                   const daSideData = data[side];
 
                   if (daSideData.daFixedRateApplicable && daSideData.daFixedRate && daSideData.daFixedRateFromDate && daSideData.daFixedRateToDate) {
@@ -808,7 +812,7 @@ export default function Home() {
                   return daRateDetails ? daRateDetails.rate : 0;
               };
               
-              const effectiveDaRateForAllowance = getEffectiveDaRate(allowanceType === 'hra');
+              const effectiveDaRateForAllowance = getEffectiveDaRate();
 
               let npaAmountForDA = 0;
               if ((allowanceType === 'da' || allowanceType === 'hra') && data[side].npaApplicable) {
@@ -1825,3 +1829,4 @@ export default function Home() {
     </div>
   );
 }
+
