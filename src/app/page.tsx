@@ -718,7 +718,13 @@ export default function Home() {
             const proratedDrawnBasic = drawnBasicForMonth * monthProRataFactor;
             const proratedDueBasic = dueBasicForMonth * monthProRataFactor;
             
-            const calculateAllowanceAmount = (allowanceType: 'da' | 'hra' | 'npa' | 'ta' | 'otherAllowance', side: 'paid' | 'toBePaid', basic: number, payLevel: string, npaAmountForDA: number = 0) => {
+            const calculateAllowanceAmount = (
+              allowanceType: 'da' | 'hra' | 'npa' | 'ta' | 'otherAllowance', 
+              side: 'paid' | 'toBePaid', 
+              basic: number, 
+              payLevel: string,
+              { npaAmountForDA = 0, effectiveDaRate = 0 }: { npaAmountForDA?: number, effectiveDaRate?: number } = {}
+            ) => {
               const sideData = data[side];
               const otherAllowanceAmount = sideData.otherAllowance || 0;
               let amount = 0;
@@ -726,16 +732,12 @@ export default function Home() {
 
               switch (allowanceType) {
                   case 'da': {
-                      const rateDetails = getRateForDate(daRates, currentDate);
-                      const rate = rateDetails ? rateDetails.rate : 0;
                       const baseForDA = basic + npaAmountForDA;
-                      amount = baseForDA * (rate / 100);
+                      amount = baseForDA * (effectiveDaRate / 100);
                       break;
                   }
                   case 'hra': {
-                      const daRateDetails = getRateForDate(daRates, currentDate);
-                      const currentDaRate = daRateDetails ? daRateDetails.rate : 0;
-                      const rateDetails = getRateForDate(hraRates, currentDate, { daRate: currentDaRate });
+                      const rateDetails = getRateForDate(hraRates, currentDate, { daRate: effectiveDaRate });
                       if (!rateDetails) return 0;
                       const rate = rateDetails.rate;
                       amount = basic * (rate / 100);
@@ -754,22 +756,7 @@ export default function Home() {
                     const rateDetails = getRateForDate(taRates, currentDate, { basicPay: trackerBasic, payLevel });
                     if (!rateDetails) return 0;
                     const taBaseAmount = rateDetails.rate;
-                    let daRateForTa = 0;
-
-                    // Check for fixed DA rate override first
-                    if (sideData.daFixedRateApplicable && sideData.daFixedRate && sideData.daFixedRateFromDate && sideData.daFixedRateToDate) {
-                        if (isWithinInterval(currentDate, { start: sideData.daFixedRateFromDate, end: sideData.daFixedRateToDate })) {
-                            daRateForTa = sideData.daFixedRate / 100;
-                        }
-                    }
-
-                    // If no fixed rate is applicable for this date, use the standard rate
-                    if (daRateForTa === 0) {
-                        const daRateDetails = getRateForDate(daRates, currentDate);
-                        daRateForTa = daRateDetails ? daRateDetails.rate / 100 : 0;
-                    }
-
-                    amount = taBaseAmount + (taBaseAmount * daRateForTa);
+                    amount = taBaseAmount + (taBaseAmount * (effectiveDaRate / 100));
                     if (sideData.doubleTaApplicable) amount *= 2;
                     break;
                   }
@@ -798,7 +785,29 @@ export default function Home() {
               const baseBasicForMonth = side === 'paid' ? drawnBasicForMonth : dueBasicForMonth;
               const basePayLevel = side === 'paid' ? data.paid.payLevel : data.toBePaid.payLevel;
 
-              const calculateFixedAmount = (basic: number, npaAmountForDA: number = 0) => {
+              const getEffectiveDaRate = () => {
+                // Check for fixed DA rate override first
+                if (sideData.daFixedRateApplicable && sideData.daFixedRate && sideData.daFixedRateFromDate && sideData.daFixedRateToDate) {
+                    if (isWithinInterval(currentDate, { start: sideData.daFixedRateFromDate, end: sideData.daFixedRateToDate })) {
+                        return sideData.daFixedRate;
+                    }
+                }
+                // If no fixed rate is applicable for this date, use the standard rate
+                const daRateDetails = getRateForDate(daRates, currentDate);
+                return daRateDetails ? daRateDetails.rate : 0;
+              };
+
+              const effectiveDaRate = getEffectiveDaRate();
+
+              let npaAmountForDA = 0;
+              if ((allowanceType === 'da' || allowanceType === 'hra') && data[side].npaApplicable) {
+                  const npaProrationFactor = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data[side].npaFromDate, data[side].npaToDate);
+                  if (npaProrationFactor > 0) {
+                      npaAmountForDA = calculateAllowanceAmount('npa', side, baseBasicForMonth, basePayLevel) * npaProrationFactor;
+                  }
+              }
+
+              const calculateFixedAmount = (basic: number) => {
                   let amount = 0;
                   switch (allowanceType) {
                       case 'da': {
@@ -815,14 +824,6 @@ export default function Home() {
                   return amount;
               };
 
-              let npaAmountForDA = 0;
-              if (allowanceType === 'da' && data[side].npaApplicable) {
-                  const npaProrationFactor = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, data[side].npaFromDate, data[side].npaToDate);
-                  if (npaProrationFactor > 0) {
-                      npaAmountForDA = calculateAllowanceAmount('npa', side, baseBasicForMonth, basePayLevel) * npaProrationFactor;
-                  }
-              }
-
               let totalAmount = 0;
               
               if(isFixedRate && fixedRateValue && fixedFrom && fixedTo && isWithinInterval(currentDate, {start: startOfMonth(fixedFrom), end: endOfMonth(fixedTo)})) {
@@ -833,7 +834,7 @@ export default function Home() {
                 if (isWithinInterval(regularPeriodStart, {start: monthStart, end: regularPeriodEnd})) {
                     const days = differenceInDays(regularPeriodEnd, regularPeriodStart) + 1;
                     const factor = days > 0 ? days / daysInMonth : 0;
-                    totalAmount += calculateAllowanceAmount(allowanceType, side, baseBasicForMonth, basePayLevel, npaAmountForDA) * factor;
+                    totalAmount += calculateAllowanceAmount(allowanceType, side, baseBasicForMonth, basePayLevel, { npaAmountForDA, effectiveDaRate }) * factor;
                 }
                 
                 const fixedPeriodStartInMonth = max([monthStart, fixedFrom]);
@@ -842,7 +843,7 @@ export default function Home() {
                 if (fixedPeriodStartInMonth <= fixedPeriodEndInMonth) {
                     const days = differenceInDays(fixedPeriodEndInMonth, fixedPeriodStartInMonth) + 1;
                     const factor = days > 0 ? days / daysInMonth : 0;
-                    totalAmount += calculateFixedAmount(baseBasicForMonth, npaAmountForDA) * factor;
+                    totalAmount += calculateFixedAmount(baseBasicForMonth) * factor;
                 }
 
                 const postFixedPeriodStart = addDays(fixedPeriodEndInMonth, 1);
@@ -851,14 +852,14 @@ export default function Home() {
                 if (postFixedPeriodStart <= postFixedPeriodEnd) {
                     const days = differenceInDays(postFixedPeriodEnd, postFixedPeriodStart) + 1;
                     const factor = days > 0 ? days/daysInMonth : 0;
-                    totalAmount += calculateAllowanceAmount(allowanceType, side, baseBasicForMonth, basePayLevel, npaAmountForDA) * factor;
+                    totalAmount += calculateAllowanceAmount(allowanceType, side, baseBasicForMonth, basePayLevel, { npaAmountForDA, effectiveDaRate }) * factor;
                 }
                  
                 return totalAmount * monthProRataFactor;
               } else {
                  const regularProrationFactor = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fromDate, toDate);
                  if (regularProrationFactor <= 0) return 0;
-                 const calculatedAmount = calculateAllowanceAmount(allowanceType, side, baseBasicForMonth, basePayLevel, npaAmountForDA);
+                 const calculatedAmount = calculateAllowanceAmount(allowanceType, side, baseBasicForMonth, basePayLevel, { npaAmountForDA, effectiveDaRate });
                  return calculatedAmount * regularProrationFactor * monthProRataFactor;
               }
             };
@@ -1813,5 +1814,7 @@ export default function Home() {
     </div>
   );
 }
+
+    
 
     
