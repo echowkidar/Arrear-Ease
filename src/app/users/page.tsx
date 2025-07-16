@@ -72,31 +72,37 @@ const ProtectedUsersPage = () => {
     const [isLoading, setIsLoading] = React.useState(true);
     const [editingUser, setEditingUser] = React.useState<AppUser | null>(null);
     const { toast } = useToast();
-    const { user } = useAuth();
+    const { user, authStatus } = useAuth();
 
     const form = useForm<EditUserFormValues>({
         resolver: zodResolver(editUserSchema),
     });
     
     const fetchUsers = React.useCallback(async () => {
+        if (!user) {
+            console.log("Fetch users skipped: no user object.");
+            setIsLoading(false);
+            return;
+        }
         setIsLoading(true);
+        console.log(`[DEBUG] Attempting to fetch users as: ${user.email} (UID: ${user.uid})`);
         try {
             const usersSnapshot = await getDocs(collection(db, "users"));
             const usersData = usersSnapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() })) as AppUser[];
+            console.log(`[DEBUG] Successfully fetched ${usersData.length} users.`);
             setUsers(usersData.sort((a,b) => a.displayName.localeCompare(b.displayName)));
         } catch (error) {
-            console.error("Error fetching users:", error);
-            toast({ variant: "destructive", title: "Failed to load users" });
+            console.error("[DEBUG] Error fetching users:", error);
+            toast({ variant: "destructive", title: "Failed to load users", description: "Check console for details." });
         }
         setIsLoading(false);
-    }, [toast]);
+    }, [toast, user]);
 
     React.useEffect(() => {
-        // Only fetch users if the logged-in user is the admin
-        if (user?.email === "amulivealigarh@gmail.com") {
+        if (authStatus === 'authenticated' && user?.email === "amulivealigarh@gmail.com") {
           fetchUsers();
         }
-    }, [fetchUsers, user]);
+    }, [fetchUsers, user, authStatus]);
 
     const handleEdit = (user: AppUser) => {
         setEditingUser(user);
@@ -251,13 +257,14 @@ export default function UsersPage() {
     const router = useRouter();
 
     React.useEffect(() => {
+        if (loading) return; // Wait until authentication status is resolved
+
         if (authStatus === 'unauthenticated') {
             router.push('/');
-        }
-        if (authStatus === 'authenticated' && user?.email !== "amulivealigarh@gmail.com") {
+        } else if (authStatus === 'authenticated' && user?.email !== "amulivealigarh@gmail.com") {
             router.push('/');
         }
-    }, [authStatus, user, router]);
+    }, [authStatus, user, router, loading]);
 
     if (loading || authStatus !== 'authenticated' || user?.email !== "amulivealigarh@gmail.com") {
         return (
