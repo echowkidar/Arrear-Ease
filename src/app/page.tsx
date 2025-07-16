@@ -228,6 +228,149 @@ const sanitizeForFirebase = (obj: any): any => {
     return newObj;
 };
 
+const FormDateInput = ({ field, label, calendarProps, onClear }: { field: any, label?: string, calendarProps?: any, onClear: () => void }) => (
+  <Popover>
+      <PopoverTrigger asChild>
+          <FormControl>
+              <Button variant={"outline"} className={cn("w-full pl-3 text-left font-normal", !field.value && "text-muted-foreground")}>
+                  {field.value ? format(field.value, "PPP") : <span>{label || 'Pick a date'}</span>}
+                  <CalendarDays className="ml-auto h-4 w-4 opacity-50" />
+              </Button>
+          </FormControl>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0" align="start">
+          <Calendar 
+            mode="single" 
+            selected={field.value} 
+            onSelect={(date) => field.onChange(date)} 
+            initialFocus={field.value ? new Date(field.value) : undefined} 
+            defaultMonth={field.value ? new Date(field.value) : undefined}
+            captionLayout="dropdown-buttons" 
+            fromYear={1990} 
+            toYear={2050} 
+            {...calendarProps} 
+            footer={
+              <Button
+                variant="ghost"
+                className="w-full"
+                onClick={onClear}
+              >
+                Clear
+              </Button>
+            }
+          />
+      </PopoverContent>
+  </Popover>
+);
+
+const FixedRateFields = React.memo(({ type, name, isAmount, form }: { type: 'paid' | 'toBePaid', name: 'da' | 'hra' | 'ta' | 'otherAllowance', isAmount?: boolean, form: any }) => {
+    const isFixedRateApplicable = form.watch(`${type}.${name}FixedRateApplicable`);
+    
+    const handleClearDate = React.useCallback((fieldName: any) => {
+        form.setValue(fieldName, undefined, { shouldDirty: true, shouldValidate: true });
+    }, [form]);
+    
+    return (
+        <div className="space-y-4 rounded-md border p-4 bg-muted/20 mt-4">
+            <FormField
+                control={form.control}
+                name={`${type}.${name}FixedRateApplicable`}
+                render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between">
+                    <FormLabel>Override with Fixed Rate</FormLabel>
+                    <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                </FormItem>
+                )}
+            />
+            {isFixedRateApplicable && (
+                <div className="space-y-4 pt-2">
+                    <FormField
+                        control={form.control}
+                        name={`${type}.${name}FixedRate`}
+                        render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>Fixed {isAmount ? 'Amount' : 'Rate (%)'}</FormLabel>
+                            <FormControl><Input type="number" placeholder={isAmount ? "e.g., 3600" : "e.g., 10"} {...field} value={field.value ?? ''} /></FormControl>
+                            <FormMessage />
+                        </FormItem>
+                        )}
+                    />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                         <FormField
+                            control={form.control}
+                            name={`${type}.${name}FixedRateFromDate`}
+                            render={({ field }) => (
+                                <FormItem>
+                                  <FormDateInput field={field} label="From Date" onClear={() => handleClearDate(`${type}.${name}FixedRateFromDate`)} />
+                                </FormItem>
+                            )}
+                            />
+                            <FormField
+                            control={form.control}
+                            name={`${type}.${name}FixedRateToDate`}
+                            render={({ field }) => (
+                                <FormItem>
+                                  <FormDateInput field={field} label="To Date" onClear={() => handleClearDate(`${type}.${name}FixedRateToDate`)} />
+                                </FormItem>
+                            )}
+                            />
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+});
+FixedRateFields.displayName = 'FixedRateFields';
+
+
+const AllowanceField = React.memo(({ type, name, label, form }: { type: 'paid' | 'toBePaid', name: 'hra' | 'npa', label: string, form: any }) => {
+  const isApplicable = form.watch(`${type}.${name}Applicable`);
+  
+  const handleClearDate = React.useCallback((fieldName: any) => {
+      form.setValue(fieldName, undefined, { shouldDirty: true, shouldValidate: true });
+  }, [form]);
+
+  return (
+    <>
+      <FormField
+        control={form.control}
+        name={`${type}.${name}Applicable`}
+        render={({ field }) => (
+          <FormItem className="flex flex-row items-center space-x-3 space-y-0">
+            <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+            <FormLabel className="font-normal">{label}</FormLabel>
+          </FormItem>
+        )}
+      />
+      {isApplicable && (
+        <div className="space-y-2 pl-7 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <FormField
+                  control={form.control}
+                  name={`${type}.${name}FromDate`}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormDateInput field={field} label="From Date" onClear={() => handleClearDate(`${type}.${name}FromDate`)} />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name={`${type}.${name}ToDate`}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormDateInput field={field} label="To Date" onClear={() => handleClearDate(`${type}.${name}ToDate`)} />
+                    </FormItem>
+                  )}
+                />
+            </div>
+             <FixedRateFields type={type} name={name} form={form}/>
+        </div>
+      )}
+    </>
+  );
+});
+AllowanceField.displayName = 'AllowanceField';
 
 export default function Home() {
   const [statement, setStatement] = React.useState<Omit<SavedStatement, 'id' | 'savedAt' | 'isLocal'> | null>(null);
@@ -484,9 +627,6 @@ export default function Home() {
       },
     },
   });
-
-  const paidWatch = form.watch("paid");
-  const toBePaidWatch = form.watch("toBePaid");
 
   const getPayLevels = (cpc: '6th' | '7th' | undefined) => {
      if (!cpc) return [];
@@ -1192,133 +1332,24 @@ export default function Home() {
     setIsLoading(false);
   }
 
-  const FormDateInput = ({ field, label, calendarProps }: { field: any, label?: string, calendarProps?: any }) => (
-      <Popover>
-          <PopoverTrigger asChild>
-              <FormControl>
-                  <Button variant={"outline"} className={cn("w-full pl-3 text-left font-normal", !field.value && "text-muted-foreground")}>
-                      {field.value ? format(field.value, "PPP") : <span>{label || 'Pick a date'}</span>}
-                      <CalendarDays className="ml-auto h-4 w-4 opacity-50" />
-                  </Button>
-              </FormControl>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-              <Calendar 
-                mode="single" 
-                selected={field.value} 
-                onSelect={(date) => field.onChange(date)} 
-                initialFocus={field.value ? new Date(field.value) : undefined} 
-                defaultMonth={field.value ? new Date(field.value) : undefined}
-                captionLayout="dropdown-buttons" 
-                fromYear={1990} 
-                toYear={2050} 
-                {...calendarProps} 
-                footer={
-                  <Button
-                    variant="ghost"
-                    className="w-full"
-                    onClick={() => field.onChange(undefined)}
-                  >
-                    Clear
-                  </Button>
-                }
-              />
-          </PopoverContent>
-      </Popover>
-  );
-  
-  const AllowanceField = ({ type, name, label, watchValues }: { type: 'paid' | 'toBePaid', name: 'hra' | 'npa', label: string, watchValues: any }) => (
-    <>
-      <FormField
-        control={form.control}
-        name={`${type}.${name}Applicable`}
-        render={({ field }) => (
-          <FormItem className="flex flex-row items-center space-x-3 space-y-0">
-            <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-            <FormLabel className="font-normal">{label}</FormLabel>
-          </FormItem>
-        )}
-      />
-      {watchValues?.[`${name}Applicable`] && (
-        <div className="space-y-2 pl-7 pt-2">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <FormField
-                  control={form.control}
-                  name={`${type}.${name}FromDate`}
-                  render={({ field }) => (
-                    <FormItem><FormDateInput field={field} label="From Date"/></FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name={`${type}.${name}ToDate`}
-                  render={({ field }) => (
-                    <FormItem><FormDateInput field={field} label="To Date" /></FormItem>
-                  )}
-                />
-            </div>
-             <FixedRateFields type={type} name={name} watchValues={watchValues}/>
-        </div>
-      )}
-    </>
-  );
-  
-  const FixedRateFields = ({ type, name, isAmount, watchValues }: { type: 'paid' | 'toBePaid', name: 'da' | 'hra' | 'ta' | 'otherAllowance', isAmount?: boolean, watchValues: any }) => (
-    <div className="space-y-4 rounded-md border p-4 bg-muted/20 mt-4">
-        <FormField
-            control={form.control}
-            name={`${type}.${name}FixedRateApplicable`}
-            render={({ field }) => (
-            <FormItem className="flex flex-row items-center justify-between">
-                <FormLabel>Override with Fixed Rate</FormLabel>
-                <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-            </FormItem>
-            )}
-        />
-        {watchValues?.[`${name}FixedRateApplicable`] && (
-            <div className="space-y-4 pt-2">
-                <FormField
-                    control={form.control}
-                    name={`${type}.${name}FixedRate`}
-                    render={({ field }) => (
-                    <FormItem>
-                        <FormLabel>Fixed {isAmount ? 'Amount' : 'Rate (%)'}</FormLabel>
-                        <FormControl><Input type="number" placeholder={isAmount ? "e.g., 3600" : "e.g., 10"} {...field} value={field.value ?? ''} /></FormControl>
-                        <FormMessage />
-                    </FormItem>
-                    )}
-                />
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                     <FormField
-                        control={form.control}
-                        name={`${type}.${name}FixedRateFromDate`}
-                        render={({ field }) => (
-                            <FormItem><FormDateInput field={field} label="From Date"/></FormItem>
-                        )}
-                        />
-                        <FormField
-                        control={form.control}
-                        name={`${type}.${name}FixedRateToDate`}
-                        render={({ field }) => (
-                            <FormItem><FormDateInput field={field} label="To Date" /></FormItem>
-                        )}
-                        />
-                </div>
-            </div>
-        )}
-    </div>
-  );
+  const handleClearDate = React.useCallback((fieldName: any) => {
+      form.setValue(fieldName, undefined, { shouldDirty: true, shouldValidate: true });
+  }, [form]);
 
   const renderSalaryFields = (type: "paid" | "toBePaid") => {
-      const currentWatchValues = type === 'paid' ? paidWatch : toBePaidWatch;
-      if (!currentWatchValues) return null; // Guard clause
-      
-      const selectedIncrementMonth = currentWatchValues.incrementMonth ? parseInt(currentWatchValues.incrementMonth, 10) : undefined;
+      const cpc = form.watch(`${type}.cpc`);
+      const incrementMonth = form.watch(`${type}.incrementMonth`);
+      const isFixedBasicApplicable = form.watch(`${type}.fixedBasicPayApplicable`);
+      const isDAApplicable = form.watch(`${type}.daApplicable`);
+      const isTAApplicable = form.watch(`${type}.taApplicable`);
+      const otherAllowanceAmount = form.watch(`${type}.otherAllowance`);
+
+      const selectedIncrementMonth = incrementMonth ? parseInt(incrementMonth, 10) : undefined;
       const calendarProps = selectedIncrementMonth ? {
           disabled: (date: Date) => date.getMonth() + 1 !== selectedIncrementMonth || date.getFullYear() < 1990
       } : {};
 
-      const payLevels = getPayLevels(currentWatchValues.cpc);
+      const payLevels = getPayLevels(cpc);
       
       return (
         <div className="space-y-4">
@@ -1342,8 +1373,8 @@ export default function Home() {
            <FormField control={form.control} name={`${type}.payLevel`} render={({ field }) => (
             <FormItem>
                 <FormLabel>Pay Level</FormLabel>
-                <Select onValueChange={field.onChange} value={field.value} disabled={!currentWatchValues.cpc}>
-                    <FormControl><SelectTrigger><SelectValue placeholder={currentWatchValues.cpc ? "Select a level" : "Select CPC first"} /></SelectTrigger></FormControl>
+                <Select onValueChange={field.onChange} value={field.value} disabled={!cpc}>
+                    <FormControl><SelectTrigger><SelectValue placeholder={cpc ? "Select a level" : "Select CPC first"} /></SelectTrigger></FormControl>
                     <SelectContent>
                     {payLevels.map(level => <SelectItem key={level.value} value={level.value}>{level.label}</SelectItem>)}
                     </SelectContent>
@@ -1377,7 +1408,7 @@ export default function Home() {
                 <FormField control={form.control} name={`${type}.incrementDate`} render={({ field }) => (
                   <FormItem className="flex flex-col">
                       <FormLabel>Date of next Increment (Optional)</FormLabel>
-                      <FormDateInput field={field} label="Prorate Date" calendarProps={calendarProps} />
+                      <FormDateInput field={field} label="Prorate Date" calendarProps={calendarProps} onClear={() => handleClearDate(`${type}.incrementDate`)} />
                       <FormMessage />
                   </FormItem>
                 )} />
@@ -1395,7 +1426,7 @@ export default function Home() {
                 </FormItem>
                 )}
             />
-             {currentWatchValues.fixedBasicPayApplicable && (
+             {isFixedBasicApplicable && (
                 <div className="space-y-4 pt-2">
                     <FormField
                         control={form.control}
@@ -1413,14 +1444,14 @@ export default function Home() {
                             control={form.control}
                             name={`${type}.fixedBasicPayFromDate`}
                             render={({ field }) => (
-                                <FormItem><FormDateInput field={field} label="From Date"/></FormItem>
+                                <FormItem><FormDateInput field={field} label="From Date" onClear={() => handleClearDate(`${type}.fixedBasicPayFromDate`)} /></FormItem>
                             )}
                             />
                             <FormField
                             control={form.control}
                             name={`${type}.fixedBasicPayToDate`}
                             render={({ field }) => (
-                                <FormItem><FormDateInput field={field} label="To Date" /></FormItem>
+                                <FormItem><FormDateInput field={field} label="To Date" onClear={() => handleClearDate(`${type}.fixedBasicPayToDate`)} /></FormItem>
                             )}
                             />
                     </div>
@@ -1441,7 +1472,7 @@ export default function Home() {
                   <FormField control={form.control} name="toBePaid.refixedBasicPayDate" render={({ field }) => (
                       <FormItem className="flex flex-col">
                           <FormLabel>Refixation Date</FormLabel>
-                          <FormDateInput field={field} label="Effective Date"/>
+                          <FormDateInput field={field} label="Effective Date" onClear={() => handleClearDate('toBePaid.refixedBasicPayDate')} />
                           <FormMessage />
                       </FormItem>
                   )} />
@@ -1456,14 +1487,14 @@ export default function Home() {
                       <FormLabel className="font-normal">DA (Dearness Allowance)</FormLabel>
                   </FormItem>
                 )} />
-                {currentWatchValues?.daApplicable && <FixedRateFields type={type} name="da" watchValues={currentWatchValues} />}
+                {isDAApplicable && <FixedRateFields type={type} name="da" form={form} />}
               </div>
              
               <div className="space-y-2">
-                <AllowanceField type={type} name="hra" label="HRA (House Rent Allowance)" watchValues={currentWatchValues}/>
+                <AllowanceField type={type} name="hra" label="HRA (House Rent Allowance)" form={form} />
               </div>
 
-              <AllowanceField type={type} name="npa" label="NPA (Non-Practicing Allowance)" watchValues={currentWatchValues}/>
+              <AllowanceField type={type} name="npa" label="NPA (Non-Practicing Allowance)" form={form} />
               
               <div className="space-y-2">
                 <FormField
@@ -1476,7 +1507,7 @@ export default function Home() {
                     </FormItem>
                     )}
                 />
-                {currentWatchValues?.taApplicable && (
+                {isTAApplicable && (
                     <div className="space-y-2 pl-7 pt-2">
                         <FormField
                             control={form.control}
@@ -1493,18 +1524,18 @@ export default function Home() {
                             control={form.control}
                             name={`${type}.taFromDate`}
                             render={({ field }) => (
-                                <FormItem><FormDateInput field={field} label="From Date"/></FormItem>
+                                <FormItem><FormDateInput field={field} label="From Date" onClear={() => handleClearDate(`${type}.taFromDate`)} /></FormItem>
                             )}
                             />
                             <FormField
                             control={form.control}
                             name={`${type}.taToDate`}
                             render={({ field }) => (
-                                <FormItem><FormDateInput field={field} label="To Date" /></FormItem>
+                                <FormItem><FormDateInput field={field} label="To Date" onClear={() => handleClearDate(`${type}.taToDate`)} /></FormItem>
                             )}
                             />
                         </div>
-                        <FixedRateFields type={type} name="ta" isAmount watchValues={currentWatchValues} />
+                        <FixedRateFields type={type} name="ta" isAmount form={form} />
                     </div>
                 )}
               </div>
@@ -1525,25 +1556,25 @@ export default function Home() {
                   <FormMessage />
                 </FormItem>
               )} />
-              {currentWatchValues?.otherAllowance > 0 && (
+              {otherAllowanceAmount > 0 && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
                     <FormField
                       control={form.control}
                       name={`${type}.otherAllowanceFromDate`}
                       render={({ field }) => (
-                        <FormItem><FormDateInput field={field} label="From Date"/></FormItem>
+                        <FormItem><FormDateInput field={field} label="From Date" onClear={() => handleClearDate(`${type}.otherAllowanceFromDate`)} /></FormItem>
                       )}
                     />
                     <FormField
                       control={form.control}
                       name={`${type}.otherAllowanceToDate`}
                       render={({ field }) => (
-                        <FormItem><FormDateInput field={field} label="To Date" /></FormItem>
+                        <FormItem><FormDateInput field={field} label="To Date" onClear={() => handleClearDate(`${type}.otherAllowanceToDate`)} /></FormItem>
                       )}
                     />
                 </div>
               )}
-               <FixedRateFields type={type} name="otherAllowance" isAmount watchValues={currentWatchValues} />
+               <FixedRateFields type={type} name="otherAllowance" isAmount form={form} />
           </div>
         </div>
       );
@@ -1690,8 +1721,8 @@ export default function Home() {
                   <CardHeader><CardTitle className="flex items-center gap-2"><CalendarDays /> Calculation Period & Pay Details</CardTitle></CardHeader>
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <FormField control={form.control} name="fromDate" render={({ field }) => ( <FormItem className="flex flex-col"><FormLabel>From Date</FormLabel><FormDateInput field={field}/><FormMessage /></FormItem> )} />
-                       <FormField control={form.control} name="toDate" render={({ field }) => ( <FormItem className="flex flex-col"><FormLabel>To Date</FormLabel><FormDateInput field={field}/><FormMessage /></FormItem> )} />
+                      <FormField control={form.control} name="fromDate" render={({ field }) => ( <FormItem className="flex flex-col"><FormLabel>From Date</FormLabel><FormDateInput field={field} onClear={() => handleClearDate('fromDate')} /><FormMessage /></FormItem> )} />
+                       <FormField control={form.control} name="toDate" render={({ field }) => ( <FormItem className="flex flex-col"><FormLabel>To Date</FormLabel><FormDateInput field={field} onClear={() => handleClearDate('toDate')} /><FormMessage /></FormItem> )} />
                     </div>
                     <FormField control={form.control} name="payFixationRef" render={({ field }) => (<FormItem><FormLabel>Pay Fixation Reference</FormLabel><FormControl><Input placeholder="Reference No." {...field} /></FormControl></FormItem>)} />
                   </CardContent>
@@ -1830,3 +1861,4 @@ export default function Home() {
 }
 
     
+
