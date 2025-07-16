@@ -4,50 +4,19 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     function isAdmin() {
-      return request.auth.token.email == 'amulivealigarh@gmail.com';
-    }
-
-    function isOwner(userId) {
-      return request.auth.uid == userId;
+      return request.auth != null && request.auth.token.email == 'amulivealigarh@gmail.com';
     }
 
     match /users/{userId} {
-      // Admin can list all users.
-      allow list: if isAdmin();
-      
-      // An owner can get their own document. An admin can get any document.
-      allow get: if isOwner(userId) || isAdmin();
-
-      // An owner can update their own document. An admin can update any document.
-      allow update: if isOwner(userId) || isAdmin();
-      
-      // Any authenticated user can create their own user document.
-      allow create: if request.auth != null && request.auth.uid == userId;
-
-      // Only an admin can delete a user document.
-      allow delete: if isAdmin();
+      allow read, write: if isAdmin() || (request.auth != null && request.auth.uid == userId);
     }
 
     match /savedStatements/{statementId} {
-      // Let's assume the document has a `userId` field
-      function isStatementOwner() {
-        return request.auth.uid == resource.data.userId;
-      }
-      
-      // Admin can list all statements. A user can only list their own.
-      allow list: if isAdmin() || (request.auth != null && request.query.where.field == 'userId' && request.query.where.value == request.auth.uid);
-
-      // An owner can get their own statement. An admin can get any statement.
-      allow get: if isStatementOwner() || isAdmin();
-
-      // An owner can create/update/delete their own statement. Admin can do the same for any.
-      allow write: if (request.auth.uid == request.resource.data.userId) || isAdmin();
+      allow read, write: if isAdmin() || (request.auth != null && request.auth.uid == resource.data.userId);
     }
 
     match /configurations/{docId} {
-      // Any authenticated user can read configurations
       allow read: if request.auth != null;
-      // Only admin can write configurations
       allow write: if isAdmin();
     }
   }

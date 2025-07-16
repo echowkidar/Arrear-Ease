@@ -72,6 +72,7 @@ const ProtectedUsersPage = () => {
     const [isLoading, setIsLoading] = React.useState(true);
     const [editingUser, setEditingUser] = React.useState<AppUser | null>(null);
     const { toast } = useToast();
+    const { user } = useAuth();
 
     const form = useForm<EditUserFormValues>({
         resolver: zodResolver(editUserSchema),
@@ -91,8 +92,11 @@ const ProtectedUsersPage = () => {
     }, [toast]);
 
     React.useEffect(() => {
-        fetchUsers();
-    }, [fetchUsers]);
+        // Only fetch users if the logged-in user is the admin
+        if (user?.email === "amulivealigarh@gmail.com") {
+          fetchUsers();
+        }
+    }, [fetchUsers, user]);
 
     const handleEdit = (user: AppUser) => {
         setEditingUser(user);
@@ -247,10 +251,13 @@ export default function UsersPage() {
     const router = useRouter();
 
     React.useEffect(() => {
-        if (!loading && (authStatus !== 'authenticated' || user?.email !== "amulivealigarh@gmail.com")) {
+        if (authStatus === 'unauthenticated') {
             router.push('/');
         }
-    }, [authStatus, loading, router, user]);
+        if (authStatus === 'authenticated' && user?.email !== "amulivealigarh@gmail.com") {
+            router.push('/');
+        }
+    }, [authStatus, user, router]);
 
     if (loading || authStatus !== 'authenticated' || user?.email !== "amulivealigarh@gmail.com") {
         return (
