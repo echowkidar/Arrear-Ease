@@ -650,7 +650,11 @@ export default function Home() {
             };
             
             let { newTrackerValue: newDrawnTracker, basicForMonth: drawnBasicForMonth } = handleIncrement('paid', drawnBasicTracker);
-            let { newTrackerValue: newDueTracker, basicForMonth: dueBasicForMonth } = handleIncrement('toBePaid', dueBasicForMonth);
+            
+            let dueBasicForMonth: number;
+            let newDueTracker: number;
+
+            ({ newTrackerValue: newDueTracker, basicForMonth: dueBasicForMonth } = handleIncrement('toBePaid', dueBasicTracker));
             
             if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPay > 0 && data.toBePaid.refixedBasicPayDate) {
                 const refixDate = data.toBePaid.refixedBasicPayDate;
@@ -1777,3 +1781,5 @@ export default function Home() {
     </div>
   );
 }
+
+    
