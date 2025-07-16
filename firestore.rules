@@ -1,26 +1,35 @@
-
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{userId} {
-      // Admin can read and list all users.
-      allow read, list: if request.auth != null && request.auth.token.email == "amulivealigarh@gmail.com";
-      
-      // A user can create their own document, and can read/update it.
-      // They can only read/update their own document, not others (unless they are admin).
-      allow create, read, update: if request.auth != null && request.auth.uid == userId;
+
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == 'amulivealigarh@gmail.com';
     }
 
-    match /savedStatements/{statementId} {
-      allow read, list, create, update, delete: if request.auth != null && (request.auth.token.email == "amulivealigarh@gmail.com" || request.auth.uid == resource.data.userId);
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
     }
-    
+
+    // Admin-only access for rate configurations
     match /configurations/{docId} {
-      // Anyone authenticated can read
       allow read: if request.auth != null;
-      // Only admin can write
-      allow write: if request.auth != null && request.auth.token.email == "amulivealigarh@gmail.com";
+      allow write: if isAdmin();
+    }
+
+    // Rules for user profiles
+    match /users/{userId} {
+      allow read, update: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId);
+      allow list: if isAdmin();
+    }
+
+    // Rules for saved arrear statements
+    match /savedStatements/{statementId} {
+      // Admin can do anything
+      allow read, write, delete: if isAdmin();
+      
+      // Users can manage their own statements
+      allow create, read, update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
     }
   }
 }
