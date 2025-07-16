@@ -3,28 +3,24 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper function to check for admin role
+  
     function isAdmin() {
-      return request.auth.token.email == 'amulivealigarh@gmail.com';
+      return request.auth != null && request.auth.token.email == 'amulivealigarh@gmail.com';
     }
 
-    // Rules for user profiles
     match /users/{userId} {
-      allow read, update: if isAdmin() || request.auth.uid == userId;
-      allow create: if request.auth.uid == userId;
-      allow list, delete: if isAdmin();
+      allow get: if request.auth.uid == userId || isAdmin();
+      allow list: if isAdmin();
+      allow create, update: if request.auth.uid == userId;
+      allow delete: if isAdmin();
     }
-
-    // Rules for saved arrear statements
+    
     match /savedStatements/{statementId} {
-      // For reads (get, list) and updates, check the existing document's userId
-      allow get, list, update, delete: if isAdmin() || (request.auth.uid != null && request.auth.uid == resource.data.userId);
-
-      // For creating a new document, check the incoming document's userId
-      allow create: if isAdmin() || (request.auth.uid != null && request.auth.uid == request.resource.data.userId);
+      allow get, delete: if request.auth != null && (isAdmin() || request.auth.uid == resource.data.userId);
+      allow list: if request.auth != null && (isAdmin() || (request.query.where.size == 1 && request.query.where.userId == request.auth.uid));
+      allow write: if request.auth != null && (isAdmin() || request.auth.uid == request.resource.data.userId);
     }
 
-    // Rules for rate configurations - Publicly readable, admin writable
     match /configurations/{docId} {
       allow read: if true;
       allow write: if isAdmin();
