@@ -493,32 +493,60 @@ export default function Home() {
      return cpcData[cpc].payLevels.map(pl => ({ value: pl.level, label: cpc === '6th' ? `GP ${pl.gradePay} (${pl.payBand})` : `Level ${pl.level}`}));
   };
   
-  const getRateForDate = (rates: Rate[], date: Date, basicPay?: number, payLevel?: string): Rate | null => {
+  const getRateForDate = (
+    rates: Rate[], 
+    date: Date,
+    options: { basicPay?: number, payLevel?: string, daRate?: number } = {}
+  ): Rate | null => {
+    const { basicPay, payLevel, daRate } = options;
+
     const applicableRate = rates.find(r => {
-      const from = new Date(r.fromDate);
-      const to = new Date(r.toDate);
-      let isDateMatch = date >= from && date <= to;
+      let isMatch = true;
       
-      let isBasicMatch = true;
-      if (basicPay !== undefined) {
-        if (r.basicFrom !== undefined && r.basicTo !== undefined && r.basicFrom > 0 && r.basicTo > 0) {
-          isBasicMatch = basicPay >= r.basicFrom && basicPay <= r.basicTo;
-        }
+      // Date-based matching (for DA, NPA, TA, etc.)
+      if (r.fromDate && r.toDate) {
+         const from = new Date(r.fromDate);
+         const to = new Date(r.toDate);
+         if (!(date >= from && date <= to)) {
+           isMatch = false;
+         }
+      }
+      
+      // HRA DA Rate based matching
+      if (daRate !== undefined && r.daRateFrom !== undefined && r.daRateTo !== undefined) {
+         if (!(daRate >= r.daRateFrom && daRate <= r.daRateTo)) {
+            isMatch = false;
+         }
       }
 
-      let isPayLevelMatch = true;
+      if (!isMatch) return false;
+
+      // Basic Pay based matching (for HRA, TA)
+      if (basicPay !== undefined) {
+        if (r.basicFrom !== undefined && r.basicTo !== undefined && r.basicFrom > 0 && r.basicTo > 0) {
+          if (!(basicPay >= r.basicFrom && basicPay <= r.basicTo)) {
+            isMatch = false;
+          }
+        }
+      }
+      
+      if (!isMatch) return false;
+
+      // Pay Level based matching (for TA)
       if (payLevel !== undefined && r.payLevelFrom !== undefined && r.payLevelTo !== undefined && r.payLevelFrom !== '' && r.payLevelTo !== '') {
           const numericPayLevel = parseInt(payLevel, 10);
           const numericFrom = parseInt(r.payLevelFrom as string, 10);
           const numericTo = parseInt(r.payLevelTo as string, 10);
           if(!isNaN(numericPayLevel) && !isNaN(numericFrom) && !isNaN(numericTo)) {
-            isPayLevelMatch = numericPayLevel >= numericFrom && numericPayLevel <= numericTo;
+            if (!(numericPayLevel >= numericFrom && numericPayLevel <= numericTo)) {
+              isMatch = false;
+            }
           } else {
-            isPayLevelMatch = false;
+            isMatch = false;
           }
       }
 
-      return isDateMatch && isBasicMatch && isPayLevelMatch;
+      return isMatch;
     });
     return applicableRate || null;
   }
@@ -703,7 +731,9 @@ export default function Home() {
                       break;
                   }
                   case 'hra': {
-                      const rateDetails = getRateForDate(hraRates, currentDate, trackerBasic);
+                      const daRateDetails = getRateForDate(daRates, currentDate);
+                      const currentDaRate = daRateDetails ? daRateDetails.rate : 0;
+                      const rateDetails = getRateForDate(hraRates, currentDate, { daRate: currentDaRate });
                       if (!rateDetails) return 0;
                       const rate = rateDetails.rate;
                       amount = basic * (rate / 100);
@@ -719,7 +749,7 @@ export default function Home() {
                       break;
                   }
                   case 'ta': {
-                    const rateDetails = getRateForDate(taRates, currentDate, trackerBasic, payLevel);
+                    const rateDetails = getRateForDate(taRates, currentDate, { basicPay: trackerBasic, payLevel });
                     if (!rateDetails) return 0;
                     const taBaseAmount = rateDetails.rate;
                     let daRateForTa = 0;

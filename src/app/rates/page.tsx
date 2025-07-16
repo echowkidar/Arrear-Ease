@@ -91,7 +91,29 @@ const DateInput = ({ value, onChange }: { value: Date | undefined; onChange: (da
     );
 };
 
-const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevelRange, withMinAmount, initialRates, setGlobalRates }: { title: string, description?: string, withBasicRange?: boolean, isAmount?: boolean, withPayLevelRange?: boolean, withMinAmount?: boolean, initialRates: Rate[], setGlobalRates: React.Dispatch<React.SetStateAction<Rate[]>> }) => {
+const RateTable = ({ 
+    title, 
+    description, 
+    withBasicRange, 
+    withDateRange = true,
+    withDaRateRange,
+    isAmount, 
+    withPayLevelRange, 
+    withMinAmount, 
+    initialRates, 
+    setGlobalRates 
+}: { 
+    title: string, 
+    description?: string, 
+    withBasicRange?: boolean, 
+    withDateRange?: boolean,
+    withDaRateRange?: boolean,
+    isAmount?: boolean, 
+    withPayLevelRange?: boolean, 
+    withMinAmount?: boolean, 
+    initialRates: Rate[], 
+    setGlobalRates: React.Dispatch<React.SetStateAction<Rate[]>> 
+}) => {
     const { toast } = useToast();
     const [localRates, setLocalRates] = React.useState<Rate[]>(initialRates);
 
@@ -108,6 +130,8 @@ const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevelR
                 rate: parseFloat(r.rate as any),
                 basicFrom: r.basicFrom ? parseFloat(r.basicFrom as any) : '',
                 basicTo: r.basicTo ? parseFloat(r.basicTo as any) : '',
+                daRateFrom: r.daRateFrom ? parseFloat(r.daRateFrom as any) : '',
+                daRateTo: r.daRateTo ? parseFloat(r.daRateTo as any) : '',
                 payLevelFrom: r.payLevelFrom ?? '',
                 payLevelTo: r.payLevelTo ?? '',
                 minAmount: r.minAmount ? parseFloat(r.minAmount as any) : '',
@@ -129,7 +153,19 @@ const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevelR
     };
     
     const append = () => {
-        const newRate: Rate = { id: crypto.randomUUID(), fromDate: new Date(), toDate: new Date(), rate: '', basicFrom: '', basicTo: '', payLevelFrom: '', payLevelTo: '', minAmount: '' };
+        const newRate: Rate = { 
+            id: crypto.randomUUID(), 
+            fromDate: new Date(), 
+            toDate: new Date(), 
+            rate: '', 
+            basicFrom: '', 
+            basicTo: '', 
+            daRateFrom: '',
+            daRateTo: '',
+            payLevelFrom: '', 
+            payLevelTo: '', 
+            minAmount: '' 
+        };
         setLocalRates(prev => [...prev, newRate]);
     }
 
@@ -151,7 +187,7 @@ const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevelR
         updateRate(id, field, e.target.value);
     };
 
-    const handleBlur = (id: string, field: 'rate' | 'basicFrom' | 'basicTo' | 'minAmount') => {
+    const handleBlur = (id: string, field: 'rate' | 'basicFrom' | 'basicTo' | 'daRateFrom' | 'daRateTo' | 'minAmount') => {
         const rate = localRates.find(r => r.id === id);
         if (rate && typeof rate[field] === 'string') {
             const numericValue = parseFloat(rate[field] as string);
@@ -195,8 +231,8 @@ const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevelR
                     <Table>
                         <TableHeader>
                             <TableRow>
-                                <TableHead>From Date</TableHead>
-                                <TableHead>To Date</TableHead>
+                                {withDateRange && <><TableHead>From Date</TableHead><TableHead>To Date</TableHead></>}
+                                {withDaRateRange && <><TableHead>DA Rate From (%)</TableHead><TableHead>DA Rate To (%)</TableHead></>}
                                 {withBasicRange && <><TableHead>Basic From</TableHead><TableHead>Basic To</TableHead></>}
                                 {withPayLevelRange && <><TableHead>From Pay Level</TableHead><TableHead>To Pay Level</TableHead></>}
                                 <TableHead>{isAmount ? 'Amount' : 'Rate (%)'}</TableHead>
@@ -207,18 +243,24 @@ const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevelR
                         <TableBody>
                             {localRates.map((field) => (
                                 <TableRow key={field.id}>
-                                    <TableCell className="min-w-[160px]">
-                                        <DateInput 
-                                          value={field.fromDate} 
-                                          onChange={(date) => handleDateChange(field.id, 'fromDate', date)}
-                                        />
-                                    </TableCell>
-                                    <TableCell className="min-w-[160px]">
-                                       <DateInput 
-                                          value={field.toDate} 
-                                          onChange={(date) => handleDateChange(field.id, 'toDate', date)}
-                                        />
-                                    </TableCell>
+                                    {withDateRange && <>
+                                      <TableCell className="min-w-[160px]">
+                                          <DateInput 
+                                            value={field.fromDate} 
+                                            onChange={(date) => handleDateChange(field.id, 'fromDate', date)}
+                                          />
+                                      </TableCell>
+                                      <TableCell className="min-w-[160px]">
+                                         <DateInput 
+                                            value={field.toDate} 
+                                            onChange={(date) => handleDateChange(field.id, 'toDate', date)}
+                                          />
+                                      </TableCell>
+                                    </>}
+                                    {withDaRateRange && <>
+                                      <TableCell className="min-w-[120px]"><Input type="number" value={field.daRateFrom ?? ''} onChange={e => handleInputChange(field.id, 'daRateFrom', e)} onBlur={() => handleBlur(field.id, 'daRateFrom')}/></TableCell>
+                                      <TableCell className="min-w-[120px]"><Input type="number" value={field.daRateTo ?? ''} onChange={e => handleInputChange(field.id, 'daRateTo', e)} onBlur={() => handleBlur(field.id, 'daRateTo')}/></TableCell>
+                                    </>}
                                     {withBasicRange && <>
                                         <TableCell className="min-w-[120px]"><Input type="number" value={field.basicFrom ?? ''} onChange={e => handleInputChange(field.id, 'basicFrom', e)} onBlur={() => handleBlur(field.id, 'basicFrom')}/></TableCell>
                                         <TableCell className="min-w-[120px]"><Input type="number" value={field.basicTo ?? ''} onChange={e => handleInputChange(field.id, 'basicTo', e)} onBlur={() => handleBlur(field.id, 'basicTo')}/></TableCell>
@@ -244,7 +286,7 @@ const RateTable = ({ title, description, withBasicRange, isAmount, withPayLevelR
                             ))}
                             {localRates.length === 0 && (
                                 <TableRow>
-                                    <TableCell colSpan={withBasicRange ? (withPayLevelRange ? (withMinAmount ? 8 : 7) : (withMinAmount ? 6: 5)) : (withPayLevelRange ? (withMinAmount ? 7 : 6) : (withMinAmount ? 5 : 4))} className="text-center text-muted-foreground py-4">
+                                    <TableCell colSpan={8} className="text-center text-muted-foreground py-4">
                                         No rates defined. Click 'Add Row' to start.
                                     </TableCell>
                                 </TableRow>
@@ -292,7 +334,15 @@ const ProtectedRatesPage = () => {
             
             <div className="space-y-8">
                 <RateTable title="DA Rate Master" initialRates={daRates} setGlobalRates={setDaRates} />
-                <RateTable title="HRA Rate Master" withBasicRange withMinAmount initialRates={hraRates} setGlobalRates={setHraRates} />
+                <RateTable 
+                  title="HRA Rate Master" 
+                  description="HRA rates are determined by the applicable DA rate."
+                  withDateRange={false}
+                  withDaRateRange
+                  withMinAmount 
+                  initialRates={hraRates} 
+                  setGlobalRates={setHraRates} 
+                />
                 <RateTable title="NPA Rate Master" initialRates={npaRates} setGlobalRates={setNpaRates} />
                 <RateTable title="TA Master" description="Define fixed transport allowance amounts." withBasicRange withPayLevelRange isAmount initialRates={taRates} setGlobalRates={setTaRates} />
             </div>

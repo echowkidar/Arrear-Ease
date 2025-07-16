@@ -10,11 +10,13 @@ import isEqual from 'lodash.isequal';
 
 const rateSchema = z.object({
   id: z.string(),
-  fromDate: z.date(),
-  toDate: z.date(),
+  fromDate: z.date().optional(),
+  toDate: z.date().optional(),
   rate: z.any(), // Allow string for typing
   basicFrom: z.any().optional(),
   basicTo: z.any().optional(),
+  daRateFrom: z.any().optional(),
+  daRateTo: z.any().optional(),
   payLevelFrom: z.any().optional(),
   payLevelTo: z.any().optional(),
   minAmount: z.any().optional(),
@@ -47,11 +49,16 @@ const LOCALSTORAGE_RATES_KEY = "arrearEase_rates";
 
 const parseTimestamps = (rates: any[]): Rate[] => {
     if (!Array.isArray(rates)) return [];
-    return rates.map(rate => ({
-        ...rate,
-        fromDate: rate.fromDate?.toDate ? rate.fromDate.toDate() : new Date(rate.fromDate),
-        toDate: rate.toDate?.toDate ? rate.toDate.toDate() : new Date(rate.toDate)
-    }));
+    return rates.map(rate => {
+        const newRate = {...rate};
+        if (rate.fromDate) {
+           newRate.fromDate = rate.fromDate?.toDate ? rate.fromDate.toDate() : new Date(rate.fromDate);
+        }
+        if (rate.toDate) {
+            newRate.toDate = rate.toDate?.toDate ? rate.toDate.toDate() : new Date(rate.toDate);
+        }
+        return newRate;
+    });
 }
 
 const parseAllRateTypes = (data: any): AllRates => ({
