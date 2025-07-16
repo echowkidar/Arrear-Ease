@@ -650,7 +650,7 @@ export default function Home() {
             };
             
             let { newTrackerValue: newDrawnTracker, basicForMonth: drawnBasicForMonth } = handleIncrement('paid', drawnBasicTracker);
-            let { newTrackerValue: newDueTracker, basicForMonth: dueBasicForMonth } = handleIncrement('toBePaid', dueBasicTracker);
+            let { newTrackerValue: newDueTracker, basicForMonth: dueBasicForMonth } = handleIncrement('toBePaid', dueBasicForMonth);
             
             if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPay > 0 && data.toBePaid.refixedBasicPayDate) {
                 const refixDate = data.toBePaid.refixedBasicPayDate;
@@ -715,14 +715,27 @@ export default function Home() {
                       break;
                   }
                   case 'ta': {
-                      const rateDetails = getRateForDate(taRates, currentDate, trackerBasic, payLevel);
-                      if (!rateDetails) return 0;
-                      const taBaseAmount = rateDetails.rate;
-                      const daRateDetails = getRateForDate(daRates, currentDate);
-                      const daRateForTa = daRateDetails ? daRateDetails.rate / 100 : 0;
-                      amount = taBaseAmount + (taBaseAmount * daRateForTa);
-                      if (sideData.doubleTaApplicable) amount *= 2;
-                      break;
+                    const rateDetails = getRateForDate(taRates, currentDate, trackerBasic, payLevel);
+                    if (!rateDetails) return 0;
+                    const taBaseAmount = rateDetails.rate;
+                    let daRateForTa = 0;
+
+                    // Check for fixed DA rate override first
+                    if (sideData.daFixedRateApplicable && sideData.daFixedRate && sideData.daFixedRateFromDate && sideData.daFixedRateToDate) {
+                        if (isWithinInterval(currentDate, { start: sideData.daFixedRateFromDate, end: sideData.daFixedRateToDate })) {
+                            daRateForTa = sideData.daFixedRate / 100;
+                        }
+                    }
+
+                    // If no fixed rate is applicable for this date, use the standard rate
+                    if (daRateForTa === 0) {
+                        const daRateDetails = getRateForDate(daRates, currentDate);
+                        daRateForTa = daRateDetails ? daRateDetails.rate / 100 : 0;
+                    }
+
+                    amount = taBaseAmount + (taBaseAmount * daRateForTa);
+                    if (sideData.doubleTaApplicable) amount *= 2;
+                    break;
                   }
                   case 'otherAllowance':
                       amount = otherAllowanceAmount;
