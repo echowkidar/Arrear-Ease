@@ -376,9 +376,8 @@ const AllowanceField = React.memo(({ type, name, label, form }: { type: 'paid' |
 AllowanceField.displayName = 'AllowanceField';
 
 const payLevelIndexMap = new Map<string, number>();
-[...cpcData["6th"].payLevels, ...cpcData["7th"].payLevels].forEach((level, index) => {
-    payLevelIndexMap.set(level.level, index);
-});
+cpcData["6th"].payLevels.forEach((level, index) => payLevelIndexMap.set(level.level, index));
+cpcData["7th"].payLevels.forEach((level, index) => payLevelIndexMap.set(level.level, index + cpcData["6th"].payLevels.length));
 
 
 export default function Home() {
@@ -694,19 +693,20 @@ export default function Home() {
       
       if (!isMatch) return false;
 
-        if (payLevel !== undefined && r.payLevelFrom !== undefined && r.payLevelTo !== undefined && r.payLevelFrom !== '' && r.payLevelTo !== '') {
-            const fromIndex = payLevelIndexMap.get(String(r.payLevelFrom));
-            const toIndex = payLevelIndexMap.get(String(r.payLevelTo));
-            const currentIndex = payLevelIndexMap.get(String(payLevel));
+      if (payLevel !== undefined && r.payLevelFrom !== undefined && r.payLevelTo !== undefined && r.payLevelFrom !== '' && r.payLevelTo !== '') {
+        const fromIndex = payLevelIndexMap.get(String(r.payLevelFrom));
+        const toIndex = payLevelIndexMap.get(String(r.payLevelTo));
+        const currentIndex = payLevelIndexMap.get(String(payLevel));
 
-            if (fromIndex !== undefined && toIndex !== undefined && currentIndex !== undefined) {
-                if (!(currentIndex >= fromIndex && currentIndex <= toIndex)) {
-                    isMatch = false;
-                }
-            } else {
-                isMatch = false; // Could not find one of the levels in the map
+        if (fromIndex !== undefined && toIndex !== undefined && currentIndex !== undefined) {
+            if (!(currentIndex >= fromIndex && currentIndex <= toIndex)) {
+                isMatch = false;
             }
+        } else {
+            isMatch = false; // Could not find one of the levels in the map
         }
+      }
+
 
       return isMatch;
     });
@@ -716,6 +716,10 @@ export default function Home() {
   }
   
   const handlePrint = () => {
+    if (authStatus !== 'authenticated') {
+      openAuthModal();
+      return;
+    }
     window.print();
   };
   
@@ -965,6 +969,11 @@ export default function Home() {
 
 
   const onSubmit = (data: ArrearFormData): Omit<SavedStatement, 'id' | 'savedAt' | 'isLocal' | 'employeeInfo'> | null => {
+    if (authStatus !== 'authenticated') {
+      openAuthModal();
+      return null;
+    }
+    
     try {
         const rows: StatementRow[] = [];
         const totals: StatementTotals = { drawn: { total: 0 }, due: { total: 0 }, difference: 0 };
@@ -1815,5 +1824,3 @@ export default function Home() {
     </div>
   );
 }
-
-    
