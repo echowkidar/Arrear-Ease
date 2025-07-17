@@ -28,9 +28,10 @@ import {
   LogOut,
   Users,
   X,
+  History,
 } from "lucide-react";
 import { db, isFirebaseConfigured } from "@/lib/firebase";
-import { collection, addDoc, getDocs, doc, deleteDoc, Timestamp, writeBatch, setDoc, updateDoc, query, where } from "firebase/firestore";
+import { collection, addDoc, getDocs, doc, deleteDoc, Timestamp, writeBatch, setDoc, updateDoc, query, where, serverTimestamp } from "firebase/firestore";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -193,10 +194,13 @@ type SavedStatement = {
   id: string; 
   isLocal?: boolean;
   savedAt: string; 
+  lastAccessedAt?: string;
   rows: StatementRow[];
   totals: StatementTotals;
   employeeInfo: EmployeeInfo;
   userId?: string;
+  userName?: string;
+  userEmail?: string;
 };
 
 const INCREMENT_MONTHS = [
@@ -438,12 +442,12 @@ export default function Home() {
         localOnly.forEach(stmt => {
           const { isLocal, ...serverStmt } = stmt; 
           const docRef = doc(db, FIRESTORE_STATEMENTS_COLLECTION, stmt.id);
-          batch.set(docRef, sanitizeForFirebase({ ...serverStmt, userId: user.uid }));
+          batch.set(docRef, sanitizeForFirebase({ ...serverStmt, userId: user.uid, userName: user.displayName, userEmail: user.email }));
           syncedIds.add(stmt.id);
         });
         await batch.commit();
         
-        const updatedLocalStatements = localStatements.map(s => syncedIds.has(s.id) ? { ...s, isLocal: false, userId: user.uid } : s);
+        const updatedLocalStatements = localStatements.map(s => syncedIds.has(s.id) ? { ...s, isLocal: false, userId: user.uid, userName: user.displayName, userEmail: user.email } : s);
         saveLocalStatements(updatedLocalStatements);
 
         toast({
@@ -520,23 +524,26 @@ export default function Home() {
                 const processedData = processFirestoreDataRecursive(data);
                 const { employeeInfo, ...restOfData } = processedData;
 
-                let savedAtISO = '';
-                if (processedData.savedAt instanceof Date) {
-                    savedAtISO = processedData.savedAt.toISOString();
-                } else if (typeof processedData.savedAt === 'string') {
-                    savedAtISO = processedData.savedAt;
-                } else if (processedData.savedAt && typeof processedData.savedAt.seconds === 'number') {
-                    savedAtISO = new Timestamp(processedData.savedAt.seconds, processedData.savedAt.nanoseconds).toDate().toISOString();
+                const toISOStringSafe = (dateValue: any) => {
+                  if (dateValue instanceof Date) return dateValue.toISOString();
+                  if (typeof dateValue === 'string') return dateValue;
+                  if (dateValue && typeof dateValue.seconds === 'number') {
+                    return new Timestamp(dateValue.seconds, dateValue.nanoseconds).toDate().toISOString();
+                  }
+                  return '';
                 }
 
                 serverStatements.push({
                     id: docSnap.id,
-                    savedAt: savedAtISO,
+                    savedAt: toISOStringSafe(processedData.savedAt),
+                    lastAccessedAt: toISOStringSafe(processedData.lastAccessedAt),
                     rows: restOfData.rows,
                     totals: restOfData.totals,
                     employeeInfo: employeeInfo,
                     isLocal: false,
                     userId: data.userId,
+                    userName: data.userName,
+                    userEmail: data.userEmail
                 });
             });
             allStatements = serverStatements;
@@ -566,7 +573,19 @@ export default function Home() {
         }
     }
     
-    setSavedStatements(allStatements.sort((a,b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()));
+    allStatements.sort((a, b) => {
+      const aAccessed = a.lastAccessedAt ? new Date(a.lastAccessedAt).getTime() : 0;
+      const bAccessed = b.lastAccessedAt ? new Date(b.lastAccessedAt).getTime() : 0;
+      const aSaved = a.savedAt ? new Date(a.savedAt).getTime() : 0;
+      const bSaved = b.savedAt ? new Date(b.savedAt).getTime() : 0;
+  
+      if (bAccessed !== aAccessed) {
+        return bAccessed - aAccessed;
+      }
+      return bSaved - aSaved;
+    });
+
+    setSavedStatements(allStatements);
     setIsLoading(false);
   };
 
@@ -1026,13 +1045,16 @@ export default function Home() {
     setIsLoading(true);
 
     const docId = crypto.randomUUID();
+    const now = new Date().toISOString();
     const docToSave: SavedStatement = {
         ...statement,
         id: docId,
-        savedAt: new Date().toISOString(),
+        savedAt: now,
+        lastAccessedAt: now,
         userId: user.uid,
+        userName: user.displayName || undefined,
+        userEmail: user.email || undefined,
     };
-    
     
     const localStatements = getLocalStatements();
     saveLocalStatements([...localStatements, { ...docToSave, isLocal: true }]);
@@ -1041,7 +1063,6 @@ export default function Home() {
     if (isOnline && dbConfigured && db) {
         try {
             await setDoc(doc(db, FIRESTORE_STATEMENTS_COLLECTION, docId), sanitizeForFirebase(docToSave));
-            
             
             const updatedLocalStatements = getLocalStatements().map(s => s.id === docId ? { ...s, isLocal: false } : s);
             saveLocalStatements(updatedLocalStatements);
@@ -1076,7 +1097,6 @@ export default function Home() {
 
     const currentFormData = form.getValues();
     
-    
     const newCalculation = onSubmit(currentFormData);
     
     if (!newCalculation) {
@@ -1087,18 +1107,17 @@ export default function Home() {
     const docToUpdate: Omit<SavedStatement, 'isLocal' | 'employeeInfo'> & { employeeInfo: ArrearFormData } = {
         id: loadedStatementId,
         savedAt: new Date().toISOString(),
+        lastAccessedAt: new Date().toISOString(),
         rows: newCalculation.rows,
         totals: newCalculation.totals,
         employeeInfo: currentFormData,
     };
 
-    
     setStatement({ rows: newCalculation.rows, totals: newCalculation.totals, employeeInfo: currentFormData });
 
-    
     const localStatements = getLocalStatements();
     const updatedLocalStatements = localStatements.map(s => 
-        s.id === loadedStatementId ? { ...docToUpdate, userId: user?.uid, isLocal: s.isLocal ?? true } : s
+        s.id === loadedStatementId ? { ...docToUpdate, userId: user?.uid, userName: user?.displayName, userEmail: user?.email, isLocal: s.isLocal ?? true } : s
     );
     saveLocalStatements(updatedLocalStatements);
     setSavedStatements(updatedLocalStatements.sort((a,b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()));
@@ -1169,7 +1188,7 @@ export default function Home() {
     document.getElementById("employee-details-card")?.scrollIntoView({ behavior: 'smooth' });
   }
 
-  const loadStatement = (statementToLoad: SavedStatement) => {
+  const loadStatement = async (statementToLoad: SavedStatement) => {
     const { employeeInfo, ...restOfStatement } = statementToLoad;
     
     const fullyProcessedInfo = processFirestoreDataRecursive(employeeInfo);
@@ -1197,6 +1216,17 @@ export default function Home() {
         employeeInfo: fullyProcessedInfo,
     });
     setLoadedStatementId(statementToLoad.id);
+
+    if (isOnline && dbConfigured && db) {
+      try {
+        const docRef = doc(db, FIRESTORE_STATEMENTS_COLLECTION, statementToLoad.id);
+        await updateDoc(docRef, { lastAccessedAt: serverTimestamp() });
+        const localStmts = getLocalStatements().map(s => s.id === statementToLoad.id ? {...s, lastAccessedAt: new Date().toISOString() } : s);
+        saveLocalStatements(localStmts);
+      } catch (error) {
+        console.error("Failed to update last accessed time:", error);
+      }
+    }
 
     setLoadDialogOpen(false);
     toast({
@@ -1493,6 +1523,15 @@ export default function Home() {
       );
     }
 
+  const formatDisplayDate = (dateString?: string) => {
+    if (!dateString) return 'N/A';
+    try {
+      return format(new Date(dateString), "PPP p");
+    } catch {
+      return 'Invalid Date';
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <main className="container mx-auto px-4 py-8 md:py-12">
@@ -1562,7 +1601,7 @@ export default function Home() {
                         <FolderOpen className="mr-2 h-4 w-4" /> Load Saved Arrears
                     </Button>
                 </DialogTrigger>
-                <DialogContent className="sm:max-w-[800px]">
+                <DialogContent className="sm:max-w-4xl">
                     <DialogHeader>
                         <DialogTitle>Load Saved Arrear Statement</DialogTitle>
                         <DialogDescription>Select a previously saved statement to view or print it again.</DialogDescription>
@@ -1575,7 +1614,9 @@ export default function Home() {
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead>Employee</TableHead>
+                                        {isAdmin && <TableHead className="hidden md:table-cell">User</TableHead>}
                                         <TableHead className="hidden sm:table-cell">Saved On</TableHead>
+                                        <TableHead className="hidden lg:table-cell">Last Accessed</TableHead>
                                         <TableHead className="text-right">Actions</TableHead>
                                     </TableRow>
                                 </TableHeader>
@@ -1586,7 +1627,9 @@ export default function Home() {
                                                 {s.isLocal && <TooltipProvider><Tooltip><TooltipTrigger asChild><span className="inline-block mr-2"><CloudUpload className="h-4 w-4 text-muted-foreground"/></span></TooltipTrigger><TooltipContent><p>Saved locally. Will sync when online.</p></TooltipContent></Tooltip></TooltipProvider>}
                                                 {s.employeeInfo.employeeName} <span className="text-muted-foreground">({s.employeeInfo.employeeId})</span>
                                             </TableCell>
-                                            <TableCell className="hidden sm:table-cell">{s.savedAt ? format(new Date(s.savedAt), "PPP p") : 'N/A'}</TableCell>
+                                            {isAdmin && <TableCell className="hidden md:table-cell text-xs">{s.userName || 'N/A'}<br/><span className="text-muted-foreground">{s.userEmail}</span></TableCell>}
+                                            <TableCell className="hidden sm:table-cell">{formatDisplayDate(s.savedAt)}</TableCell>
+                                            <TableCell className="hidden lg:table-cell">{formatDisplayDate(s.lastAccessedAt)}</TableCell>
                                             <TableCell className="text-right">
                                                 <Button size="sm" onClick={() => loadStatement(s)} className="mr-2" disabled={isLoading}>Load</Button>
                                                 <Button size="sm" variant="destructive" onClick={() => deleteStatement(s.id, s.isLocal)} disabled={isLoading}><Trash2 className="h-4 w-4"/></Button>
