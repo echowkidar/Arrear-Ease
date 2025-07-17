@@ -16,14 +16,11 @@ services:
     container_name: arrear-ease
     restart: unless-stopped
     networks:
-      - npm_network # Connect to the Nginx Proxy Manager network
-    # You can pass runtime environment variables here if needed
-    # environment:
-    #   - SOME_VARIABLE=some_value
+      - npm_network 
 
 networks:
   npm_network:
     external: true
-    # IMPORTANT: Replace 'npm_default' with the actual name of the network 
-    # used by your nginx-proxy-manager container. You can find this in Portainer.
-    name: npm_default
+    # IMPORTANT: This name MUST match the network used by your reverse proxy container.
+    # From your screenshot, the correct name is 'npm-network'.
+    name: npm-network
