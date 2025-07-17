@@ -1601,6 +1601,76 @@ export default function Home() {
     }
   };
 
+  const numberToWords = (num: number): string => {
+    if (num === 0) return "Zero";
+  
+    const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
+    const teens = ['Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+    const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+    const thousands = ['', 'Thousand', 'Lakh', 'Crore'];
+  
+    const toWords = (n: number): string => {
+      let word = '';
+      if (n >= 100) {
+        word += ones[Math.floor(n / 100)] + ' Hundred ';
+        n %= 100;
+      }
+      if (n >= 10 && n < 20) {
+        word += teens[n - 10] + ' ';
+      } else {
+        if (n >= 20) {
+          word += tens[Math.floor(n / 10)] + ' ';
+          n %= 10;
+        }
+        if (n > 0) {
+          word += ones[n] + ' ';
+        }
+      }
+      return word;
+    };
+  
+    let n = Math.floor(num);
+    let words = '';
+    let i = 0;
+  
+    if (n === 0) return 'Zero';
+  
+    while (n > 0) {
+      let base = (i === 1) ? 1000 : 100; // For thousand
+      if (i > 1) base = 100; // For lakh, crore
+  
+      let chunk;
+      if (i === 0) { // Ones and tens
+          chunk = n % 1000;
+      } else { // Thousands, Lakhs, Crores
+          chunk = n % 100;
+      }
+      
+      if (chunk !== 0) {
+        if (i===0) { // For the first chunk (up to 999)
+          words = toWords(chunk) + thousands[i] + ' ' + words;
+        } else if (i === 1) { // For thousands
+           words = toWords(n % 1000) + thousands[i] + ' ' + words;
+           n = Math.floor(n / 1000);
+           i++;
+           continue;
+        } else { // for Lakhs and crores
+            words = toWords(n % 100) + thousands[i] + ' ' + words;
+        }
+      }
+      
+      if (i === 0) {
+          n = Math.floor(n / 1000);
+      } else {
+          n = Math.floor(n / 100);
+      }
+      i++;
+    }
+    
+    return words.trim() + " Only";
+  };
+
+
   return (
     <div className="min-h-screen bg-background">
       <main className="container mx-auto px-4 py-8 md:py-12">
@@ -1776,121 +1846,126 @@ export default function Home() {
         
         {statement && (
           <div id="statement-section" className="mt-12">
-            <Card className="printable-area" id="printable-statement-card">
-              <CardHeader className="flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                <div>
-                   <CardTitle className="font-headline text-3xl">Arrear Statement</CardTitle>
-                   <CardDescription>
-                     For: {statement.employeeInfo.employeeName} ({statement.employeeInfo.employeeId}) <br />
-                     {statement.employeeInfo.designation}, {statement.employeeInfo.department} <br/>
-                     {statement.employeeInfo.payFixationRef && `Ref: ${statement.employeeInfo.payFixationRef}`} <br/>
-                      {statement.employeeInfo.fromDate && statement.employeeInfo.toDate &&
-                       `Period: ${format(new Date(statement.employeeInfo.fromDate), "dd/MM/yyyy")} to ${format(new Date(statement.employeeInfo.toDate), "dd/MM/yyyy")}`
-                      }
-                   </CardDescription>
-                </div>
-                <div className="flex flex-wrap gap-2 no-print">
-                   <Button onClick={handleSaveOrUpdate} variant="outline" disabled={isLoading}>
-                      {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (loadedStatementId ? <Edit className="mr-2 h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />)}
-                      {loadedStatementId ? "Update Arrear" : "Save Arrear"}
-                   </Button>
-                   {loadedStatementId && (
-                     <Button onClick={handleCopy} variant="outline" disabled={isLoading || authStatus !== 'authenticated'}>
-                        <Copy className="mr-2 h-4 w-4" /> Copy Arrear
+            <div className="printable-area page">
+              <Card id="printable-statement-card">
+                <CardHeader className="flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                  <div>
+                     <CardTitle className="font-headline text-3xl">Arrear Statement</CardTitle>
+                     <CardDescription>
+                       For: {statement.employeeInfo.employeeName} ({statement.employeeInfo.employeeId}) <br />
+                       {statement.employeeInfo.designation}, {statement.employeeInfo.department} <br/>
+                       {statement.employeeInfo.payFixationRef && `Ref: ${statement.employeeInfo.payFixationRef}`} <br/>
+                        {statement.employeeInfo.fromDate && statement.employeeInfo.toDate &&
+                         `Period: ${format(new Date(statement.employeeInfo.fromDate), "dd/MM/yyyy")} to ${format(new Date(statement.employeeInfo.toDate), "dd/MM/yyyy")}`
+                        }
+                     </CardDescription>
+                  </div>
+                  <div className="flex flex-wrap gap-2 no-print">
+                     <Button onClick={handleSaveOrUpdate} variant="outline" disabled={isLoading}>
+                        {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (loadedStatementId ? <Edit className="mr-2 h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />)}
+                        {loadedStatementId ? "Update Arrear" : "Save Arrear"}
                      </Button>
-                   )}
-                   <Button onClick={handlePrint} variant="outline">
-                     <Download className="mr-2 h-4 w-4" /> Download PDF
-                   </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <Table className="min-w-full">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead rowSpan={2} className="text-center align-middle border-r">Month</TableHead>
-                        <TableHead colSpan={7} className="text-center border-r">Amount Drawn</TableHead>
-                        <TableHead colSpan={7} className="text-center border-r">Amount Due</TableHead>
-                        <TableHead rowSpan={2} className="text-center align-middle">Difference</TableHead>
-                      </TableRow>
-                      <TableRow>
-                        <TableHead className="text-right">Basic</TableHead>
-                        <TableHead className="text-right">DA</TableHead>
-                        <TableHead className="text-right">HRA</TableHead>
-                        <TableHead className="text-right">NPA</TableHead>
-                        <TableHead className="text-right">TA</TableHead>
-                        <TableHead className="text-right">Other</TableHead>
-                        <TableHead className="text-right font-bold border-r">Total</TableHead>
-                        <TableHead className="text-right">Basic</TableHead>
-                        <TableHead className="text-right">DA</TableHead>
-                        <TableHead className="text-right">HRA</TableHead>
-                        <TableHead className="text-right">NPA</TableHead>
-                        <TableHead className="text-right">TA</TableHead>
-                        <TableHead className="text-right">Other</TableHead>
-                        <TableHead className="text-right font-bold border-r">Total</TableHead>
+                     {loadedStatementId && (
+                       <Button onClick={handleCopy} variant="outline" disabled={isLoading || authStatus !== 'authenticated'}>
+                          <Copy className="mr-2 h-4 w-4" /> Copy Arrear
+                       </Button>
+                     )}
+                     <Button onClick={handlePrint} variant="outline">
+                       <Download className="mr-2 h-4 w-4" /> Download PDF
+                     </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <Table className="min-w-full">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead rowSpan={2} className="text-center align-middle border-r month-col">Month</TableHead>
+                          <TableHead colSpan={7} className="text-center border-r">Amount Drawn</TableHead>
+                          <TableHead colSpan={7} className="text-center border-r">Amount Due</TableHead>
+                          <TableHead rowSpan={2} className="text-center align-middle">Difference</TableHead>
                         </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {statement.rows.map(row => (
-                        <TableRow key={row.month}>
-                          <TableCell className="font-medium border-r">{row.month}</TableCell>
-                          <TableCell className="text-right">{row.drawn.basic.toLocaleString()}</TableCell>
-                          <TableCell className="text-right">{row.drawn.da.toLocaleString()}</TableCell>
-                          <TableCell className="text-right">{row.drawn.hra.toLocaleString()}</TableCell>
-                          <TableCell className="text-right">{row.drawn.npa.toLocaleString()}</TableCell>
-                          <TableCell className="text-right">{row.drawn.ta.toLocaleString()}</TableCell>
-                          <TableCell className="text-right">{row.drawn.other.toLocaleString()}</TableCell>
-                          <TableCell className="text-right font-semibold border-r">{row.drawn.total.toLocaleString()}</TableCell>
-                          <TableCell className="text-right">{row.due.basic.toLocaleString()}</TableCell>
-                          <TableCell className="text-right">{row.due.da.toLocaleString()}</TableCell>
-                          <TableCell className="text-right">{row.due.hra.toLocaleString()}</TableCell>
-                          <TableCell className="text-right">{row.due.npa.toLocaleString()}</TableCell>
-                          <TableCell className="text-right">{row.due.ta.toLocaleString()}</TableCell>
-                          <TableCell className="text-right">{row.due.other.toLocaleString()}</TableCell>
-                          <TableCell className="text-right font-semibold border-r">{row.due.total.toLocaleString()}</TableCell>
-                          <TableCell className="text-right font-bold">{row.difference.toLocaleString()}</TableCell>
+                        <TableRow>
+                          <TableHead className="text-right">Basic</TableHead>
+                          <TableHead className="text-right">DA</TableHead>
+                          <TableHead className="text-right">HRA</TableHead>
+                          <TableHead className="text-right">NPA</TableHead>
+                          <TableHead className="text-right">TA</TableHead>
+                          <TableHead className="text-right">Other</TableHead>
+                          <TableHead className="text-right font-bold border-r">Total</TableHead>
+                          <TableHead className="text-right">Basic</TableHead>
+                          <TableHead className="text-right">DA</TableHead>
+                          <TableHead className="text-right">HRA</TableHead>
+                          <TableHead className="text-right">NPA</TableHead>
+                          <TableHead className="text-right">TA</TableHead>
+                          <TableHead className="text-right">Other</TableHead>
+                          <TableHead className="text-right font-bold border-r">Total</TableHead>
+                          </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {statement.rows.map(row => (
+                          <TableRow key={row.month}>
+                            <TableCell className="font-medium border-r month-col">{row.month}</TableCell>
+                            <TableCell className="text-right">{row.drawn.basic}</TableCell>
+                            <TableCell className="text-right">{row.drawn.da}</TableCell>
+                            <TableCell className="text-right">{row.drawn.hra}</TableCell>
+                            <TableCell className="text-right">{row.drawn.npa}</TableCell>
+                            <TableCell className="text-right">{row.drawn.ta}</TableCell>
+                            <TableCell className="text-right">{row.drawn.other}</TableCell>
+                            <TableCell className="text-right font-semibold border-r">{row.drawn.total}</TableCell>
+                            <TableCell className="text-right">{row.due.basic}</TableCell>
+                            <TableCell className="text-right">{row.due.da}</TableCell>
+                            <TableCell className="text-right">{row.due.hra}</TableCell>
+                            <TableCell className="text-right">{row.due.npa}</TableCell>
+                            <TableCell className="text-right">{row.due.ta}</TableCell>
+                            <TableCell className="text-right">{row.due.other}</TableCell>
+                            <TableCell className="text-right font-semibold border-r">{row.due.total}</TableCell>
+                            <TableCell className="text-right font-bold">{row.difference}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                      <UiTableFooter>
+                        <TableRow className="bg-muted/50 font-bold">
+                          <TableCell className="border-r">Total</TableCell>
+                          <TableCell colSpan={6}></TableCell>
+                          <TableCell className="text-right border-r">{statement.totals.drawn.total}</TableCell>
+                          <TableCell colSpan={6}></TableCell>
+                          <TableCell className="text-right border-r">{statement.totals.due.total}</TableCell>
+                          <TableCell className="text-right">{statement.totals.difference}</TableCell>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                    <UiTableFooter>
-                      <TableRow className="bg-muted/50 font-bold">
-                        <TableCell className="border-r">Total</TableCell>
-                        <TableCell colSpan={6}></TableCell>
-                        <TableCell className="text-right border-r">{statement.totals.drawn.total.toLocaleString()}</TableCell>
-                        <TableCell colSpan={6}></TableCell>
-                        <TableCell className="text-right border-r">{statement.totals.due.total.toLocaleString()}</TableCell>
-                        <TableCell className="text-right">{statement.totals.difference.toLocaleString()}</TableCell>
-                      </TableRow>
-                    </UiTableFooter>
-                  </Table>
-                </div>
-                 <Alert className="mt-6 print-disclaimer">
-                  <Info className="h-4 w-4" />
-                  <AlertTitle>Disclaimer</AlertTitle>
-                  <AlertDescription>
-                    This is an automatically generated statement. All calculations are based on the data provided. Please verify against official CPC rules and rounding-off norms. The final arrear amount is rounded to the nearest rupee.
-                  </AlertDescription>
-                </Alert>
-                <div className="pt-12 text-sm">
-                  <div className="flex justify-between items-end">
-                    <span>Date: {format(new Date(), "dd/MM/yyyy")}</span>
-                    <div className="grid grid-cols-3 gap-12 text-center w-full max-w-2xl mx-auto">
-                        <div className="pt-8 border-t border-dashed border-foreground">Dealing Assistant</div>
-                        <div className="pt-8 border-t border-dashed border-foreground">Section Officer</div>
-                        <div className="pt-8 border-t border-dashed border-foreground">Assistant Finance Officer (Salary)</div>
+                      </UiTableFooter>
+                    </Table>
+                  </div>
+                  <Alert className="mt-6 print-disclaimer">
+                    <Info className="h-4 w-4" />
+                    <AlertTitle>Disclaimer</AlertTitle>
+                    <AlertDescription>
+                      This is an automatically generated statement. All calculations are based on the data provided. Please verify against official CPC rules and rounding-off norms. The final arrear amount is rounded to the nearest rupee.
+                    </AlertDescription>
+                  </Alert>
+                  <div className="pt-12 text-sm">
+                    {statement.totals.difference > 0 &&
+                      <div className="mb-8">
+                          Passed for pay of rupees {numberToWords(statement.totals.difference)}.
+                          <div className="mt-2 border-t border-dotted border-foreground"></div>
+                      </div>
+                    }
+                    <div className="flex justify-between items-end">
+                      <span>Date: {format(new Date(), "dd/MM/yyyy")}</span>
+                      <div className="grid grid-cols-3 gap-12 text-center w-full max-w-2xl mx-auto">
+                          <div className="pt-8">Dealing Assistant</div>
+                          <div className="pt-8">Section Officer</div>
+                          <div className="pt-8">Assistant Finance Officer (Salary)</div>
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="page-number-container no-print">
-                  <div className="page-number"></div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+              <div className="page-footer"></div>
+            </div>
           </div>
         )}
       </main>
     </div>
   );
 }
-
