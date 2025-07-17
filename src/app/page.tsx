@@ -1935,8 +1935,7 @@ export default function Home() {
                         </TableRow>
                       </UiTableFooter>
                     </Table>
-                  </div>
-                  
+                  </div>                  
                   <div className="pt-12 text-sm">
                     {statement.totals.difference > 0 &&
                       <div className="mb-8">
