@@ -128,17 +128,19 @@ const RateTable = ({
     const isModified = !isEqual(initialRates, localRates);
 
     const handleSaveChanges = () => {
-        const validRates = localRates.filter(r => r.rate !== '' && !isNaN(parseFloat(r.rate as any)))
+        const isValidNumeric = (val: any) => val !== null && val !== '' && !isNaN(parseFloat(val));
+
+        const validRates = localRates.filter(r => isValidNumeric(r.rate))
             .map(r => ({
                 ...r,
                 rate: parseFloat(r.rate as any),
-                basicFrom: r.basicFrom ? parseFloat(r.basicFrom as any) : '',
-                basicTo: r.basicTo ? parseFloat(r.basicTo as any) : '',
-                daRateFrom: r.daRateFrom ? parseFloat(r.daRateFrom as any) : '',
-                daRateTo: r.daRateTo ? parseFloat(r.daRateTo as any) : '',
+                basicFrom: isValidNumeric(r.basicFrom) ? parseFloat(r.basicFrom as any) : '',
+                basicTo: isValidNumeric(r.basicTo) ? parseFloat(r.basicTo as any) : '',
+                daRateFrom: isValidNumeric(r.daRateFrom) ? parseFloat(r.daRateFrom as any) : '',
+                daRateTo: isValidNumeric(r.daRateTo) ? parseFloat(r.daRateTo as any) : '',
                 payLevelFrom: r.payLevelFrom ?? '',
                 payLevelTo: r.payLevelTo ?? '',
-                minAmount: r.minAmount ? parseFloat(r.minAmount as any) : '',
+                minAmount: isValidNumeric(r.minAmount) ? parseFloat(r.minAmount as any) : '',
             }));
         
         if (validRates.length < localRates.length) {
@@ -386,5 +388,7 @@ export default function RatesPage() {
     
     return <ProtectedRatesPage />;
 }
+
+    
 
     
