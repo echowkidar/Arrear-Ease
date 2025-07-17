@@ -665,55 +665,65 @@ export default function Home() {
     const { basicPay, payLevel, daRate } = options;
 
     const applicableRates = rates.filter(r => {
-      let isMatch = true;
-      
-      if (r.fromDate && date < new Date(r.fromDate)) {
-        isMatch = false;
-      }
+        let isMatch = true;
 
-      if (r.toDate && date > new Date(r.toDate)) {
-        isMatch = false;
-      }
-      
-      if (daRate !== undefined && r.daRateFrom !== undefined && r.daRateTo !== undefined) {
-         if (!(daRate >= r.daRateFrom && daRate <= r.daRateTo)) {
+        if (r.fromDate && date < new Date(r.fromDate)) {
             isMatch = false;
-         }
-      }
-
-      if (!isMatch) return false;
-
-      if (basicPay !== undefined) {
-        if (r.basicFrom !== undefined && r.basicTo !== undefined && r.basicFrom > 0 && r.basicTo > 0) {
-          if (!(basicPay >= r.basicFrom && basicPay <= r.basicTo)) {
-            isMatch = false;
-          }
         }
-      }
-      
-      if (!isMatch) return false;
 
-      if (payLevel !== undefined && r.payLevelFrom !== undefined && r.payLevelTo !== undefined && r.payLevelFrom !== '' && r.payLevelTo !== '') {
-        const fromIndex = payLevelIndexMap.get(String(r.payLevelFrom));
-        const toIndex = payLevelIndexMap.get(String(r.payLevelTo));
-        const currentIndex = payLevelIndexMap.get(String(payLevel));
+        if (r.toDate && date > new Date(r.toDate)) {
+            isMatch = false;
+        }
 
-        if (fromIndex !== undefined && toIndex !== undefined && currentIndex !== undefined) {
-            if (!(currentIndex >= fromIndex && currentIndex <= toIndex)) {
+        if (daRate !== undefined && r.daRateFrom !== undefined && r.daRateTo !== undefined) {
+            if (!(daRate >= r.daRateFrom && daRate <= r.daRateTo)) {
                 isMatch = false;
             }
-        } else {
-            isMatch = false; // Could not find one of the levels in the map
         }
-      }
 
+        if (!isMatch) return false;
 
-      return isMatch;
+        if (basicPay !== undefined) {
+            if (r.basicFrom !== undefined && r.basicTo !== undefined && r.basicFrom > 0 && r.basicTo > 0) {
+                if (!(basicPay >= r.basicFrom && basicPay <= r.basicTo)) {
+                    isMatch = false;
+                }
+            }
+        }
+
+        if (!isMatch) return false;
+
+        if (payLevel !== undefined && r.payLevelFrom !== undefined && r.payLevelTo !== undefined && r.payLevelFrom !== '' && r.payLevelTo !== '') {
+            const fromIndex = payLevelIndexMap.get(String(r.payLevelFrom));
+            const toIndex = payLevelIndexMap.get(String(r.payLevelTo));
+            const currentIndex = payLevelIndexMap.get(String(payLevel));
+
+            if (fromIndex !== undefined && toIndex !== undefined && currentIndex !== undefined) {
+                if (!(currentIndex >= fromIndex && currentIndex <= toIndex)) {
+                    isMatch = false;
+                }
+            } else {
+                isMatch = false; // Could not find one of the levels in the map
+            }
+        }
+
+        return isMatch;
     });
 
     if (applicableRates.length === 0) return null;
-    return applicableRates.sort((a, b) => (new Date(b.fromDate!) as any) - (new Date(a.fromDate!) as any))[0];
-  }
+    applicableRates.sort((a, b) => (new Date(b.fromDate!) as any) - (new Date(a.fromDate!) as any));
+    
+    // Additional sort for HRA rates based on DA rate range to pick the most specific one
+    if (daRate !== undefined) {
+        applicableRates.sort((a, b) => {
+            const aDaFrom = a.daRateFrom ?? -Infinity;
+            const bDaFrom = b.daRateFrom ?? -Infinity;
+            return bDaFrom - aDaFrom;
+        });
+    }
+
+    return applicableRates[0];
+}
   
   const handlePrint = () => {
     if (authStatus !== 'authenticated') {
@@ -968,10 +978,10 @@ export default function Home() {
   };
 
 
-  const onSubmit = (data: ArrearFormData): Omit<SavedStatement, 'id' | 'savedAt' | 'isLocal' | 'employeeInfo'> | null => {
+  const onSubmit = (data: ArrearFormData) => {
     if (authStatus !== 'authenticated') {
       openAuthModal();
-      return null;
+      return;
     }
     
     try {
@@ -1021,8 +1031,6 @@ export default function Home() {
             document.getElementById("statement-section")?.scrollIntoView({ behavior: 'smooth' });
         }, 100);
 
-        return { rows, totals };
-
     } catch (error) {
         console.error(error);
         toast({
@@ -1030,14 +1038,11 @@ export default function Home() {
             title: "Calculation Failed",
             description: "An unexpected error occurred. Please check your inputs.",
         });
-        return null;
     }
   };
   
   const handleSaveOrUpdate = async () => {
-    if (!statement) return;
-
-    if (authStatus !== 'authenticated') {
+    if (!statement || authStatus !== 'authenticated') {
       openAuthModal();
       return;
     }
@@ -1101,32 +1106,51 @@ export default function Home() {
   };
   
   const updateStatement = async () => {
-    if (!loadedStatementId) return;
+    if (!loadedStatementId || !user) return;
     setIsLoading(true);
 
     const currentFormData = form.getValues();
     
-    const newCalculation = onSubmit(currentFormData);
-    
-    if (!newCalculation) {
-        setIsLoading(false);
-        return;
-    }
+    // Recalculate statement before saving
+    const rows: StatementRow[] = [];
+    const totals: StatementTotals = { drawn: { total: 0 }, due: { total: 0 }, difference: 0 };
+    const arrearFromDate = currentFormData.fromDate;
+    const arrearToDate = currentFormData.toDate;
+    const firstMonth = startOfMonth(arrearFromDate);
+    const monthCount = differenceInCalendarMonths(arrearToDate, arrearFromDate);
 
-    const docToUpdate: Omit<SavedStatement, 'isLocal' | 'employeeInfo'> & { employeeInfo: ArrearFormData } = {
+    let trackers = { drawnBasic: currentFormData.paid.basicPay, dueBasic: currentFormData.toBePaid.basicPay };
+    for (let i = 0; i <= monthCount; i++) {
+        const currentDate = addMonths(firstMonth, i);
+        if (currentDate < arrearFromDate && !isWithinInterval(arrearFromDate, { start: startOfMonth(currentDate), end: endOfMonth(currentDate) })) continue;
+        if (currentDate > arrearToDate && !isWithinInterval(arrearToDate, { start: startOfMonth(currentDate), end: endOfMonth(currentDate) })) continue;
+        
+        const { row, newTrackers } = calculateMonthlyRow(currentDate, arrearFromDate, arrearToDate, currentFormData, trackers);
+        rows.push(row);
+        trackers = newTrackers;
+    }
+    totals.drawn.total = rows.reduce((acc, row) => acc + row.drawn.total, 0);
+    totals.due.total = rows.reduce((acc, row) => acc + row.due.total, 0);
+    totals.difference = rows.reduce((acc, row) => acc + row.difference, 0);
+
+    const updatedStatement = { rows, totals, employeeInfo: currentFormData };
+    setStatement(updatedStatement);
+
+    const docToUpdate: Omit<SavedStatement, 'isLocal'> = {
         id: loadedStatementId,
         savedAt: new Date().toISOString(),
         lastAccessedAt: new Date().toISOString(),
-        rows: newCalculation.rows,
-        totals: newCalculation.totals,
+        rows: updatedStatement.rows,
+        totals: updatedStatement.totals,
         employeeInfo: currentFormData,
+        userId: user.uid,
+        userName: user.displayName || undefined,
+        userEmail: user.email || undefined,
     };
-
-    setStatement({ rows: newCalculation.rows, totals: newCalculation.totals, employeeInfo: currentFormData });
 
     const localStatements = getLocalStatements();
     const updatedLocalStatements = localStatements.map(s => 
-        s.id === loadedStatementId ? { ...docToUpdate, userId: user?.uid, userName: user?.displayName, userEmail: user?.email, isLocal: s.isLocal ?? true } : s
+        s.id === loadedStatementId ? { ...docToUpdate, isLocal: s.isLocal ?? true } : s
     );
     saveLocalStatements(updatedLocalStatements);
     setSavedStatements(updatedLocalStatements.sort((a,b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()));
@@ -1137,7 +1161,7 @@ export default function Home() {
             await updateDoc(docRef, sanitizeForFirebase(docToUpdate));
             
             const finalLocalStatements = getLocalStatements().map(s => 
-                s.id === loadedStatementId ? { ...docToUpdate, isLocal: false } : s
+                s.id === loadedStatementId ? { ...s, isLocal: false } : s
             );
             saveLocalStatements(finalLocalStatements);
             setSavedStatements(finalLocalStatements.sort((a,b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()));
@@ -1541,6 +1565,14 @@ export default function Home() {
     }
   }
 
+  const handleLoadClick = () => {
+    if (authStatus !== 'authenticated') {
+      openAuthModal();
+    } else {
+      setLoadDialogOpen(true);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <main className="container mx-auto px-4 py-8 md:py-12">
@@ -1598,18 +1630,10 @@ export default function Home() {
         </header>
 
         <div className="flex flex-col sm:flex-row justify-end gap-2 mb-4 no-print">
+            <Button variant="outline" onClick={handleLoadClick}>
+              <FolderOpen className="mr-2 h-4 w-4" /> Load Saved Arrears
+            </Button>
             <Dialog open={isLoadDialogOpen} onOpenChange={setLoadDialogOpen}>
-                <DialogTrigger asChild>
-                    <Button variant="outline" onClick={() => {
-                      if (authStatus !== 'authenticated') {
-                        openAuthModal();
-                      } else {
-                        setLoadDialogOpen(true);
-                      }
-                    }}>
-                        <FolderOpen className="mr-2 h-4 w-4" /> Load Saved Arrears
-                    </Button>
-                </DialogTrigger>
                 <DialogContent className="sm:max-w-4xl">
                     <DialogHeader>
                         <DialogTitle>Load Saved Arrear Statement</DialogTitle>
