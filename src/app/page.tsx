@@ -670,15 +670,24 @@ export default function Home() {
       if (!isMatch) return false;
 
       if (payLevel !== undefined && r.payLevelFrom !== undefined && r.payLevelTo !== undefined && r.payLevelFrom !== '' && r.payLevelTo !== '') {
-          const numericPayLevel = parseInt(payLevel, 10);
-          const numericFrom = parseInt(r.payLevelFrom as string, 10);
-          const numericTo = parseInt(r.payLevelTo as string, 10);
-          if(!isNaN(numericPayLevel) && !isNaN(numericFrom) && !isNaN(numericTo)) {
-            if (!(numericPayLevel >= numericFrom && numericPayLevel <= numericTo)) {
+          const from = r.payLevelFrom;
+          const to = r.payLevelTo;
+          const current = payLevel;
+
+          const fromIsNum = !isNaN(parseInt(from as string, 10));
+          const toIsNum = !isNaN(parseInt(to as string, 10));
+          const currentIsNum = !isNaN(parseInt(current, 10));
+
+          if (fromIsNum && toIsNum && currentIsNum) {
+            // All are numbers, do a range check
+            if (!(parseInt(current, 10) >= parseInt(from as string, 10) && parseInt(current, 10) <= parseInt(to as string, 10))) {
               isMatch = false;
             }
           } else {
-            isMatch = false;
+            // At least one is not a number, do string equality check for the current level against the range.
+            if (current !== from && current !== to) {
+              isMatch = false;
+            }
           }
       }
 
@@ -1765,3 +1774,4 @@ export default function Home() {
     </div>
   );
 }
+
