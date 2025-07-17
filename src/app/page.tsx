@@ -371,6 +371,12 @@ const AllowanceField = React.memo(({ type, name, label, form }: { type: 'paid' |
 });
 AllowanceField.displayName = 'AllowanceField';
 
+const payLevelIndexMap = new Map<string, number>();
+[...cpcData["6th"].payLevels, ...cpcData["7th"].payLevels].forEach((level, index) => {
+    payLevelIndexMap.set(level.level, index);
+});
+
+
 export default function Home() {
   const [statement, setStatement] = React.useState<Omit<SavedStatement, 'id' | 'savedAt' | 'isLocal'> | null>(null);
   const [savedStatements, setSavedStatements] = React.useState<SavedStatement[]>([]);
@@ -669,27 +675,19 @@ export default function Home() {
       
       if (!isMatch) return false;
 
-      if (payLevel !== undefined && r.payLevelFrom !== undefined && r.payLevelTo !== undefined && r.payLevelFrom !== '' && r.payLevelTo !== '') {
-          const from = String(r.payLevelFrom);
-          const to = String(r.payLevelTo);
-          const current = String(payLevel);
+        if (payLevel !== undefined && r.payLevelFrom !== undefined && r.payLevelTo !== undefined && r.payLevelFrom !== '' && r.payLevelTo !== '') {
+            const fromIndex = payLevelIndexMap.get(String(r.payLevelFrom));
+            const toIndex = payLevelIndexMap.get(String(r.payLevelTo));
+            const currentIndex = payLevelIndexMap.get(String(payLevel));
 
-          if (from === current || to === current) {
-              isMatch = true;
-          } else {
-              const fromNum = parseInt(from, 10);
-              const toNum = parseInt(to, 10);
-              const currentNum = parseInt(current, 10);
-
-              if (!isNaN(fromNum) && !isNaN(toNum) && !isNaN(currentNum)) {
-                  if (!(currentNum >= fromNum && currentNum <= toNum)) {
-                      isMatch = false;
-                  }
-              } else {
-                  isMatch = false;
-              }
-          }
-      }
+            if (fromIndex !== undefined && toIndex !== undefined && currentIndex !== undefined) {
+                if (!(currentIndex >= fromIndex && currentIndex <= toIndex)) {
+                    isMatch = false;
+                }
+            } else {
+                isMatch = false; // Could not find one of the levels in the map
+            }
+        }
 
       return isMatch;
     });
@@ -1775,4 +1773,4 @@ export default function Home() {
   );
 }
 
-
+    
