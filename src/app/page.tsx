@@ -276,7 +276,7 @@ const FormDateInput = ({ field, label }: { field: any, label?: string }) => {
 };
 
 
-const FixedRateFields = React.memo(({ type, name, isAmount, form }: { type: 'paid' | 'toBePaid', name: 'da' | 'hra' | 'ta' | 'otherAllowance' | 'npa', isAmount?: boolean, form: any }) => {
+const FixedRateFields = ({ type, name, isAmount, form }: { type: 'paid' | 'toBePaid', name: 'da' | 'hra' | 'ta' | 'otherAllowance' | 'npa', isAmount?: boolean, form: any }) => {
     const isFixedRateApplicable = form.watch(`${type}.${name}FixedRateApplicable`);
     
     React.useEffect(() => {
@@ -336,8 +336,7 @@ const FixedRateFields = React.memo(({ type, name, isAmount, form }: { type: 'pai
             )}
         </div>
     );
-});
-FixedRateFields.displayName = 'FixedRateFields';
+};
 
 
 const AllowanceField = React.memo(({ type, name, label, form }: { type: 'paid' | 'toBePaid', name: 'hra' | 'npa', label: string, form: any }) => {
@@ -1858,3 +1857,5 @@ export default function Home() {
     </div>
   );
 }
+
+    
