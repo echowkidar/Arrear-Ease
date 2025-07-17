@@ -276,7 +276,8 @@ const FormDateInput = ({ field, label }: { field: any, label?: string }) => {
 };
 
 
-const FixedRateFields = ({ type, name, isAmount, form }: { type: 'paid' | 'toBePaid', name: 'da' | 'hra' | 'ta' | 'otherAllowance' | 'npa', isAmount?: boolean, form: any }) => {
+const FixedRateFields = ({ type, name, isAmount }: { type: 'paid' | 'toBePaid', name: 'da' | 'hra' | 'ta' | 'otherAllowance' | 'npa', isAmount?: boolean }) => {
+    const form = useFormContext();
     const isFixedRateApplicable = form.watch(`${type}.${name}FixedRateApplicable`);
     
     React.useEffect(() => {
@@ -339,7 +340,8 @@ const FixedRateFields = ({ type, name, isAmount, form }: { type: 'paid' | 'toBeP
 };
 
 
-const AllowanceField = React.memo(({ type, name, label, form }: { type: 'paid' | 'toBePaid', name: 'hra' | 'npa', label: string, form: any }) => {
+const AllowanceField = ({ type, name, label }: { type: 'paid' | 'toBePaid', name: 'hra' | 'npa', label: string }) => {
+  const form = useFormContext();
   const isApplicable = form.watch(`${type}.${name}Applicable`);
   
   return (
@@ -376,12 +378,12 @@ const AllowanceField = React.memo(({ type, name, label, form }: { type: 'paid' |
                   )}
                 />
             </div>
-             <FixedRateFields type={type} name={name} form={form}/>
+             <FixedRateFields type={type} name={name}/>
         </div>
       )}
     </>
   );
-});
+};
 AllowanceField.displayName = 'AllowanceField';
 
 const payLevelIndexMap = new Map<string, number>();
@@ -1470,15 +1472,15 @@ export default function Home() {
                       <FormLabel className="font-normal">DA (Dearness Allowance)</FormLabel>
                   </FormItem>
                 )} />
-                {isDAApplicable && <FixedRateFields type={type} name="da" form={form} />}
+                {isDAApplicable && <FixedRateFields type={type} name="da"/>}
               </div>
              
               <div className="space-y-2">
-                <AllowanceField type={type} name="hra" label="HRA (House Rent Allowance)" form={form} />
+                <AllowanceField type={type} name="hra" label="HRA (House Rent Allowance)"/>
               </div>
 
               <div className="space-y-2">
-                 <AllowanceField type={type} name="npa" label="NPA (Non-Practicing Allowance)" form={form} />
+                 <AllowanceField type={type} name="npa" label="NPA (Non-Practicing Allowance)"/>
               </div>
               
               <div className="space-y-2">
@@ -1520,7 +1522,7 @@ export default function Home() {
                             )}
                             />
                         </div>
-                        <FixedRateFields type={type} name="ta" isAmount form={form} />
+                        <FixedRateFields type={type} name="ta" isAmount />
                     </div>
                 )}
               </div>
@@ -1559,7 +1561,7 @@ export default function Home() {
                     />
                 </div>
               )}
-               <FixedRateFields type={type} name="otherAllowance" isAmount form={form} />
+               <FixedRateFields type={type} name="otherAllowance" isAmount />
           </div>
         </div>
       );
@@ -1857,5 +1859,3 @@ export default function Home() {
     </div>
   );
 }
-
-    
