@@ -106,9 +106,14 @@
    .printable-area table {
     width: 100%;
     table-layout: fixed;
-    word-wrap: break-word;
+    word-wrap: normal;
   }
   .printable-area th, .printable-area td {
-    padding: 4px 2px;
+    padding: 2px;
+    white-space: nowrap;
+  }
+  .printable-area .print-disclaimer {
+    display: none !important;
   }
 }
+

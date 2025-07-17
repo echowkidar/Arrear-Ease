@@ -1865,13 +1865,23 @@ export default function Home() {
                     </UiTableFooter>
                   </Table>
                 </div>
-                 <Alert className="mt-6">
+                 <Alert className="mt-6 print-disclaimer">
                   <Info className="h-4 w-4" />
                   <AlertTitle>Disclaimer</AlertTitle>
                   <AlertDescription>
                     This is an automatically generated statement. All calculations are based on the data provided. Please verify against official CPC rules and rounding-off norms. The final arrear amount is rounded to the nearest rupee.
                   </AlertDescription>
                 </Alert>
+                <div className="pt-12 text-sm">
+                  <div className="flex justify-between items-end">
+                    <span>Date: {format(new Date(), "dd/MM/yyyy")}</span>
+                    <div className="grid grid-cols-3 gap-12 text-center w-full max-w-2xl mx-auto">
+                        <div className="pt-8 border-t border-dashed border-foreground">Dealing Assistant</div>
+                        <div className="pt-8 border-t border-dashed border-foreground">Section Officer</div>
+                        <div className="pt-8 border-t border-dashed border-foreground">Assistant Finance Officer (Salary)</div>
+                    </div>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </div>
