@@ -384,7 +384,6 @@ const AllowanceField = ({ type, name, label }: { type: 'paid' | 'toBePaid', name
     </>
   );
 };
-AllowanceField.displayName = 'AllowanceField';
 
 const payLevelIndexMap = new Map<string, number>();
 cpcData["6th"].payLevels.forEach((level, index) => payLevelIndexMap.set(level.level, index));
@@ -1321,6 +1320,24 @@ export default function Home() {
     setIsLoading(false);
   }
 
+  const handleClearForm = () => {
+    form.reset({
+      employeeId: "",
+      employeeName: "",
+      designation: "",
+      department: "",
+      fromDate: undefined,
+      toDate: undefined,
+      payFixationRef: "",
+      paid: { cpc: undefined, basicPay: '' as any, payLevel: undefined, incrementMonth: undefined, daApplicable: false, hraApplicable: false, npaApplicable: false, taApplicable: false, doubleTaApplicable: false, otherAllowance: '' as any, otherAllowanceName: "" },
+      toBePaid: { cpc: undefined, basicPay: '' as any, payLevel: undefined, incrementMonth: undefined, daApplicable: false, hraApplicable: false, npaApplicable: false, taApplicable: false, doubleTaApplicable: false, otherAllowance: '' as any, otherAllowanceName: "", refixedBasicPay: '' as any },
+    });
+    setStatement(null);
+    setLoadedStatementId(null);
+    toast({ title: "Form Cleared", description: "All fields have been reset." });
+  };
+
+
   const renderSalaryFields = (type: "paid" | "toBePaid") => {
       const cpc = form.watch(`${type}.cpc`);
       const incrementMonth = form.watch(`${type}.incrementMonth`);
@@ -1641,6 +1658,9 @@ export default function Home() {
         </header>
 
         <div className="flex flex-col sm:flex-row justify-end gap-2 mb-4 no-print">
+            <Button variant="outline" onClick={handleClearForm}>
+              <Trash2 className="mr-2 h-4 w-4" /> Clear Form
+            </Button>
             <Button variant="outline" onClick={handleLoadClick}>
               <FolderOpen className="mr-2 h-4 w-4" /> Load Saved Arrears
             </Button>
@@ -1732,7 +1752,7 @@ export default function Home() {
                 <Card>
                   <CardHeader><CardTitle className="flex items-center gap-2"><FileText /> Salary Components</CardTitle><CardDescription>Define salary structures before and after the revision.</CardDescription></CardHeader>
                   <CardContent>
-                    <Tabs defaultValue="toBePaid" className="w-full">
+                    <Tabs defaultValue="paid" className="w-full">
                       <TabsList className="grid w-full grid-cols-2">
                         <TabsTrigger value="paid">Already Paid</TabsTrigger>
                         <TabsTrigger value="toBePaid">To be Paid</TabsTrigger>
