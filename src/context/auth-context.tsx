@@ -13,7 +13,7 @@ import {
     signInWithEmailAndPassword,
     type AuthError
 } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 
 type AuthStatus = 'authenticated' | 'unauthenticated' | 'loading';
@@ -36,7 +36,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const EMAIL_FOR_SIGN_IN_KEY = 'emailForSignIn';
+// Use a session-level flag to prevent repeated updates
+let sessionLoginUpdated = false;
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [user, setUser] = useState<User | null>(null);
@@ -60,9 +61,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             if (currentUser) {
                 setUser(currentUser);
                 setAuthStatus('authenticated');
+                // Update last login timestamp, but only once per session
+                if (!sessionLoginUpdated && db) {
+                    const userDocRef = doc(db, 'users', currentUser.uid);
+                    try {
+                        await updateDoc(userDocRef, {
+                            lastLogin: serverTimestamp()
+                        });
+                        sessionLoginUpdated = true;
+                    } catch (error) {
+                        console.error("Failed to update last login time:", error);
+                    }
+                }
             } else {
                 setUser(null);
                 setAuthStatus('unauthenticated');
+                sessionLoginUpdated = false; // Reset flag on logout
             }
             setLoading(false);
         });
@@ -107,6 +121,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 displayName: name,
                 phoneNumber: phoneNumber,
                 createdAt: serverTimestamp(),
+                lastLogin: serverTimestamp(),
             });
 
             const updatedUser: User = { ...firebaseUser, email: email, displayName: name };

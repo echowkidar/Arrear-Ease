@@ -18,7 +18,7 @@ import {
 import { format } from "date-fns";
 import { useAuth } from "@/context/auth-context";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, doc, deleteDoc, updateDoc, writeBatch, query, where } from "firebase/firestore";
+import { collection, getDocs, doc, deleteDoc, updateDoc, writeBatch, query, where, Timestamp } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -58,7 +58,8 @@ type AppUser = {
   displayName: string;
   email: string;
   phoneNumber: string;
-  createdAt: { seconds: number, nanoseconds: number } | Date;
+  createdAt: Timestamp | Date;
+  lastLogin?: Timestamp | Date;
 };
 
 const editUserSchema = z.object({
@@ -85,12 +86,26 @@ const ProtectedUsersPage = () => {
             return;
         }
         setIsLoading(true);
-        console.log(`[DEBUG] Attempting to fetch users as: ${user.email} (UID: ${user.uid})`);
         try {
             const usersSnapshot = await getDocs(collection(db, "users"));
             const usersData = usersSnapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() })) as AppUser[];
-            console.log(`[DEBUG] Successfully fetched ${usersData.length} users.`);
-            setUsers(usersData.sort((a,b) => a.displayName.localeCompare(b.displayName)));
+            
+            // Sort by lastLogin descending, with fallback to createdAt for users who have never logged in
+            usersData.sort((a, b) => {
+                const aDate = a.lastLogin instanceof Timestamp ? a.lastLogin.toMillis() : (a.lastLogin ? new Date(a.lastLogin).getTime() : 0);
+                const bDate = b.lastLogin instanceof Timestamp ? b.lastLogin.toMillis() : (b.lastLogin ? new Date(b.lastLogin).getTime() : 0);
+
+                if (aDate !== bDate) {
+                    return bDate - aDate;
+                }
+                
+                // Fallback to createdAt if lastLogin is the same or missing
+                const aCreated = a.createdAt instanceof Timestamp ? a.createdAt.toMillis() : new Date(a.createdAt).getTime();
+                const bCreated = b.createdAt instanceof Timestamp ? b.createdAt.toMillis() : new Date(b.createdAt).getTime();
+                return bCreated - aCreated;
+            });
+
+            setUsers(usersData);
         } catch (error) {
             console.error("[DEBUG] Error fetching users:", error);
             toast({ variant: "destructive", title: "Failed to load users", description: "Check console for details." });
@@ -158,6 +173,12 @@ const ProtectedUsersPage = () => {
         }
         setIsLoading(false);
     };
+    
+    const formatDate = (date: Date | Timestamp | undefined): string => {
+        if (!date) return 'N/A';
+        const d = date instanceof Timestamp ? date.toDate() : new Date(date);
+        return format(d, 'PPP p');
+    }
 
     return (
         <main className="container mx-auto px-4 py-8 md:py-12">
@@ -181,7 +202,7 @@ const ProtectedUsersPage = () => {
             <Card>
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2"><Users /> All Users</CardTitle>
-                    <CardDescription>A list of all users registered in the system.</CardDescription>
+                    <CardDescription>A list of all users registered in the system, sorted by last login.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     {isLoading ? (
@@ -193,8 +214,9 @@ const ProtectedUsersPage = () => {
                                 <TableRow>
                                     <TableHead>Name</TableHead>
                                     <TableHead>Email</TableHead>
-                                    <TableHead>Phone</TableHead>
-                                    <TableHead className="hidden sm:table-cell">Registered On</TableHead>
+                                    <TableHead className="hidden sm:table-cell">Phone</TableHead>
+                                    <TableHead className="hidden sm:table-cell">Registered</TableHead>
+                                    <TableHead>Last Login</TableHead>
                                     <TableHead className="text-right">Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
@@ -213,10 +235,11 @@ const ProtectedUsersPage = () => {
                                             )}
                                         </TableCell>
                                         <TableCell>{user.email}</TableCell>
-                                        <TableCell>{user.phoneNumber}</TableCell>
+                                        <TableCell className="hidden sm:table-cell">{user.phoneNumber || 'N/A'}</TableCell>
                                         <TableCell className="hidden sm:table-cell">
-                                            {user.createdAt instanceof Date ? format(user.createdAt, "PPP") : (user.createdAt ? format(new Date(user.createdAt.seconds * 1000), "PPP") : 'N/A')}
+                                           {formatDate(user.createdAt)}
                                         </TableCell>
+                                        <TableCell>{formatDate(user.lastLogin)}</TableCell>
                                         <TableCell className="text-right">
                                              <Button size="sm" variant="outline" onClick={() => handleEdit(user)} className="mr-2" disabled={isLoading || !!editingUser}>
                                                  <Edit className="h-4 w-4" />
