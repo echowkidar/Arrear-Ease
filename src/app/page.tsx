@@ -233,6 +233,7 @@ const FormDateInput = ({ field, label }: { field: any, label?: string }) => {
     const form = useFormContext();
     const handleClear = (e: React.MouseEvent) => {
       e.stopPropagation();
+      e.preventDefault();
       form.setValue(field.name, undefined, { shouldDirty: true, shouldValidate: true });
     };
 
@@ -635,7 +636,7 @@ export default function Home() {
   const getRateForDate = (
     rates: Rate[], 
     date: Date,
-    options: { basicPay?: number, payLevel?: string, daRate?: number, isFixedDa?: boolean } = {}
+    options: { basicPay?: number, payLevel?: string, daRate?: number } = {}
   ): Rate | null => {
     const { basicPay, payLevel, daRate } = options;
 
@@ -643,11 +644,11 @@ export default function Home() {
       let isMatch = true;
       
       if (r.fromDate && date < new Date(r.fromDate)) {
-        return false;
+        isMatch = false;
       }
 
       if (r.toDate && date > new Date(r.toDate)) {
-        return false;
+        isMatch = false;
       }
       
       if (daRate !== undefined && r.daRateFrom !== undefined && r.daRateTo !== undefined) {
@@ -805,180 +806,129 @@ export default function Home() {
     const daysToCalculateForMonth = differenceInDays(effectiveMonthEnd, effectiveMonthStart) + 1;
     const monthProRataFactor = daysToCalculateForMonth > 0 ? daysToCalculateForMonth / daysInMonth : 0;
 
-    const proratedDrawnBasic = drawnBasicForMonth * monthProRataFactor;
-    const proratedDueBasic = dueBasicForMonth * monthProRataFactor;
-
-    const calculateAllowanceAmount = (
-        allowanceType: 'da' | 'hra' | 'npa' | 'ta' | 'otherAllowance',
-        side: 'paid' | 'toBePaid',
-        basicForCalc: number,
-        payLevel: string,
-        { npaAmountForDA = 0, effectiveDaRate = 0 }: { npaAmountForDA?: number; effectiveDaRate?: number }
-    ) => {
+    const calculateAllowancesForSide = (side: 'paid' | 'toBePaid') => {
         const sideData = data[side];
-        const otherAllowanceAmount = sideData.otherAllowance || 0;
-        let amount = 0;
-        const trackerBasic = side === 'paid' ? newDrawnTracker : newDueTracker;
+        const payLevel = sideData.payLevel;
+        const fullMonthBasic = side === 'paid' ? drawnBasicForMonth : dueBasicForMonth;
+        const proratedBasic = fullMonthBasic * monthProRataFactor;
 
-        switch (allowanceType) {
-            case 'da': {
-                const baseForDA = basicForCalc + npaAmountForDA;
-                amount = baseForDA * (effectiveDaRate / 100);
-                break;
-            }
-            case 'hra': {
-                const rateDetails = getRateForDate(hraRates, currentDate, { daRate: effectiveDaRate });
-                if (!rateDetails) return 0;
-                const rate = rateDetails.rate;
-                amount = basicForCalc * (rate / 100);
-                if (rateDetails.minAmount && rateDetails.minAmount > 0) {
-                    amount = Math.max(amount, rateDetails.minAmount);
+        const getProratedFactorForAllowance = (allowanceFrom?: Date, allowanceTo?: Date): number => {
+            const mStart = startOfMonth(currentDate);
+            const mEnd = endOfMonth(currentDate);
+            const daysInCalcMonth = getDaysInMonth(currentDate);
+
+            const effectiveAllowanceFrom = allowanceFrom ? max([allowanceFrom, arrearFromDate]) : arrearFromDate;
+            const effectiveAllowanceTo = allowanceTo ? min([allowanceTo, arrearToDate]) : arrearToDate;
+
+            const intersectionStart = max([mStart, effectiveAllowanceFrom]);
+            const intersectionEnd = min([mEnd, effectiveAllowanceTo]);
+
+            if (intersectionStart > intersectionEnd) return 0;
+
+            const daysToCalc = differenceInDays(intersectionEnd, intersectionStart) + 1;
+            return daysToCalc > 0 ? daysToCalc / daysInCalcMonth : 0;
+        };
+
+        const getEffectiveDaRate = (): number => {
+            if (sideData.daFixedRateApplicable && sideData.daFixedRate && sideData.daFixedRateFromDate && sideData.daFixedRateToDate) {
+                if (isWithinInterval(currentDate, { start: sideData.daFixedRateFromDate, end: sideData.daFixedRateToDate })) {
+                    return sideData.daFixedRate;
                 }
-                break;
             }
-            case 'npa': {
-                const rateDetails = getRateForDate(npaRates, currentDate);
-                if (!rateDetails) return 0;
-                amount = basicForCalc * (rateDetails.rate / 100);
-                break;
-            }
-            case 'ta': {
-                const daRateDetails = getRateForDate(daRates, currentDate);
-                const taEffectiveDaRate = daRateDetails ? daRateDetails.rate : 0;
+            const daRateDetails = getRateForDate(daRates, currentDate);
+            return daRateDetails ? daRateDetails.rate : 0;
+        };
+        
+        const effectiveDaRate = getEffectiveDaRate();
 
-                const rateDetails = getRateForDate(taRates, currentDate, { basicPay: trackerBasic, payLevel });
-                if (!rateDetails) return 0;
-                const taBaseAmount = rateDetails.rate;
-                amount = taBaseAmount + (taBaseAmount * (taEffectiveDaRate / 100));
-                if (sideData.doubleTaApplicable) amount *= 2;
-                break;
+        // Calculate NPA
+        let npa = 0;
+        if (sideData.npaApplicable) {
+            const prorationFactor = getProratedFactorForAllowance(sideData.npaFromDate, sideData.npaToDate);
+            if (prorationFactor > 0) {
+                const npaRateDetails = getRateForDate(npaRates, currentDate);
+                if (npaRateDetails) {
+                    const fullMonthNpa = fullMonthBasic * (npaRateDetails.rate / 100);
+                    npa = fullMonthNpa * monthProRataFactor;
+                }
             }
-            case 'otherAllowance':
-                amount = otherAllowanceAmount;
-                break;
         }
-        return amount;
+
+        // Calculate DA
+        let da = 0;
+        if (sideData.daApplicable) {
+             const baseForDA = proratedBasic + npa;
+             da = baseForDA * (effectiveDaRate / 100);
+        }
+
+        // Calculate HRA
+        let hra = 0;
+        if (sideData.hraApplicable) {
+            const prorationFactor = getProratedFactorForAllowance(sideData.hraFromDate, sideData.hraToDate);
+            if (prorationFactor > 0) {
+                const hraRateDetails = getRateForDate(hraRates, currentDate, { daRate: effectiveDaRate });
+                if (hraRateDetails) {
+                    let fullMonthHra = fullMonthBasic * (hraRateDetails.rate / 100);
+                    if (hraRateDetails.minAmount && hraRateDetails.minAmount > 0) {
+                        fullMonthHra = Math.max(fullMonthHra, hraRateDetails.minAmount);
+                    }
+                    hra = fullMonthHra * monthProRataFactor;
+                }
+            }
+        }
+
+        // Calculate TA
+        let ta = 0;
+        if (sideData.taApplicable) {
+            const prorationFactor = getProratedFactorForAllowance(sideData.taFromDate, sideData.taToDate);
+            if(prorationFactor > 0) {
+                const taRateDetails = getRateForDate(taRates, currentDate, { basicPay: (side === 'paid' ? newDrawnTracker : newDueTracker), payLevel });
+                if (taRateDetails) {
+                    const taBaseAmount = taRateDetails.rate;
+                    let fullMonthTa = taBaseAmount + (taBaseAmount * (effectiveDaRate / 100));
+                    if (sideData.doubleTaApplicable) fullMonthTa *= 2;
+                    ta = fullMonthTa * monthProRataFactor;
+                }
+            }
+        }
+
+        // Calculate Other Allowance
+        let other = 0;
+        if (sideData.otherAllowance && sideData.otherAllowance > 0) {
+             const prorationFactor = getProratedFactorForAllowance(sideData.otherAllowanceFromDate, sideData.otherAllowanceToDate);
+             if(prorationFactor > 0) {
+                other = sideData.otherAllowance * monthProRataFactor;
+             }
+        }
+
+        return { basic: proratedBasic, da, hra, npa, ta, other };
     };
-    
-    const getProratedAmount = (allowanceType: 'da' | 'hra' | 'npa' | 'ta' | 'otherAllowance', side: 'paid' | 'toBePaid', baseBasicForCalc: number) => {
-      const sideData = data[side];
-      const isApplicable = (sideData as any)[`${allowanceType}Applicable`];
-      const fromDate = (sideData as any)[`${allowanceType}FromDate`];
-      const toDate = (sideData as any)[`${allowanceType}ToDate`];
-      const otherAllowanceAmount = sideData.otherAllowance || 0;
-  
-      const isFixedRate = (sideData as any)[`${allowanceType}FixedRateApplicable`];
-      const fixedRateValue = (sideData as any)[`${allowanceType}FixedRate`];
-      const fixedFrom = (sideData as any)[`${allowanceType}FixedRateFromDate`];
-      const fixedTo = (sideData as any)[`${allowanceType}FixedRateToDate`];
-  
-      if (allowanceType !== 'otherAllowance' && !isApplicable) return 0;
-      if (allowanceType === 'otherAllowance' && otherAllowanceAmount <= 0 && (!isFixedRate || !fixedRateValue)) return 0;
-  
-      const payLevel = side === 'paid' ? data.paid.payLevel : data.toBePaid.payLevel;
-      const fullMonthBasic = side === 'paid' ? drawnBasicForMonth : dueBasicForMonth;
 
-      const getEffectiveDaRate = (): number => {
-          const daSideData = data[side];
+    const drawnComponents = calculateAllowancesForSide('paid');
+    const dueComponents = calculateAllowancesForSide('toBePaid');
 
-          if (daSideData.daFixedRateApplicable && daSideData.daFixedRate && daSideData.daFixedRateFromDate && daSideData.daFixedRateToDate) {
-              if (isWithinInterval(currentDate, { start: daSideData.daFixedRateFromDate, end: daSideData.daFixedRateToDate })) {
-                  return daSideData.daFixedRate;
-              }
-          }
-          const daRateDetails = getRateForDate(daRates, currentDate);
-          return daRateDetails ? daRateDetails.rate : 0;
-      };
-      
-      const effectiveDaRateForAllowance = getEffectiveDaRate();
-
-      let npaAmountForDA = 0;
-      if ((allowanceType === 'da' || allowanceType === 'hra') && data[side].npaApplicable) {
-          npaAmountForDA = getProratedAmount('npa', side, baseBasicForCalc);
-      }
-      
-      const getProratedFactorForAllowance = (
-        calcMonth: Date, 
-        arrearStart: Date, 
-        arrearEnd: Date, 
-        allowanceFrom?: Date, 
-        allowanceTo?: Date
-      ): number => {
-          const mStart = startOfMonth(calcMonth);
-          const mEnd = endOfMonth(calcMonth);
-          const daysInCalcMonth = getDaysInMonth(calcMonth);
-
-          const effectiveAllowanceFrom = allowanceFrom ? max([allowanceFrom, arrearStart]) : arrearStart;
-          const effectiveAllowanceTo = allowanceTo ? min([allowanceTo, arrearEnd]) : arrearEnd;
-
-          const intersectionStart = max([mStart, effectiveAllowanceFrom]);
-          const intersectionEnd = min([mEnd, effectiveAllowanceTo]);
-
-          if (intersectionStart > intersectionEnd) return 0;
-
-          const daysToCalc = differenceInDays(intersectionEnd, intersectionStart) + 1;
-          return daysToCalc > 0 ? daysToCalc / daysInCalcMonth : 0;
-      };
-      
-      if(isFixedRate && fixedRateValue && fixedFrom && fixedTo && isWithinInterval(currentDate, {start: startOfMonth(fixedFrom), end: endOfMonth(fixedTo)})) {
-        return fixedRateValue * monthProRataFactor;
-      }
-      
-      const prorationFactor = getProratedFactorForAllowance(currentDate, arrearFromDate, arrearToDate, fromDate, toDate);
-      if (prorationFactor <= 0) return 0;
-      
-      const fullMonthAmount = calculateAllowanceAmount(allowanceType, side, fullMonthBasic, payLevel, { npaAmountForDA, effectiveDaRate: effectiveDaRateForAllowance });
-      
-      if (allowanceType === 'da') {
-         const baseForDA = baseBasicForCalc + npaAmountForDA;
-         return baseForDA * (effectiveDaRateForAllowance / 100);
-      }
-      
-      if (['hra', 'npa'].includes(allowanceType)) {
-          return calculateAllowanceAmount(allowanceType, side, baseBasicForCalc, payLevel, { effectiveDaRate: effectiveDaRateForAllowance }) * prorationFactor;
-      }
-      
-      return fullMonthAmount * prorationFactor * monthProRataFactor;
-    };
-    
-    const drawnNPA = getProratedAmount('npa', 'paid', proratedDrawnBasic);
-    const dueNPA = getProratedAmount('npa', 'toBePaid', proratedDueBasic);
-
-    const drawnHRA = getProratedAmount('hra', 'paid', proratedDrawnBasic);
-    const dueHRA = getProratedAmount('hra', 'toBePaid', proratedDueBasic);
-
-    const drawnTA = getProratedAmount('ta', 'paid', proratedDrawnBasic);
-    const dueTA = getProratedAmount('ta', 'toBePaid', proratedDueBasic);
-
-    const drawnOther = getProratedAmount('otherAllowance', 'paid', proratedDrawnBasic);
-    const dueOther = getProratedAmount('otherAllowance', 'toBePaid', proratedDueBasic);
-
-    const drawnDA = getProratedAmount('da', 'paid', proratedDrawnBasic);
-    const dueDA = getProratedAmount('da', 'toBePaid', proratedDueBasic);
-
-
-    const drawnTotal = proratedDrawnBasic + drawnDA + drawnHRA + drawnNPA + drawnTA + drawnOther;
-    const dueTotal = proratedDueBasic + dueDA + dueHRA + dueNPA + dueTA + dueOther;
+    const drawnTotal = Object.values(drawnComponents).reduce((sum, val) => sum + val, 0);
+    const dueTotal = Object.values(dueComponents).reduce((sum, val) => sum + val, 0);
     const difference = dueTotal - drawnTotal;
 
     const row: StatementRow = {
         month: format(currentDate, "MMM yyyy"),
         drawn: {
-            basic: Math.round(proratedDrawnBasic),
-            da: Math.round(drawnDA),
-            hra: Math.round(drawnHRA),
-            npa: Math.round(drawnNPA),
-            ta: Math.round(drawnTA),
-            other: Math.round(drawnOther),
+            basic: Math.round(drawnComponents.basic),
+            da: Math.round(drawnComponents.da),
+            hra: Math.round(drawnComponents.hra),
+            npa: Math.round(drawnComponents.npa),
+            ta: Math.round(drawnComponents.ta),
+            other: Math.round(drawnComponents.other),
             total: Math.round(drawnTotal)
         },
         due: {
-            basic: Math.round(proratedDueBasic),
-            da: Math.round(dueDA),
-            hra: Math.round(dueHRA),
-            npa: Math.round(dueNPA),
-            ta: Math.round(dueTA),
-            other: Math.round(dueOther),
+            basic: Math.round(dueComponents.basic),
+            da: Math.round(dueComponents.da),
+            hra: Math.round(dueComponents.hra),
+            npa: Math.round(dueComponents.npa),
+            ta: Math.round(dueComponents.ta),
+            other: Math.round(dueComponents.other),
             total: Math.round(dueTotal)
         },
         difference: Math.round(difference),
@@ -986,6 +936,7 @@ export default function Home() {
     
     return { row, newTrackers: { drawnBasic: newDrawnTracker, dueBasic: newDueTracker } };
   };
+
 
   const onSubmit = (data: ArrearFormData): Omit<SavedStatement, 'id' | 'savedAt' | 'isLocal' | 'employeeInfo'> | null => {
     try {
@@ -1289,10 +1240,6 @@ export default function Home() {
     setIsLoading(false);
   }
 
-  const handleClearDate = React.useCallback((fieldName: any) => {
-      form.setValue(fieldName, undefined, { shouldDirty: true, shouldValidate: true });
-  }, [form]);
-
   const renderSalaryFields = (type: "paid" | "toBePaid") => {
       const cpc = form.watch(`${type}.cpc`);
       const incrementMonth = form.watch(`${type}.incrementMonth`);
@@ -1537,7 +1484,7 @@ export default function Home() {
           </div>
         </div>
       );
-  }
+    }
 
   return (
     <div className="min-h-screen bg-background">
@@ -1818,5 +1765,3 @@ export default function Home() {
     </div>
   );
 }
-
-    
