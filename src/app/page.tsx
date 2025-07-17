@@ -670,24 +670,24 @@ export default function Home() {
       if (!isMatch) return false;
 
       if (payLevel !== undefined && r.payLevelFrom !== undefined && r.payLevelTo !== undefined && r.payLevelFrom !== '' && r.payLevelTo !== '') {
-          const from = r.payLevelFrom;
-          const to = r.payLevelTo;
-          const current = payLevel;
+          const from = String(r.payLevelFrom);
+          const to = String(r.payLevelTo);
+          const current = String(payLevel);
 
-          const fromIsNum = !isNaN(parseInt(from as string, 10));
-          const toIsNum = !isNaN(parseInt(to as string, 10));
-          const currentIsNum = !isNaN(parseInt(current, 10));
-
-          if (fromIsNum && toIsNum && currentIsNum) {
-            // All are numbers, do a range check
-            if (!(parseInt(current, 10) >= parseInt(from as string, 10) && parseInt(current, 10) <= parseInt(to as string, 10))) {
-              isMatch = false;
-            }
+          if (from === current || to === current) {
+              isMatch = true;
           } else {
-            // At least one is not a number, do string equality check for the current level against the range.
-            if (current !== from && current !== to) {
-              isMatch = false;
-            }
+              const fromNum = parseInt(from, 10);
+              const toNum = parseInt(to, 10);
+              const currentNum = parseInt(current, 10);
+
+              if (!isNaN(fromNum) && !isNaN(toNum) && !isNaN(currentNum)) {
+                  if (!(currentNum >= fromNum && currentNum <= toNum)) {
+                      isMatch = false;
+                  }
+              } else {
+                  isMatch = false;
+              }
           }
       }
 
@@ -1774,4 +1774,5 @@ export default function Home() {
     </div>
   );
 }
+
 
