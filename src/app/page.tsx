@@ -1654,6 +1654,7 @@ export default function Home() {
           </div>
           <h1 className="font-headline text-4xl md:text-5xl font-bold text-primary">Arrear Ease</h1>
           <p className="text-muted-foreground mt-2 text-lg">A Simple Tool for Complex Salary Arrear Calculations</p>
+          <p className="text-muted-foreground mt-1">For Central Govt and State Govt employees (6th, 7th & 8th Central Pay Commission)</p>
           <p className="text-muted-foreground mt-1 text-sm">Dedicated to AMU by Zafar Ali Khan</p>
         </header>
 
@@ -1879,3 +1880,4 @@ export default function Home() {
     </div>
   );
 }
+
