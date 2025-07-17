@@ -150,15 +150,18 @@
   
   @media print {
     @page {
-      margin: 0; /* Removes default page margins */
-      border: none; /* Explicitly removes a page border if it exists */
+      margin-top: 1cm; /* Sets a 1cm top margin */
+      margin-left: 0;
+      margin-right: 0;
+      margin-bottom: 0;
+      border: none;
       @bottom-center {
         content: ""; /* Clear default footer */
       }
     }
   
     body {
-      border: none !important; /* Removes any border on the body */
+      border: none !important;
     }
   
     .printable-area > .page:not(:first-child) .page-footer::after {
