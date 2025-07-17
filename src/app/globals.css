@@ -147,13 +147,20 @@
     display: none; /* Hide by default */
   }
 
+  
   @media print {
     @page {
-        @bottom-center {
-          content: ""; /* Clear default footer */
-        }
+      margin: 0; /* Removes default page margins */
+      border: none; /* Explicitly removes a page border if it exists */
+      @bottom-center {
+        content: ""; /* Clear default footer */
+      }
     }
-    
+  
+    body {
+      border: none !important; /* Removes any border on the body */
+    }
+  
     .printable-area > .page:not(:first-child) .page-footer::after {
       display: block;
     }
