@@ -86,6 +86,7 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  useFormField,
 } from "@/components/ui/form";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
@@ -234,11 +235,12 @@ const sanitizeForFirebase = (obj: any): any => {
 };
 
 const FormDateInput = ({ field, label }: { field: any, label?: string }) => {
+    const { name } = useFormField();
     const form = useFormContext();
     const handleClear = (e: React.MouseEvent) => {
       e.stopPropagation();
       e.preventDefault();
-      form.setValue(field.name, undefined, { shouldDirty: true, shouldValidate: true });
+      form.setValue(name, undefined, { shouldDirty: true, shouldValidate: true });
     };
 
     return (
@@ -277,6 +279,14 @@ const FormDateInput = ({ field, label }: { field: any, label?: string }) => {
 const FixedRateFields = React.memo(({ type, name, isAmount, form }: { type: 'paid' | 'toBePaid', name: 'da' | 'hra' | 'ta' | 'otherAllowance' | 'npa', isAmount?: boolean, form: any }) => {
     const isFixedRateApplicable = form.watch(`${type}.${name}FixedRateApplicable`);
     
+    React.useEffect(() => {
+        if (!isFixedRateApplicable) {
+            form.setValue(`${type}.${name}FixedRate`, undefined, { shouldDirty: true });
+            form.setValue(`${type}.${name}FixedRateFromDate`, undefined, { shouldDirty: true });
+            form.setValue(`${type}.${name}FixedRateToDate`, undefined, { shouldDirty: true });
+        }
+    }, [isFixedRateApplicable, form, type, name]);
+
     return (
         <div className="space-y-4 rounded-md border p-4 bg-muted/20 mt-4">
             <FormField
