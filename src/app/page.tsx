@@ -1936,13 +1936,7 @@ export default function Home() {
                       </UiTableFooter>
                     </Table>
                   </div>
-                  <Alert className="mt-6 print-disclaimer">
-                    <Info className="h-4 w-4" />
-                    <AlertTitle>Disclaimer</AlertTitle>
-                    <AlertDescription>
-                      This is an automatically generated statement. All calculations are based on the data provided. Please verify against official CPC rules and rounding-off norms. The final arrear amount is rounded to the nearest rupee.
-                    </AlertDescription>
-                  </Alert>
+                  
                   <div className="pt-12 text-sm">
                     {statement.totals.difference > 0 &&
                       <div className="mb-8">
