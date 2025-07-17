@@ -1882,6 +1882,9 @@ export default function Home() {
                     </div>
                   </div>
                 </div>
+                <div className="page-number-container no-print">
+                  <div className="page-number"></div>
+                </div>
               </CardContent>
             </Card>
           </div>

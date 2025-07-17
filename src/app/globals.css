@@ -73,6 +73,10 @@
     visibility: hidden;
   }
 
+  .printable-area {
+    counter-reset: page;
+  }
+
   .printable-area, .printable-area * {
     visibility: visible;
   }
@@ -115,5 +119,36 @@
   .printable-area .print-disclaimer {
     display: none !important;
   }
-}
 
+  .page-number-container {
+    display: none; /* Hide by default */
+  }
+
+  @page {
+      @bottom-center {
+        content: ""; /* Clear default footer */
+      }
+  }
+
+  .page-number::before {
+      counter-increment: page;
+      content: "Page " counter(page) " of " counters(pages);
+  }
+  
+  /* This is a trick: the container is only made visible on the second page and onwards */
+  /* This will effectively hide it for single-page documents. */
+  .page-break {
+    page-break-before: always;
+  }
+  .page-break .page-number-container {
+      display: block;
+      position: fixed;
+      bottom: -0.5cm;
+      left: 50%;
+      transform: translateX(-50%);
+      text-align: center;
+      width: 100%;
+      font-size: 8pt;
+      color: #666;
+  }
+}
