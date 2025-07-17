@@ -1947,7 +1947,7 @@ export default function Home() {
                     {statement.totals.difference > 0 &&
                       <div className="mb-8">
                           Passed for pay of rupees {numberToWords(statement.totals.difference)}.
-                          <div className="mt-2 border-t border-dotted border-foreground"></div>
+                          
                       </div>
                     }
                     <div className="flex justify-between items-end">
