@@ -21,4 +21,6 @@ USER node
 COPY --from=builder /app ./
 
 EXPOSE 3000
-CMD ["npm", "start"]
+
+# Use a shell to ensure environment variables are properly expanded
+CMD ["sh", "-c", "env && npm start"]
