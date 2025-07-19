@@ -96,8 +96,8 @@
   }
 
   .printable-area .card {
-     border: none;
-     box-shadow: none;
+     border: none !important;
+     box-shadow: none !important;
   }
   
   .printable-area h1, .printable-area h2, .printable-area h3, .printable-area .text-3xl {
@@ -117,12 +117,11 @@
   }
   .printable-area th, .printable-area td {
     padding: 2px 1px;
-    white-space: nowrap;
     border: 0.25px solid black;
   }
   .printable-area .month-col {
     width: 50px !important;
-    white-space: normal; /* Allow month to wrap */
+    white-space: normal !important; /* Allow month to wrap */
   }
   
   .printable-area .print-disclaimer {
