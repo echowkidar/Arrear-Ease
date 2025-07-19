@@ -8,7 +8,7 @@ services:
     container_name: arrear-ease
     restart: unless-stopped
     env_file:
-      - stack.env
+      - .env
     networks:
       - npm_network
     ports:
