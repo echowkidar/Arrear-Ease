@@ -157,10 +157,7 @@
   
   @media print {
     @page {
-      margin-top: 0.25cm; /* Sets a 1cm top margin */
-      margin-left: 0;
-      margin-right: 0;
-      margin-bottom: 0;
+      margin: 0;
       border: none;
       @bottom-center {
         content: ""; /* Clear default footer */
