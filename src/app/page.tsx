@@ -971,9 +971,8 @@ export default function Home() {
         npa: Math.round(drawnUnrounded.npa),
         ta: Math.round(drawnUnrounded.ta),
         other: Math.round(drawnUnrounded.other),
-        total: 0,
     };
-    drawnRounded.total = Object.values(drawnRounded).reduce((sum, val) => sum + val, 0);
+    const drawnTotal = Object.values(drawnRounded).reduce((sum, val) => sum + val, 0);
 
     const dueRounded = {
         basic: Math.round(dueUnrounded.basic),
@@ -982,16 +981,15 @@ export default function Home() {
         npa: Math.round(dueUnrounded.npa),
         ta: Math.round(dueUnrounded.ta),
         other: Math.round(dueUnrounded.other),
-        total: 0,
     };
-    dueRounded.total = Object.values(dueRounded).reduce((sum, val) => sum + val, 0);
+    const dueTotal = Object.values(dueRounded).reduce((sum, val) => sum + val, 0);
 
-    const difference = dueRounded.total - drawnRounded.total;
+    const difference = dueTotal - drawnTotal;
 
     const row: StatementRow = {
         month: format(currentDate, "MMM yyyy"),
-        drawn: drawnRounded,
-        due: dueRounded,
+        drawn: { ...drawnRounded, total: drawnTotal },
+        due: { ...dueRounded, total: dueTotal },
         difference: difference,
     };
     
