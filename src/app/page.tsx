@@ -860,7 +860,7 @@ export default function Home() {
 
     const effectiveMonthStart = max([monthStart, arrearFromDate]);
     const effectiveMonthEnd = min([monthEnd, arrearToDate]);
-    const daysToCalculateForMonth = differenceInDays(effectiveMonthEnd, effectiveMonthEnd) + 1;
+    const daysToCalculateForMonth = differenceInDays(effectiveMonthEnd, effectiveMonthStart) + 1;
     const monthProRataFactor = daysToCalculateForMonth > 0 ? daysToCalculateForMonth / daysInMonth : 0;
 
     const calculateAllowancesForSide = (side: 'paid' | 'toBePaid') => {
@@ -1860,7 +1860,7 @@ export default function Home() {
             <div className="printable-area page">
               <Card id="printable-statement-card">
                 <CardHeader className="flex-row items-start justify-between gap-4">
-                  <div>
+                   <div>
                      <CardTitle className="font-headline text-3xl">Arrear Statement</CardTitle>
                       <CardDescription className="font-bold">
                         For: {statement.employeeInfo.employeeName} ({statement.employeeInfo.employeeId}) <br />
@@ -1953,7 +1953,7 @@ export default function Home() {
                   <div className="pt-12 text-sm signature-section">
                     {statement.totals.difference > 0 &&
                       <div className="mb-8">
-                          Passed for payment to {statement.employeeInfo.employeeName} of rupees {numberToWords(statement.totals.difference)}.
+                          Pass for payment to {statement.employeeInfo.employeeName} of rupees {numberToWords(statement.totals.difference)}.
                       </div>
                     }
                     <div className="flex justify-between items-end w-full">
