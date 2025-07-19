@@ -89,7 +89,7 @@
     height: auto;
     padding: 0;
     margin: 0;
-    font-size: 8pt;
+    font-size: 6pt;
   }
 
   .no-print {
@@ -102,10 +102,10 @@
   }
   
   .printable-area h1, .printable-area h2, .printable-area h3, .printable-area .text-3xl {
-    font-size: 12pt !important;
+    font-size: 10pt !important;
   }
   .printable-area .text-lg {
-    font-size: 9pt !important;
+    font-size: 7pt !important;
   }
    .printable-area table {
     width: 100%;
@@ -118,8 +118,11 @@
     white-space: nowrap;
     border: 0.25px solid black;
   }
-  .printable-area th.month-col, .printable-area td.month-col {
+  .printable-area .month-col {
     white-space: normal; /* Allow month to wrap */
+  }
+  .printable-area .print-table-container {
+    overflow-x: hidden !important;
   }
 
   .printable-area .print-disclaimer {

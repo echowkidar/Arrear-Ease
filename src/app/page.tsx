@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import React from "react";
@@ -859,7 +860,7 @@ export default function Home() {
 
     const effectiveMonthStart = max([monthStart, arrearFromDate]);
     const effectiveMonthEnd = min([monthEnd, arrearToDate]);
-    const daysToCalculateForMonth = differenceInDays(effectiveMonthEnd, effectiveMonthStart) + 1;
+    const daysToCalculateForMonth = differenceInDays(effectiveMonthEnd, effectiveMonthEnd) + 1;
     const monthProRataFactor = daysToCalculateForMonth > 0 ? daysToCalculateForMonth / daysInMonth : 0;
 
     const calculateAllowancesForSide = (side: 'paid' | 'toBePaid') => {
@@ -1861,14 +1862,15 @@ export default function Home() {
                 <CardHeader className="flex-col md:flex-row items-start md:items-center justify-between gap-4">
                   <div>
                      <CardTitle className="font-headline text-3xl">Arrear Statement</CardTitle>
-                     <CardDescription>
-                       For: {statement.employeeInfo.employeeName} ({statement.employeeInfo.employeeId}) <br />
-                       {statement.employeeInfo.designation}, {statement.employeeInfo.department} <br/>
-                       {statement.employeeInfo.payFixationRef && `Ref: ${statement.employeeInfo.payFixationRef}`} <br/>
-                        {statement.employeeInfo.fromDate && statement.employeeInfo.toDate &&
-                         `Period: ${format(new Date(statement.employeeInfo.fromDate), "dd/MM/yyyy")} to ${format(new Date(statement.employeeInfo.toDate), "dd/MM/yyyy")}`
-                        }
-                     </CardDescription>
+                      <CardDescription className="font-bold">
+                        {currentDate && <div className="mb-2">Date: {format(currentDate, "dd/MM/yyyy")}</div>}
+                        For: {statement.employeeInfo.employeeName} ({statement.employeeInfo.employeeId}) <br />
+                        {statement.employeeInfo.designation}, {statement.employeeInfo.department} <br/>
+                        {statement.employeeInfo.payFixationRef && `Ref: ${statement.employeeInfo.payFixationRef}`} <br/>
+                         {statement.employeeInfo.fromDate && statement.employeeInfo.toDate &&
+                          `Period: ${format(new Date(statement.employeeInfo.fromDate), "dd/MM/yyyy")} to ${format(new Date(statement.employeeInfo.toDate), "dd/MM/yyyy")}`
+                         }
+                      </CardDescription>
                   </div>
                   <div className="flex flex-wrap gap-2 no-print">
                      <Button onClick={handleSaveOrUpdate} variant="outline" disabled={isLoading}>
@@ -1886,7 +1888,7 @@ export default function Home() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto print-table-container">
                     <Table className="min-w-full">
                       <TableHeader>
                         <TableRow>
@@ -1949,12 +1951,10 @@ export default function Home() {
                   <div className="pt-12 text-sm">
                     {statement.totals.difference > 0 &&
                       <div className="mb-8">
-                          Passed for pay of rupees {numberToWords(statement.totals.difference)}.
-                          
+                          Pass for payment to {statement.employeeInfo.employeeName} of rupees {numberToWords(statement.totals.difference)}.
                       </div>
                     }
                     <div className="flex justify-between items-end">
-                      {currentDate && <span>Date: {format(currentDate, "dd/MM/yyyy")}</span>}
                       <div className="grid grid-cols-3 gap-12 text-center w-full max-w-2xl mx-auto">
                           <div className="pt-8">Dealing Assistant</div>
                           <div className="pt-8">Section Officer</div>
