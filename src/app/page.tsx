@@ -1955,7 +1955,7 @@ export default function Home() {
                   <div className="pt-12 text-sm signature-section">
                     {statement.totals.difference > 0 &&
                       <div className="mb-8">
-                          Pass for payment to {statement.employeeInfo.employeeName} of rupees {numberToWords(statement.totals.difference)}.
+                          Passed for payment to {statement.employeeInfo.employeeName} of rupees {numberToWords(statement.totals.difference)}.
                       </div>
                     }
                     <div className="flex justify-between items-end w-full">
