@@ -1859,11 +1859,10 @@ export default function Home() {
           <div id="statement-section" className="mt-12">
             <div className="printable-area page">
               <Card id="printable-statement-card">
-                <CardHeader className="flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <CardHeader className="flex-row items-start justify-between gap-4">
                   <div>
                      <CardTitle className="font-headline text-3xl">Arrear Statement</CardTitle>
                       <CardDescription className="font-bold">
-                        {currentDate && <div className="mb-2">Date: {format(currentDate, "dd/MM/yyyy")}</div>}
                         For: {statement.employeeInfo.employeeName} ({statement.employeeInfo.employeeId}) <br />
                         {statement.employeeInfo.designation}, {statement.employeeInfo.department} <br/>
                         {statement.employeeInfo.payFixationRef && `Ref: ${statement.employeeInfo.payFixationRef}`} <br/>
@@ -1872,19 +1871,22 @@ export default function Home() {
                          }
                       </CardDescription>
                   </div>
-                  <div className="flex flex-wrap gap-2 no-print">
-                     <Button onClick={handleSaveOrUpdate} variant="outline" disabled={isLoading}>
-                        {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (loadedStatementId ? <Edit className="mr-2 h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />)}
-                        {loadedStatementId ? "Update Arrear" : "Save Arrear"}
-                     </Button>
-                     {loadedStatementId && (
-                       <Button onClick={handleCopy} variant="outline" disabled={isLoading || authStatus !== 'authenticated'}>
-                          <Copy className="mr-2 h-4 w-4" /> Copy Arrear
+                  <div className="flex flex-col items-end">
+                    {currentDate && <div className="mb-2">Date: {format(currentDate, "dd/MM/yyyy")}</div>}
+                    <div className="flex flex-wrap gap-2 no-print">
+                       <Button onClick={handleSaveOrUpdate} variant="outline" disabled={isLoading}>
+                          {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (loadedStatementId ? <Edit className="mr-2 h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />)}
+                          {loadedStatementId ? "Update Arrear" : "Save Arrear"}
                        </Button>
-                     )}
-                     <Button onClick={handlePrint} variant="outline">
-                       <Download className="mr-2 h-4 w-4" /> Download PDF
-                     </Button>
+                       {loadedStatementId && (
+                         <Button onClick={handleCopy} variant="outline" disabled={isLoading || authStatus !== 'authenticated'}>
+                            <Copy className="mr-2 h-4 w-4" /> Copy Arrear
+                         </Button>
+                       )}
+                       <Button onClick={handlePrint} variant="outline">
+                         <Download className="mr-2 h-4 w-4" /> Download PDF
+                       </Button>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -1954,12 +1956,10 @@ export default function Home() {
                           Pass for payment to {statement.employeeInfo.employeeName} of rupees {numberToWords(statement.totals.difference)}.
                       </div>
                     }
-                    <div className="flex justify-between items-end">
-                      <div className="grid grid-cols-3 gap-12 text-center w-full max-w-2xl mx-auto">
-                          <div className="pt-8">Dealing Assistant</div>
-                          <div className="pt-8">Section Officer</div>
-                          <div className="pt-8">Assistant Finance Officer (Salary)</div>
-                      </div>
+                    <div className="flex justify-between items-end w-full">
+                        <div className="pt-8 text-left">Dealing Assistant</div>
+                        <div className="pt-8 text-center">Section Officer</div>
+                        <div className="pt-8 text-right">Assistant Finance Officer (Salary)</div>
                     </div>
                   </div>
                 </CardContent>
