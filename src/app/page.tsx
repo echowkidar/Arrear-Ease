@@ -395,9 +395,10 @@ export default function Home() {
   const [savedStatements, setSavedStatements] = React.useState<SavedStatement[]>([]);
   const [isLoadDialogOpen, setLoadDialogOpen] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
-  const [isOnline, setIsOnline] = React.useState(true);
-  const [dbConfigured] = React.useState(isFirebaseConfigured());
+  const [isOnline, setIsOnline] = React.useState<boolean | null>(null);
+  const [dbConfigured, setDbConfigured] = React.useState<boolean | null>(null);
   const [loadedStatementId, setLoadedStatementId] = React.useState<string | null>(null);
+  const [currentDate, setCurrentDate] = React.useState<Date | null>(null);
   
   const { user, authStatus, loading, logout, openAuthModal } = useAuth();
   const { toast } = useToast();
@@ -406,10 +407,15 @@ export default function Home() {
   const isAdmin = user?.email === "amulivealigarh@gmail.com";
 
   React.useEffect(() => {
+    // These operations are client-side only and will run after hydration.
     const updateOnlineStatus = () => setIsOnline(navigator.onLine);
     window.addEventListener('online', updateOnlineStatus);
     window.addEventListener('offline', updateOnlineStatus);
     updateOnlineStatus();
+
+    setDbConfigured(isFirebaseConfigured());
+    setCurrentDate(new Date());
+
     return () => {
       window.removeEventListener('online', updateOnlineStatus);
       window.removeEventListener('offline', updateOnlineStatus);
@@ -1681,14 +1687,18 @@ export default function Home() {
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger>
-                  {dbConfigured ? (
+                  {isOnline === null ? (
+                    <WifiOff className="text-yellow-500"/>
+                  ) : dbConfigured ? (
                     isOnline ? <Wifi className="text-green-500" /> : <WifiOff className="text-red-500"/>
                   ) : (
                     <WifiOff className="text-yellow-500"/>
                   )}
                 </TooltipTrigger>
                 <TooltipContent>
-                  {dbConfigured ? (
+                  {isOnline === null ? (
+                     <p>Checking connection...</p>
+                  ) : dbConfigured ? (
                     isOnline ? <p>Online: Connected to database</p> : <p>Offline: Changes will be saved locally and synced later.</p>
                   ) : (
                     <p>Database not configured. All data is being saved in your browser only.</p>
@@ -1944,7 +1954,7 @@ export default function Home() {
                       </div>
                     }
                     <div className="flex justify-between items-end">
-                      <span>Date: {format(new Date(), "dd/MM/yyyy")}</span>
+                      {currentDate && <span>Date: {format(currentDate, "dd/MM/yyyy")}</span>}
                       <div className="grid grid-cols-3 gap-12 text-center w-full max-w-2xl mx-auto">
                           <div className="pt-8">Dealing Assistant</div>
                           <div className="pt-8">Section Officer</div>
