@@ -1950,7 +1950,7 @@ export default function Home() {
                       </UiTableFooter>
                     </Table>
                   </div>                  
-                  <div className="pt-12 text-sm">
+                  <div className="pt-12 text-sm signature-section">
                     {statement.totals.difference > 0 &&
                       <div className="mb-8">
                           Pass for payment to {statement.employeeInfo.employeeName} of rupees {numberToWords(statement.totals.difference)}.

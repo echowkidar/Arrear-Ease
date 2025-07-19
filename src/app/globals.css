@@ -121,11 +121,16 @@
     border: 0.25px solid black;
   }
   .printable-area .month-col {
+    width: 50px !important;
     white-space: normal; /* Allow month to wrap */
   }
   
   .printable-area .print-disclaimer {
     display: none !important;
+  }
+
+  .printable-area .signature-section {
+    border-top: none !important;
   }
   
   .page-break {
