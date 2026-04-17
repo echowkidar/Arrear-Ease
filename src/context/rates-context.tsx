@@ -7,6 +7,7 @@ import { db, isFirebaseConfigured } from '@/lib/firebase';
 import { doc, getDoc, setDoc, Timestamp } from "firebase/firestore"; 
 import { useToast } from '@/hooks/use-toast';
 import isEqual from 'lodash.isequal';
+import { default6thCpcDaRates } from '@/lib/cpc-data';
 
 const rateSchema = z.object({
   id: z.string(),
@@ -27,11 +28,20 @@ const rateSchema = z.object({
 
 export type Rate = z.infer<typeof rateSchema>;
 
+// 6th CPC fixed config type
+export type SixthCpcConfig = {
+  hra6thRate: number;   // HRA % on (Basic + NPA) — default 20
+  npa6thRate: number;   // NPA % on Basic — default 25
+};
+
 type AllRates = {
     daRates: Rate[];
     hraRates: Rate[];
     npaRates: Rate[];
     taRates: Rate[];
+    // 6th CPC specific
+    da6thRates: Rate[];
+    sixthCpcConfig: SixthCpcConfig;
 }
 
 interface RatesContextType extends AllRates {
@@ -39,7 +49,31 @@ interface RatesContextType extends AllRates {
   setHraRates: React.Dispatch<React.SetStateAction<Rate[]>>;
   setNpaRates: React.Dispatch<React.SetStateAction<Rate[]>>;
   setTaRates: React.Dispatch<React.SetStateAction<Rate[]>>;
+  // 6th CPC setters
+  setDa6thRates: React.Dispatch<React.SetStateAction<Rate[]>>;
+  setSixthCpcConfig: React.Dispatch<React.SetStateAction<SixthCpcConfig>>;
 }
+
+const DEFAULT_6TH_CONFIG: SixthCpcConfig = {
+  hra6thRate: 20,
+  npa6thRate: 25,
+};
+
+// Build default 6th CPC DA rates with UUIDs for the Rate[] type
+const buildDefault6thDaRates = (): Rate[] =>
+  default6thCpcDaRates.map(r => ({
+    id: crypto.randomUUID(),
+    fromDate: r.fromDate,
+    toDate: undefined,
+    rate: r.rate,
+    basicFrom: '',
+    basicTo: '',
+    daRateFrom: '',
+    daRateTo: '',
+    payLevelFrom: '',
+    payLevelTo: '',
+    minAmount: '',
+  }));
 
 const RatesContext = createContext<RatesContextType | undefined>(undefined);
 
@@ -66,6 +100,14 @@ const parseAllRateTypes = (data: any): AllRates => ({
     hraRates: parseTimestamps(data.hraRates || []),
     npaRates: parseTimestamps(data.npaRates || []),
     taRates: parseTimestamps(data.taRates || []),
+    // 6th CPC — fall back to defaults if not present in stored data
+    da6thRates: data.da6thRates && Array.isArray(data.da6thRates) && data.da6thRates.length > 0
+        ? parseTimestamps(data.da6thRates)
+        : buildDefault6thDaRates(),
+    sixthCpcConfig: {
+        hra6thRate: data.sixthCpcConfig?.hra6thRate ?? DEFAULT_6TH_CONFIG.hra6thRate,
+        npa6thRate: data.sixthCpcConfig?.npa6thRate ?? DEFAULT_6TH_CONFIG.npa6thRate,
+    },
 });
 
 export const RatesProvider = ({ children }: { children: ReactNode }) => {
@@ -73,6 +115,10 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
   const [hraRates, setHraRates] = useState<Rate[]>([]);
   const [npaRates, setNpaRates] = useState<Rate[]>([]);
   const [taRates, setTaRates] = useState<Rate[]>([]);
+  // 6th CPC states
+  const [da6thRates, setDa6thRates] = useState<Rate[]>([]);
+  const [sixthCpcConfig, setSixthCpcConfig] = useState<SixthCpcConfig>(DEFAULT_6TH_CONFIG);
+
   const [isLoaded, setIsLoaded] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
   const [dbConfigured] = useState(isFirebaseConfigured());
@@ -107,6 +153,8 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
       setHraRates(rates.hraRates);
       setNpaRates(rates.npaRates);
       setTaRates(rates.taRates);
+      setDa6thRates(rates.da6thRates);
+      setSixthCpcConfig(rates.sixthCpcConfig);
   };
   
   const loadRates = useCallback(async () => {
@@ -123,19 +171,35 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
                 localStorage.setItem(LOCALSTORAGE_RATES_KEY, JSON.stringify(firestoreData));
             } else if (localRatesData) {
                 // Firestore is empty, but we have local data, so sync it up.
-                await setDoc(ratesDocRef, localRatesData);
+                const sanitize = (obj: any): any => {
+                    if (obj === null || typeof obj !== 'object') return obj;
+                    if (obj instanceof Date) return obj;
+                    if (Array.isArray(obj)) return obj.map(sanitize);
+                    const clean: any = {};
+                    for (const key of Object.keys(obj)) {
+                        if (obj[key] !== undefined) clean[key] = sanitize(obj[key]);
+                    }
+                    return clean;
+                };
+                await setDoc(ratesDocRef, sanitize(localRatesData));
                 setAllRates(localRatesData);
                 toast({ title: "Rates Synced", description: "Your locally saved rates have been uploaded to the database."});
+            } else {
+                // Neither Firestore nor local has data — use defaults
+                const defaults = parseAllRateTypes({});
+                setAllRates(defaults);
             }
         } catch(error) {
             console.error("Could not load or sync rates from Firestore, falling back to local:", error);
             if (error instanceof Error && (error as any).code === 'unavailable') {
               toast({ title: "Offline Mode", description: "Using locally saved rate data."})
             }
-            if(localRatesData) setAllRates(localRatesData); // Fallback to local on error
+            if(localRatesData) setAllRates(localRatesData);
+            else setAllRates(parseAllRateTypes({})); // Use defaults on complete failure
         }
     } else { // No DB configured, use local only
         if(localRatesData) setAllRates(localRatesData);
+        else setAllRates(parseAllRateTypes({})); // Use defaults
     }
     setIsLoaded(true);
   }, [dbConfigured, toast]);
@@ -147,7 +211,7 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
   const saveRates = useCallback(async () => {
     if (!isLoaded) return;
     
-    const dataToSave = { daRates, hraRates, npaRates, taRates };
+    const dataToSave = { daRates, hraRates, npaRates, taRates, da6thRates, sixthCpcConfig };
     
     try {
       localStorage.setItem(LOCALSTORAGE_RATES_KEY, JSON.stringify(dataToSave));
@@ -158,7 +222,18 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
     if (dbConfigured && db && isOnline) {
         try {
             const ratesDocRef = doc(db, FIRESTORE_RATES_COLLECTION_ID, FIRESTORE_RATES_DOC_ID);
-            await setDoc(ratesDocRef, dataToSave, { merge: true });
+            // Strip undefined fields — Firestore rejects them
+            const sanitize = (obj: any): any => {
+                if (obj === null || typeof obj !== 'object') return obj;
+                if (obj instanceof Date) return obj;
+                if (Array.isArray(obj)) return obj.map(sanitize);
+                const clean: any = {};
+                for (const key of Object.keys(obj)) {
+                    if (obj[key] !== undefined) clean[key] = sanitize(obj[key]);
+                }
+                return clean;
+            };
+            await setDoc(ratesDocRef, sanitize(dataToSave), { merge: true });
         } catch (error) {
             console.error("Could not save rates to Firestore:", error);
             toast({
@@ -168,7 +243,7 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
             });
         }
     }
-  }, [isLoaded, daRates, hraRates, npaRates, taRates, dbConfigured, toast, isOnline]);
+  }, [isLoaded, daRates, hraRates, npaRates, taRates, da6thRates, sixthCpcConfig, dbConfigured, toast, isOnline]);
   
   useEffect(() => {
     if (!isLoaded) {
@@ -177,21 +252,23 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
     
     const handler = setTimeout(() => {
       const localRates = getLocalRates();
-      const currentRates = { daRates, hraRates, npaRates, taRates };
+      const currentRates = { daRates, hraRates, npaRates, taRates, da6thRates, sixthCpcConfig };
       if (!isEqual(localRates, currentRates)) {
           saveRates();
       }
     }, 1500);
 
     return () => clearTimeout(handler);
-  }, [daRates, hraRates, npaRates, taRates, saveRates, isLoaded]);
+  }, [daRates, hraRates, npaRates, taRates, da6thRates, sixthCpcConfig, saveRates, isLoaded]);
 
   return (
     <RatesContext.Provider value={{
       daRates, setDaRates,
       hraRates, setHraRates,
       npaRates, setNpaRates,
-      taRates, setTaRates
+      taRates, setTaRates,
+      da6thRates, setDa6thRates,
+      sixthCpcConfig, setSixthCpcConfig,
     }}>
       {children}
     </RatesContext.Provider>

@@ -54,7 +54,7 @@ import {
   DialogDescription,
   DialogFooter
 } from "@/components/ui/dialog";
-import { Rate, useRates } from "@/context/rates-context";
+import { Rate, SixthCpcConfig, useRates } from "@/context/rates-context";
 import { useToast } from "@/hooks/use-toast";
 import { cpcData } from "@/lib/cpc-data";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -85,7 +85,7 @@ const DateInput = ({ value, onChange, label = "Pick a date" }: { value: Date | u
                 </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
-                <Calendar mode="single" selected={dateValue ? new Date(dateValue) : undefined} onSelect={onChange} captionLayout="dropdown-buttons" fromYear={1990} toYear={2050} initialFocus={dateValue ? new Date(dateValue) : undefined} />
+                <Calendar mode="single" selected={dateValue ? new Date(dateValue) : undefined} onSelect={onChange} captionLayout="dropdown-buttons" fromYear={1990} toYear={2050} defaultMonth={dateValue ? new Date(dateValue) : undefined} />
             </PopoverContent>
         </Popover>
     );
@@ -322,23 +322,104 @@ const RateTable = ({
     )
 }
 
+// ─── 6th CPC Fixed Rates Card ────────────────────────────────────────────────
+const SixthCpcFixedRates = ({
+    config,
+    setConfig,
+}: {
+    config: SixthCpcConfig;
+    setConfig: React.Dispatch<React.SetStateAction<SixthCpcConfig>>;
+}) => {
+    const { toast } = useToast();
+    const [local, setLocal] = React.useState<SixthCpcConfig>(config);
+
+    React.useEffect(() => { setLocal(config); }, [config]);
+
+    const isModified =
+        local.hra6thRate !== config.hra6thRate ||
+        local.npa6thRate !== config.npa6thRate;
+
+    const handleSave = () => {
+        setConfig(local);
+        toast({ title: "6th CPC Rates Saved", description: "HRA and NPA fixed rates updated." });
+    };
+
+    return (
+        <Card className="border-2 border-amber-500/30 bg-amber-50/10 dark:bg-amber-950/10">
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                    <Lock className="h-5 w-5 text-amber-600" />
+                    6th CPC — Fixed Allowance Rates
+                </CardTitle>
+                <CardDescription>
+                    HRA is calculated on <strong>Basic Pay + NPA</strong>. NPA is on <strong>Basic Pay</strong>.
+                    These rates are uniform across all 6th CPC employees.
+                </CardDescription>
+            </CardHeader>
+            <CardContent>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                        <label className="text-sm font-medium">HRA Rate (%) <span className="text-muted-foreground text-xs">— on Basic Pay + NPA</span></label>
+                        <div className="flex items-center gap-2">
+                            <Input
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={local.hra6thRate}
+                                onChange={e => setLocal(prev => ({ ...prev, hra6thRate: parseFloat(e.target.value) || 0 }))}
+                                className="max-w-[140px]"
+                            />
+                            <span className="text-muted-foreground font-medium">%</span>
+                        </div>
+                    </div>
+                    <div className="space-y-2">
+                        <label className="text-sm font-medium">NPA Rate (%) <span className="text-muted-foreground text-xs">— on Basic Pay</span></label>
+                        <div className="flex items-center gap-2">
+                            <Input
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={local.npa6thRate}
+                                onChange={e => setLocal(prev => ({ ...prev, npa6thRate: parseFloat(e.target.value) || 0 }))}
+                                className="max-w-[140px]"
+                            />
+                            <span className="text-muted-foreground font-medium">%</span>
+                        </div>
+                    </div>
+                </div>
+            </CardContent>
+            {isModified && (
+                <CardFooter className="flex justify-end border-t pt-6">
+                    <Button onClick={handleSave}>
+                        <Save className="mr-2 h-4 w-4" /> Save Changes
+                    </Button>
+                </CardFooter>
+            )}
+        </Card>
+    );
+};
+
+// ─── Main Protected Page ──────────────────────────────────────────────────────
 const ProtectedRatesPage = () => {
     const { 
         daRates, setDaRates, 
         hraRates, setHraRates,
         npaRates, setNpaRates,
-        taRates, setTaRates
+        taRates, setTaRates,
+        da6thRates, setDa6thRates,
+        sixthCpcConfig, setSixthCpcConfig,
     } = useRates();
-     return (
+
+    return (
         <main className="container mx-auto px-4 py-8 md:py-12">
             <header className="mb-8">
                 <div className="flex justify-between items-center">
-                <Button asChild variant="outline">
-                    <Link href="/">
-                        <ArrowLeft className="mr-2" /> Back to Calculator
-                    </Link>
-                </Button>
-                <ThemeToggle />
+                    <Button asChild variant="outline">
+                        <Link href="/">
+                            <ArrowLeft className="mr-2" /> Back to Calculator
+                        </Link>
+                    </Button>
+                    <ThemeToggle />
                 </div>
                 <h1 className="font-headline text-4xl md:text-5xl font-bold text-primary text-center mt-4">
                     Allowances Rate Configuration
@@ -347,22 +428,64 @@ const ProtectedRatesPage = () => {
                     Define the applicable rates for various allowances.
                 </p>
             </header>
-            
-            <div className="space-y-8">
-                <RateTable title="DA Rate Master" initialRates={daRates} setGlobalRates={setDaRates} />
+
+            {/* ── 7th CPC Section ── */}
+            <div className="mb-4">
+                <div className="flex items-center gap-3">
+                    <div className="h-px flex-1 bg-border" />
+                    <span className="text-sm font-semibold text-primary px-3 py-1 rounded-full border border-primary/30 bg-primary/5">
+                        7th Pay Commission
+                    </span>
+                    <div className="h-px flex-1 bg-border" />
+                </div>
+            </div>
+
+            <div className="space-y-8 mb-12">
+                <RateTable title="DA Rate Master (7th CPC)" initialRates={daRates} setGlobalRates={setDaRates} />
                 <RateTable 
-                  title="HRA Rate Master" 
-                  description="HRA rates are determined by the applicable DA rate from an effective date."
-                  withDateRange={false}
-                  withFromDateOnly
-                  fromDateLabel="Effective Date"
-                  withDaRateRange
-                  withMinAmount 
-                  initialRates={hraRates} 
-                  setGlobalRates={setHraRates} 
+                    title="HRA Rate Master (7th CPC)"
+                    description="HRA rates are determined by the applicable DA rate from an effective date."
+                    withDateRange={false}
+                    withFromDateOnly
+                    fromDateLabel="Effective Date"
+                    withDaRateRange
+                    withMinAmount 
+                    initialRates={hraRates} 
+                    setGlobalRates={setHraRates} 
                 />
-                <RateTable title="NPA Rate Master" initialRates={npaRates} setGlobalRates={setNpaRates} />
-                <RateTable title="TA Master" description="Define fixed transport allowance amounts." withBasicRange withPayLevelRange isAmount initialRates={taRates} setGlobalRates={setTaRates} />
+                <RateTable title="NPA Rate Master (7th CPC)" initialRates={npaRates} setGlobalRates={setNpaRates} />
+                <RateTable
+                    title="TA Master (7th CPC)"
+                    description="Define fixed transport allowance amounts."
+                    withBasicRange
+                    withPayLevelRange
+                    isAmount
+                    initialRates={taRates}
+                    setGlobalRates={setTaRates}
+                />
+            </div>
+
+            {/* ── 6th CPC Section ── */}
+            <div className="mb-4">
+                <div className="flex items-center gap-3">
+                    <div className="h-px flex-1 bg-border" />
+                    <span className="text-sm font-semibold text-amber-600 px-3 py-1 rounded-full border border-amber-500/30 bg-amber-50/20 dark:bg-amber-950/20">
+                        6th Pay Commission
+                    </span>
+                    <div className="h-px flex-1 bg-border" />
+                </div>
+            </div>
+
+            <div className="space-y-8">
+                <SixthCpcFixedRates config={sixthCpcConfig} setConfig={setSixthCpcConfig} />
+                <RateTable
+                    title="DA Rate Master (6th CPC)"
+                    description="DA rates applicable from 01.01.2006 to 01.07.2017 as per 6th Pay Commission. 'From Date' is the effective date; leave 'To Date' blank — the next row's date takes over automatically."
+                    withFromDateOnly
+                    fromDateLabel="Effective Date"
+                    initialRates={da6thRates}
+                    setGlobalRates={setDa6thRates}
+                />
             </div>
         </main>
     );

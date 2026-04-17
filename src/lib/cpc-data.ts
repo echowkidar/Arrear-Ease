@@ -1,3 +1,32 @@
+// Default 6th CPC DA Rates (As per 6th Pay Commission)
+// These are used to seed the database on first load.
+export const default6thCpcDaRates = [
+  { fromDate: new Date("2006-01-01"), rate: 0 },
+  { fromDate: new Date("2006-07-01"), rate: 2 },
+  { fromDate: new Date("2007-01-01"), rate: 6 },
+  { fromDate: new Date("2007-07-01"), rate: 9 },
+  { fromDate: new Date("2008-01-01"), rate: 12 },
+  { fromDate: new Date("2008-07-01"), rate: 16 },
+  { fromDate: new Date("2009-01-01"), rate: 22 },
+  { fromDate: new Date("2009-07-01"), rate: 27 },
+  { fromDate: new Date("2010-01-01"), rate: 35 },
+  { fromDate: new Date("2010-07-01"), rate: 45 },
+  { fromDate: new Date("2011-01-01"), rate: 51 },
+  { fromDate: new Date("2011-07-01"), rate: 58 },
+  { fromDate: new Date("2012-01-01"), rate: 65 },
+  { fromDate: new Date("2012-07-01"), rate: 72 },
+  { fromDate: new Date("2013-01-01"), rate: 80 },
+  { fromDate: new Date("2013-07-01"), rate: 90 },
+  { fromDate: new Date("2014-01-01"), rate: 100 },
+  { fromDate: new Date("2014-07-01"), rate: 107 },
+  { fromDate: new Date("2015-01-01"), rate: 113 },
+  { fromDate: new Date("2015-07-01"), rate: 119 },
+  { fromDate: new Date("2016-01-01"), rate: 125 },
+  { fromDate: new Date("2016-07-01"), rate: 132 },
+  { fromDate: new Date("2017-01-01"), rate: 136 },
+  { fromDate: new Date("2017-07-01"), rate: 139 },
+];
+
 export const cpcData = {
   "6th": {
     payLevels: [

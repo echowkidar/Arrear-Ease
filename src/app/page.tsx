@@ -389,17 +389,7 @@ const payLevelIndexMap = new Map<string, number>();
 cpcData["6th"].payLevels.forEach((level, index) => payLevelIndexMap.set(level.level, index));
 cpcData["7th"].payLevels.forEach((level, index) => payLevelIndexMap.set(level.level, index + cpcData["6th"].payLevels.length));
 
-// Add near the top of your Home component
-React.useEffect(() => {
-  console.log("Firebase environment variables:", {
-    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  });
-}, []);
+// Note: Debug useEffect removed — was incorrectly placed outside a React component.
 
 export default function Home() {
   const [statement, setStatement] = React.useState<Omit<SavedStatement, 'id' | 'savedAt' | 'isLocal'> | null>(null);
@@ -412,7 +402,7 @@ export default function Home() {
   
   const { user, authStatus, loading, logout, openAuthModal } = useAuth();
   const { toast } = useToast();
-  const { daRates, hraRates, npaRates, taRates } = useRates();
+  const { daRates, hraRates, npaRates, taRates, da6thRates, sixthCpcConfig } = useRates();
 
   const isAdmin = user?.email === "amulivealigarh@gmail.com";
 
@@ -890,11 +880,19 @@ export default function Home() {
             return daysToCalc > 0 ? daysToCalc / daysInCalcMonth : 0;
         };
 
+        const is6thCpc = sideData.cpc === '6th';
+
         const getEffectiveDaRate = (): number => {
+            // Fixed rate override (applies to both 6th and 7th CPC)
             if (sideData.daFixedRateApplicable && sideData.daFixedRate && sideData.daFixedRateFromDate && sideData.daFixedRateToDate) {
                 if (isWithinInterval(currentDate, { start: sideData.daFixedRateFromDate, end: sideData.daFixedRateToDate })) {
                     return sideData.daFixedRate;
                 }
+            }
+            // 6th CPC: use da6thRates table; 7th CPC: use daRates table
+            if (is6thCpc) {
+                const daRateDetails = getRateForDate(da6thRates, currentDate);
+                return daRateDetails ? daRateDetails.rate : 0;
             }
             const daRateDetails = getRateForDate(daRates, currentDate);
             return daRateDetails ? daRateDetails.rate : 0;
@@ -907,10 +905,17 @@ export default function Home() {
         if (sideData.npaApplicable) {
             const prorationFactor = getProratedFactorForAllowance(sideData.npaFromDate, sideData.npaToDate);
             if (prorationFactor > 0) {
-                const npaRateDetails = getRateForDate(npaRates, currentDate);
-                if (npaRateDetails) {
-                    const fullMonthNpa = fullMonthBasic * (npaRateDetails.rate / 100);
+                if (is6thCpc) {
+                    // 6th CPC: NPA = npa6thRate% of Basic Pay (fixed, from config)
+                    const fullMonthNpa = fullMonthBasic * (sixthCpcConfig.npa6thRate / 100);
                     npa = fullMonthNpa * monthProRataFactor;
+                } else {
+                    // 7th CPC: NPA rate from npaRates table
+                    const npaRateDetails = getRateForDate(npaRates, currentDate);
+                    if (npaRateDetails) {
+                        const fullMonthNpa = fullMonthBasic * (npaRateDetails.rate / 100);
+                        npa = fullMonthNpa * monthProRataFactor;
+                    }
                 }
             }
         }
@@ -918,8 +923,9 @@ export default function Home() {
         // Calculate DA
         let da = 0;
         if (sideData.daApplicable) {
-             const baseForDA = proratedBasic + npa;
-             da = baseForDA * (effectiveDaRate / 100);
+            // DA base = Basic Pay + NPA (same for both 6th and 7th CPC)
+            const baseForDA = proratedBasic + npa;
+            da = baseForDA * (effectiveDaRate / 100);
         }
 
         // Calculate HRA
@@ -927,13 +933,27 @@ export default function Home() {
         if (sideData.hraApplicable) {
             const prorationFactor = getProratedFactorForAllowance(sideData.hraFromDate, sideData.hraToDate);
             if (prorationFactor > 0) {
-                const hraRateDetails = getRateForDate(hraRates, currentDate, { daRate: effectiveDaRate });
-                if (hraRateDetails) {
-                    let fullMonthHra = fullMonthBasic * (hraRateDetails.rate / 100);
-                    if (hraRateDetails.minAmount && hraRateDetails.minAmount > 0) {
-                        fullMonthHra = Math.max(fullMonthHra, hraRateDetails.minAmount);
+                if (is6thCpc) {
+                    // 6th CPC: HRA = hra6thRate% of (Basic Pay + NPA) — fixed rate, not DA-slab based
+                    const fullMonthNpaForHra = fullMonthBasic * (sixthCpcConfig.npa6thRate / 100);
+                    let fullMonthHra = (fullMonthBasic + fullMonthNpaForHra) * (sixthCpcConfig.hra6thRate / 100);
+                    // Override with fixed rate if applicable
+                    if (sideData.hraFixedRateApplicable && sideData.hraFixedRate && sideData.hraFixedRateFromDate && sideData.hraFixedRateToDate) {
+                        if (isWithinInterval(currentDate, { start: sideData.hraFixedRateFromDate, end: sideData.hraFixedRateToDate })) {
+                            fullMonthHra = (fullMonthBasic + fullMonthNpaForHra) * (sideData.hraFixedRate / 100);
+                        }
                     }
                     hra = fullMonthHra * monthProRataFactor;
+                } else {
+                    // 7th CPC: HRA is DA-slab based from hraRates table
+                    const hraRateDetails = getRateForDate(hraRates, currentDate, { daRate: effectiveDaRate });
+                    if (hraRateDetails) {
+                        let fullMonthHra = fullMonthBasic * (hraRateDetails.rate / 100);
+                        if (hraRateDetails.minAmount && hraRateDetails.minAmount > 0) {
+                            fullMonthHra = Math.max(fullMonthHra, hraRateDetails.minAmount);
+                        }
+                        hra = fullMonthHra * monthProRataFactor;
+                    }
                 }
             }
         }
