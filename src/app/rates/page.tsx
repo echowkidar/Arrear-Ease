@@ -480,9 +480,7 @@ const ProtectedRatesPage = () => {
                 <SixthCpcFixedRates config={sixthCpcConfig} setConfig={setSixthCpcConfig} />
                 <RateTable
                     title="DA Rate Master (6th CPC)"
-                    description="DA rates applicable from 01.01.2006 to 01.07.2017 as per 6th Pay Commission. 'From Date' is the effective date; leave 'To Date' blank — the next row's date takes over automatically."
-                    withFromDateOnly
-                    fromDateLabel="Effective Date"
+                    description="DA rates applicable from 01.01.2006 to 31.12.2015 as per 6th Pay Commission."
                     initialRates={da6thRates}
                     setGlobalRates={setDa6thRates}
                 />
