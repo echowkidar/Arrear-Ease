@@ -133,6 +133,7 @@ const RateTable = ({
         const validRates = localRates.filter(r => isValidNumeric(r.rate))
             .map(r => ({
                 ...r,
+                toDate: (!withDateRange || withFromDateOnly) ? undefined : r.toDate,
                 rate: parseFloat(r.rate as any),
                 basicFrom: isValidNumeric(r.basicFrom) ? parseFloat(r.basicFrom as any) : '',
                 basicTo: isValidNumeric(r.basicTo) ? parseFloat(r.basicTo as any) : '',
