@@ -264,7 +264,6 @@ const FormDateInput = ({ field, label }: { field: any, label?: string }) => {
                     mode="single"
                     selected={field.value}
                     onSelect={(date) => field.onChange(date)}
-                    initialFocus={field.value ? new Date(field.value) : undefined}
                     defaultMonth={field.value ? new Date(field.value) : undefined}
                     captionLayout="dropdown-buttons"
                     fromYear={1990}
@@ -447,17 +446,17 @@ export default function Home() {
 
       setIsLoading(true);
       try {
-        const batch = writeBatch(db);
+        const batch = writeBatch(db!);
         const syncedIds = new Set();
         localOnly.forEach(stmt => {
           const { isLocal, ...serverStmt } = stmt; 
-          const docRef = doc(db, FIRESTORE_STATEMENTS_COLLECTION, stmt.id);
-          batch.set(docRef, sanitizeForFirebase({ ...serverStmt, userId: user.uid, userName: user.displayName, userEmail: user.email }));
+          const docRef = doc(db!, FIRESTORE_STATEMENTS_COLLECTION, stmt.id);
+          batch.set(docRef, sanitizeForFirebase({ ...serverStmt, userId: user.uid, userName: user.displayName || undefined, userEmail: user.email || undefined }));
           syncedIds.add(stmt.id);
         });
         await batch.commit();
         
-        const updatedLocalStatements = localStatements.map(s => syncedIds.has(s.id) ? { ...s, isLocal: false, userId: user.uid, userName: user.displayName, userEmail: user.email } : s);
+        const updatedLocalStatements = localStatements.map(s => syncedIds.has(s.id) ? { ...s, isLocal: false, userId: user.uid, userName: user.displayName || undefined, userEmail: user.email || undefined } : s);
         saveLocalStatements(updatedLocalStatements);
 
         toast({
@@ -632,7 +631,6 @@ export default function Home() {
         hraApplicable: false,
         hraFixedRateApplicable: false,
         npaApplicable: false,
-        npaFixedRateApplicable: false,
         taApplicable: false,
         doubleTaApplicable: false,
         taFixedRateApplicable: false,
@@ -651,7 +649,6 @@ export default function Home() {
         hraApplicable: false,
         hraFixedRateApplicable: false,
         npaApplicable: false,
-        npaFixedRateApplicable: false,
         taApplicable: false,
         doubleTaApplicable: false,
         taFixedRateApplicable: false,
@@ -665,7 +662,7 @@ export default function Home() {
 
   const getPayLevels = (cpc: '6th' | '7th' | undefined) => {
      if (!cpc) return [];
-     return cpcData[cpc].payLevels.map(pl => ({ value: pl.level, label: cpc === '6th' ? `GP ${pl.gradePay} (${pl.payBand})` : `Level ${pl.level}`}));
+     return cpcData[cpc].payLevels.map((pl: any) => ({ value: pl.level, label: cpc === '6th' ? `GP ${pl.gradePay} (${pl.payBand})` : `Level ${pl.level}`}));
   };
   
   const getRateForDate = (

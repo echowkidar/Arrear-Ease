@@ -87,7 +87,7 @@ const ProtectedUsersPage = () => {
         }
         setIsLoading(true);
         try {
-            const usersSnapshot = await getDocs(collection(db, "users"));
+            const usersSnapshot = await getDocs(collection(db!, "users"));
             const usersData = usersSnapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() })) as AppUser[];
             
             // Sort by lastLogin descending, with fallback to createdAt for users who have never logged in
@@ -133,7 +133,7 @@ const ProtectedUsersPage = () => {
         if (!editingUser) return;
         setIsLoading(true);
         try {
-            const userDocRef = doc(db, "users", editingUser.uid);
+            const userDocRef = doc(db!, "users", editingUser.uid);
             await updateDoc(userDocRef, { displayName: data.displayName });
             toast({ title: "User updated successfully" });
             cancelEdit();
@@ -152,14 +152,14 @@ const ProtectedUsersPage = () => {
             // This will delete their data, but not their auth entry.
             // Proper user deletion should be handled by a backend function for security.
             
-            const batch = writeBatch(db);
+            const batch = writeBatch(db!);
             
             // Delete user document
-            const userDocRef = doc(db, "users", uid);
+            const userDocRef = doc(db!, "users", uid);
             batch.delete(userDocRef);
 
             // Find and delete user's statements
-            const statementsQuery = query(collection(db, "savedStatements"), where("userId", "==", uid));
+            const statementsQuery = query(collection(db!, "savedStatements"), where("userId", "==", uid));
             const statementsSnapshot = await getDocs(statementsQuery);
             statementsSnapshot.forEach(doc => batch.delete(doc.ref));
 
