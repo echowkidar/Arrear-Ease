@@ -28,7 +28,7 @@ service cloud.firestore {
     }
     
     match /configurations/{docId} {
-      allow read: if true;
+      allow read: if request.auth != null;
       allow write: if isAdmin();
     }
   }

@@ -2,7 +2,7 @@
 FROM node:18-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm install
+RUN npm ci --omit=dev
 
 # Stage 2: Build the app
 FROM node:18-alpine AS builder
@@ -35,4 +35,4 @@ USER node
 COPY --from=builder /app ./
 
 EXPOSE 3000
-CMD ["sh", "-c", "env && npm start"]
+CMD ["node_modules/.bin/next", "start"]
