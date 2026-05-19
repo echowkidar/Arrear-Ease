@@ -6,7 +6,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # npm ci is safer than npm install — uses lockfile exactly, no surprises
-RUN npm ci
+RUN npm install
 
 # Stage 2 — Build the app
 FROM node:20-slim AS builder
