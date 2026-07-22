@@ -6,7 +6,7 @@ import { useForm, useFormContext } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import Link from "next/link";
-import { format, addMonths, differenceInCalendarMonths, getDaysInMonth, startOfMonth, endOfMonth, max, min, isWithinInterval, differenceInDays, addDays } from "date-fns";
+import { format, addMonths, differenceInCalendarMonths, getDaysInMonth, startOfMonth, endOfMonth, startOfDay, endOfDay, max, min, isWithinInterval, differenceInDays, addDays } from "date-fns";
 import {
   User,
   Building,
@@ -405,6 +405,53 @@ export default function Home() {
 
   const isAdmin = user?.email === "amulivealigarh@gmail.com";
 
+  const activeCols = React.useMemo(() => {
+    if (!statement || !statement.rows || statement.rows.length === 0) {
+      return { hra: true, npa: true, ta: true, other: true };
+    }
+    return {
+      hra: statement.rows.some(r => (r.drawn?.hra || 0) !== 0 || (r.due?.hra || 0) !== 0),
+      npa: statement.rows.some(r => (r.drawn?.npa || 0) !== 0 || (r.due?.npa || 0) !== 0),
+      ta: statement.rows.some(r => (r.drawn?.ta || 0) !== 0 || (r.due?.ta || 0) !== 0),
+      other: statement.rows.some(r => (r.drawn?.other || 0) !== 0 || (r.due?.other || 0) !== 0),
+    };
+  }, [statement]);
+
+  const subColsCount = React.useMemo(() => {
+    return 3 + (activeCols.hra ? 1 : 0) + (activeCols.npa ? 1 : 0) + (activeCols.ta ? 1 : 0) + (activeCols.other ? 1 : 0);
+  }, [activeCols]);
+
+  const colWidths = React.useMemo(() => {
+    const weights = {
+      month: 6.8,
+      basic: 6.7,
+      da: 6.2,
+      hra: activeCols.hra ? 6.2 : 0,
+      npa: activeCols.npa ? 4.8 : 0,
+      ta: activeCols.ta ? 4.8 : 0,
+      other: activeCols.other ? 4.8 : 0,
+      total: 9.3,
+      diff: 7.6,
+    };
+
+    const sideSum = weights.basic + weights.da + weights.hra + weights.npa + weights.ta + weights.other + weights.total;
+    const totalWeight = weights.month + sideSum * 2 + weights.diff;
+
+    const pct = (w: number) => `${((w / totalWeight) * 100).toFixed(1)}%`;
+
+    return {
+      month: pct(weights.month),
+      basic: pct(weights.basic),
+      da: pct(weights.da),
+      hra: pct(weights.hra),
+      npa: pct(weights.npa),
+      ta: pct(weights.ta),
+      other: pct(weights.other),
+      total: pct(weights.total),
+      diff: pct(weights.diff),
+    };
+  }, [activeCols]);
+
   React.useEffect(() => {
     const updateOnlineStatus = () => setIsOnline(navigator.onLine);
     window.addEventListener('online', updateOnlineStatus);
@@ -621,7 +668,7 @@ export default function Home() {
       toDate: undefined,
       payFixationRef: "",
       paid: {
-        cpc: undefined,
+        cpc: "7th" as any,
         basicPay: '' as any,
         payLevel: undefined,
         incrementMonth: undefined,
@@ -639,7 +686,7 @@ export default function Home() {
         otherAllowanceFixedRateApplicable: false,
       },
       toBePaid: {
-        cpc: undefined,
+        cpc: "7th" as any,
         basicPay: '' as any,
         payLevel: undefined,
         incrementMonth: undefined,
@@ -660,31 +707,111 @@ export default function Home() {
     },
   });
 
+  const watchedEmployeeId = form.watch("employeeId");
+  React.useEffect(() => {
+    const fetchEmployeeData = async () => {
+      if (watchedEmployeeId && watchedEmployeeId.length === 5) {
+        try {
+          const response = await fetch(`/api/employee/${watchedEmployeeId}`);
+          if (response.ok) {
+            const data = await response.json();
+            form.setValue("employeeName", data.name || "");
+            form.setValue("designation", data.designation || "");
+            form.setValue("department", data.department || "");
+            toast({
+              title: "Employee Found",
+              description: "Details auto-filled successfully.",
+            });
+          } else if (response.status === 404) {
+            toast({
+              variant: "destructive",
+              title: "Not Found",
+              description: "No employee found with this ID.",
+            });
+          }
+        } catch (error) {
+          console.error("Error fetching employee:", error);
+          toast({
+            variant: "destructive",
+            title: "Error",
+            description: "Failed to fetch employee details.",
+          });
+        }
+      }
+    };
+    fetchEmployeeData();
+  }, [watchedEmployeeId, form, toast]);
+
+  const watchedFromDate = form.watch("fromDate");
+  React.useEffect(() => {
+    const fetchBasicPayHistory = async () => {
+      if (watchedEmployeeId && watchedEmployeeId.length === 5 && watchedFromDate) {
+        const dateObj = new Date(watchedFromDate);
+        const month = dateObj.getMonth() + 1;
+        const year = dateObj.getFullYear();
+        try {
+          const response = await fetch(`/api/employee/${watchedEmployeeId}/history?month=${month}&year=${year}`);
+          if (response.ok) {
+            const data = await response.json();
+            if (data.basic_sal) {
+              form.setValue("paid.basicPay", data.basic_sal);
+
+              if (data.grade_pay) {
+                const currentCpc = form.getValues("paid.cpc");
+                if (currentCpc === "7th") {
+                  const gpLevelMatch = cpcData["6th"].payLevels.find((pl: any) => pl.gradePay === Number(data.grade_pay));
+                  if (gpLevelMatch) {
+                    form.setValue("paid.payLevel", gpLevelMatch.level as any);
+                  }
+                }
+              }
+
+              toast({
+                title: "History Data Found",
+                description: `Auto-filled Basic Pay and Level for ${month}/${year}.`,
+              });
+            }
+          }
+        } catch (error) {
+          console.error("Error fetching history basic pay:", error);
+        }
+      }
+    };
+    fetchBasicPayHistory();
+  }, [watchedEmployeeId, watchedFromDate, form, toast]);
+
   const getPayLevels = (cpc: '6th' | '7th' | undefined) => {
     if (!cpc) return [];
     return cpcData[cpc].payLevels.map((pl: any) => ({ value: pl.level, label: cpc === '6th' ? `GP ${pl.gradePay} (${pl.payBand})` : `Level ${pl.level}` }));
   };
-
   const getRateForDate = (
     rates: Rate[],
     date: Date,
     options: { basicPay?: number, payLevel?: string, daRate?: number } = {}
   ): Rate | null => {
     const { basicPay, payLevel, daRate } = options;
+    const calcDate = startOfDay(date);
 
-    const applicableRates = rates.filter(r => {
+    // First attempt: exact match within fromDate and toDate interval
+    let applicableRates = rates.filter(r => {
       let isMatch = true;
 
-      if (r.fromDate && date < new Date(r.fromDate)) {
-        isMatch = false;
+      if (r.fromDate) {
+        const rFrom = startOfDay(new Date(r.fromDate));
+        if (calcDate < rFrom) {
+          isMatch = false;
+        }
       }
 
-      if (r.toDate && date > new Date(r.toDate)) {
-        isMatch = false;
+      if (r.toDate) {
+        const rTo = endOfDay(new Date(r.toDate));
+        if (calcDate > rTo) {
+          isMatch = false;
+        }
       }
 
-      if (daRate !== undefined && r.daRateFrom !== undefined && r.daRateTo !== undefined) {
-        if (!(daRate >= r.daRateFrom && daRate <= r.daRateTo)) {
+      if (daRate !== undefined && r.daRateFrom !== undefined && r.daRateTo !== undefined && r.daRateFrom !== '' && r.daRateTo !== '') {
+        if (!(daRate >= Number(r.daRateFrom) && daRate <= Number(r.daRateTo))) {
           isMatch = false;
         }
       }
@@ -692,8 +819,8 @@ export default function Home() {
       if (!isMatch) return false;
 
       if (basicPay !== undefined) {
-        if (r.basicFrom !== undefined && r.basicTo !== undefined && r.basicFrom > 0 && r.basicTo > 0) {
-          if (!(basicPay >= r.basicFrom && basicPay <= r.basicTo)) {
+        if (r.basicFrom !== undefined && r.basicTo !== undefined && Number(r.basicFrom) > 0 && Number(r.basicTo) > 0) {
+          if (!(basicPay >= Number(r.basicFrom) && basicPay <= Number(r.basicTo))) {
             isMatch = false;
           }
         }
@@ -711,12 +838,61 @@ export default function Home() {
             isMatch = false;
           }
         } else {
-          isMatch = false; // Could not find one of the levels in the map
+          isMatch = false;
         }
       }
 
       return isMatch;
     });
+
+    // Fallback: If no exact match (e.g. calculation date is past the latest configured toDate),
+    // pick the latest rate that started on or before the calculation date (r.fromDate <= date)
+    if (applicableRates.length === 0) {
+      applicableRates = rates.filter(r => {
+        let isMatch = true;
+
+        if (r.fromDate) {
+          const rFrom = startOfDay(new Date(r.fromDate));
+          if (calcDate < rFrom) {
+            isMatch = false;
+          }
+        }
+
+        if (daRate !== undefined && r.daRateFrom !== undefined && r.daRateTo !== undefined && r.daRateFrom !== '' && r.daRateTo !== '') {
+          if (!(daRate >= Number(r.daRateFrom) && daRate <= Number(r.daRateTo))) {
+            isMatch = false;
+          }
+        }
+
+        if (!isMatch) return false;
+
+        if (basicPay !== undefined) {
+          if (r.basicFrom !== undefined && r.basicTo !== undefined && Number(r.basicFrom) > 0 && Number(r.basicTo) > 0) {
+            if (!(basicPay >= Number(r.basicFrom) && basicPay <= Number(r.basicTo))) {
+              isMatch = false;
+            }
+          }
+        }
+
+        if (!isMatch) return false;
+
+        if (payLevel !== undefined && r.payLevelFrom !== undefined && r.payLevelTo !== undefined && r.payLevelFrom !== '' && r.payLevelTo !== '') {
+          const fromIndex = payLevelIndexMap.get(String(r.payLevelFrom));
+          const toIndex = payLevelIndexMap.get(String(r.payLevelTo));
+          const currentIndex = payLevelIndexMap.get(String(payLevel));
+
+          if (fromIndex !== undefined && toIndex !== undefined && currentIndex !== undefined) {
+            if (!(currentIndex >= fromIndex && currentIndex <= toIndex)) {
+              isMatch = false;
+            }
+          } else {
+            isMatch = false;
+          }
+        }
+
+        return isMatch;
+      });
+    }
 
     if (applicableRates.length === 0) return null;
     applicableRates.sort((a, b) => (new Date(b.fromDate!) as any) - (new Date(a.fromDate!) as any));
@@ -730,8 +906,12 @@ export default function Home() {
       });
     }
 
-    return applicableRates[0];
-  }
+    const matchedRate = applicableRates[0];
+    return {
+      ...matchedRate,
+      rate: Number(matchedRate.rate),
+    };
+  };
 
   const handlePrint = () => {
     if (authStatus !== 'authenticated') {
@@ -990,7 +1170,7 @@ export default function Home() {
     const difference = dueTotal - drawnTotal;
 
     const row: StatementRow = {
-      month: format(currentDate, "MMM yyyy"),
+      month: format(currentDate, "MMM yy"),
       drawn: {
         basic: Math.round(drawnComponents.basic),
         da: Math.round(drawnComponents.da),
@@ -1357,8 +1537,8 @@ export default function Home() {
       fromDate: undefined,
       toDate: undefined,
       payFixationRef: "",
-      paid: { cpc: undefined, basicPay: '' as any, payLevel: undefined, incrementMonth: undefined, daApplicable: false, hraApplicable: false, npaApplicable: false, taApplicable: false, doubleTaApplicable: false, otherAllowance: '' as any, otherAllowanceName: "" },
-      toBePaid: { cpc: undefined, basicPay: '' as any, payLevel: undefined, incrementMonth: undefined, daApplicable: false, hraApplicable: false, npaApplicable: false, taApplicable: false, doubleTaApplicable: false, otherAllowance: '' as any, otherAllowanceName: "", refixedBasicPay: '' as any },
+      paid: { cpc: "7th" as any, basicPay: '' as any, payLevel: undefined, incrementMonth: undefined, daApplicable: false, hraApplicable: false, npaApplicable: false, taApplicable: false, doubleTaApplicable: false, otherAllowance: '' as any, otherAllowanceName: "" },
+      toBePaid: { cpc: "7th" as any, basicPay: '' as any, payLevel: undefined, incrementMonth: undefined, daApplicable: false, hraApplicable: false, npaApplicable: false, taApplicable: false, doubleTaApplicable: false, otherAllowance: '' as any, otherAllowanceName: "", refixedBasicPay: '' as any },
     });
     setStatement(null);
     setLoadedStatementId(null);
@@ -1630,14 +1810,13 @@ export default function Home() {
   };
 
   const numberToWords = (num: number): string => {
-    if (num === 0) return "Zero";
+    if (!num || isNaN(num) || num === 0) return "Zero Only";
 
     const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
     const teens = ['Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
     const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-    const thousands = ['', 'Thousand', 'Lakh', 'Crore'];
 
-    const toWords = (n: number): string => {
+    const convertLessThanThousand = (n: number): string => {
       let word = '';
       if (n >= 100) {
         word += ones[Math.floor(n / 100)] + ' Hundred ';
@@ -1657,45 +1836,27 @@ export default function Home() {
       return word;
     };
 
-    let n = Math.floor(num);
-    let words = '';
-    let i = 0;
+    let n = Math.floor(Math.abs(num));
+    if (n === 0) return "Zero Only";
 
-    if (n === 0) return 'Zero';
+    const remainder = n % 1000;
+    let words = convertLessThanThousand(remainder);
+    n = Math.floor(n / 1000);
+
+    const units = ['Thousand', 'Lakh', 'Crore'];
+    let unitIndex = 0;
 
     while (n > 0) {
-      let base = (i === 1) ? 1000 : 100; // For thousand
-      if (i > 1) base = 100; // For lakh, crore
-
-      let chunk;
-      if (i === 0) { // Ones and tens
-        chunk = n % 1000;
-      } else { // Thousands, Lakhs, Crores
-        chunk = n % 100;
+      const chunk = n % 100;
+      if (chunk > 0) {
+        const unitName = units[Math.min(unitIndex, units.length - 1)];
+        words = convertLessThanThousand(chunk) + unitName + ' ' + words;
       }
-
-      if (chunk !== 0) {
-        if (i === 0) { // For the first chunk (up to 999)
-          words = toWords(chunk) + thousands[i] + ' ' + words;
-        } else if (i === 1) { // For thousands
-          words = toWords(n % 1000) + thousands[i] + ' ' + words;
-          n = Math.floor(n / 1000);
-          i++;
-          continue;
-        } else { // for Lakhs and crores
-          words = toWords(n % 100) + thousands[i] + ' ' + words;
-        }
-      }
-
-      if (i === 0) {
-        n = Math.floor(n / 1000);
-      } else {
-        n = Math.floor(n / 100);
-      }
-      i++;
+      n = Math.floor(n / 100);
+      unitIndex++;
     }
 
-    return words.trim() + " Only";
+    return words.replace(/\s+/g, ' ').trim() + " Only";
   };
 
 
@@ -1830,7 +1991,7 @@ export default function Home() {
                 <Card id="employee-details-card">
                   <CardHeader><CardTitle className="flex items-center gap-2"><User /> Employee Details</CardTitle></CardHeader>
                   <CardContent className="space-y-4">
-                    <FormField control={form.control} name="employeeId" render={({ field }) => (<FormItem> <FormLabel>Employee ID</FormLabel> <FormControl><Input placeholder="Employee ID" {...field} /></FormControl> <FormMessage /> </FormItem>)} />
+                    <FormField control={form.control} name="employeeId" render={({ field }) => (<FormItem> <FormLabel>Employee ID</FormLabel> <FormControl><Input placeholder="Employee ID" {...field} maxLength={5} onChange={(e) => { const val = e.target.value.replace(/\D/g, '').slice(0, 5); field.onChange(val); }} /></FormControl> <FormMessage /> </FormItem>)} />
                     <FormField control={form.control} name="employeeName" render={({ field }) => (<FormItem> <FormLabel>Employee Name</FormLabel> <FormControl><Input placeholder="Full Name" {...field} /></FormControl> <FormMessage /> </FormItem>)} />
                     <FormField control={form.control} name="designation" render={({ field }) => (<FormItem> <FormLabel>Designation</FormLabel> <FormControl><Input placeholder="Designation" {...field} /></FormControl> <FormMessage /> </FormItem>)} />
                     <FormField control={form.control} name="department" render={({ field }) => (<FormItem> <FormLabel>Department</FormLabel> <FormControl><Input placeholder="Department" {...field} /></FormControl> <FormMessage /> </FormItem>)} />
@@ -1875,11 +2036,11 @@ export default function Home() {
         {statement && (
           <div id="statement-section" className="mt-12">
             <div className="printable-area page">
-              <Card id="printable-statement-card">
-                <CardHeader className="flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                  <div>
-                    <CardTitle className="font-headline text-3xl">Arrear Statement</CardTitle>
-                    <CardDescription>
+              <Card id="printable-statement-card" className="print:p-0 print:border-none print:shadow-none">
+                <CardHeader className="flex-col md:flex-row items-start md:items-center justify-between gap-4 print:p-0 print:pb-4 print:text-center print:items-center print:w-full">
+                  <div className="w-full text-left print:text-center print:mx-auto">
+                    <CardTitle className="font-headline text-3xl print:text-center print:text-2xl print:font-bold">Arrear Statement</CardTitle>
+                    <CardDescription className="print:text-center print:text-black print:text-sm">
                       For: {statement.employeeInfo.employeeName} ({statement.employeeInfo.employeeId}) <br />
                       {statement.employeeInfo.designation}, {statement.employeeInfo.department} <br />
                       {statement.employeeInfo.payFixationRef && `Ref: ${statement.employeeInfo.payFixationRef}`} <br />
@@ -1903,80 +2064,108 @@ export default function Home() {
                     </Button>
                   </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="print:p-0">
                   <div className="overflow-x-auto">
                     <Table className="min-w-full">
+                      <colgroup>
+                        <col style={{ width: colWidths.month }} />
+                        {/* Drawn group */}
+                        <col style={{ width: colWidths.basic }} />
+                        <col style={{ width: colWidths.da }} />
+                        {activeCols.hra && <col style={{ width: colWidths.hra }} />}
+                        {activeCols.npa && <col style={{ width: colWidths.npa }} />}
+                        {activeCols.ta && <col style={{ width: colWidths.ta }} />}
+                        {activeCols.other && <col style={{ width: colWidths.other }} />}
+                        <col style={{ width: colWidths.total }} />
+                        {/* Due group */}
+                        <col style={{ width: colWidths.basic }} />
+                        <col style={{ width: colWidths.da }} />
+                        {activeCols.hra && <col style={{ width: colWidths.hra }} />}
+                        {activeCols.npa && <col style={{ width: colWidths.npa }} />}
+                        {activeCols.ta && <col style={{ width: colWidths.ta }} />}
+                        {activeCols.other && <col style={{ width: colWidths.other }} />}
+                        <col style={{ width: colWidths.total }} />
+                        {/* Difference */}
+                        <col style={{ width: colWidths.diff }} />
+                      </colgroup>
                       <TableHeader>
                         <TableRow>
                           <TableHead rowSpan={2} className="text-center align-middle border-r month-col">Month</TableHead>
-                          <TableHead colSpan={7} className="text-center border-r">Amount Drawn</TableHead>
-                          <TableHead colSpan={7} className="text-center border-r">Amount Due</TableHead>
-                          <TableHead rowSpan={2} className="text-center align-middle">Difference</TableHead>
+                          <TableHead colSpan={subColsCount} className="text-center border-r">Amount Drawn</TableHead>
+                          <TableHead colSpan={subColsCount} className="text-center border-r">Amount Due</TableHead>
+                          <TableHead rowSpan={2} className="text-center align-middle diff-col">Difference</TableHead>
                         </TableRow>
                         <TableRow>
+                          {/* Drawn Subheaders */}
                           <TableHead className="text-right">Basic</TableHead>
                           <TableHead className="text-right">DA</TableHead>
-                          <TableHead className="text-right">HRA</TableHead>
-                          <TableHead className="text-right">NPA</TableHead>
-                          <TableHead className="text-right">TA</TableHead>
-                          <TableHead className="text-right">Other</TableHead>
-                          <TableHead className="text-right font-bold border-r">Total</TableHead>
+                          {activeCols.hra && <TableHead className="text-right">HRA</TableHead>}
+                          {activeCols.npa && <TableHead className="text-right">NPA</TableHead>}
+                          {activeCols.ta && <TableHead className="text-right">TA</TableHead>}
+                          {activeCols.other && <TableHead className="text-right">Other</TableHead>}
+                          <TableHead className="text-right font-bold border-r total-col">Total</TableHead>
+
+                          {/* Due Subheaders */}
                           <TableHead className="text-right">Basic</TableHead>
                           <TableHead className="text-right">DA</TableHead>
-                          <TableHead className="text-right">HRA</TableHead>
-                          <TableHead className="text-right">NPA</TableHead>
-                          <TableHead className="text-right">TA</TableHead>
-                          <TableHead className="text-right">Other</TableHead>
-                          <TableHead className="text-right font-bold border-r">Total</TableHead>
+                          {activeCols.hra && <TableHead className="text-right">HRA</TableHead>}
+                          {activeCols.npa && <TableHead className="text-right">NPA</TableHead>}
+                          {activeCols.ta && <TableHead className="text-right">TA</TableHead>}
+                          {activeCols.other && <TableHead className="text-right">Other</TableHead>}
+                          <TableHead className="text-right font-bold border-r total-col">Total</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {statement.rows.map(row => (
                           <TableRow key={row.month}>
-                            <TableCell className="font-medium border-r month-col">{row.month}</TableCell>
+                            <TableCell className="font-medium border-r month-col">{row.month.replace(/(\s\d{2})\d{2}$/, '$1')}</TableCell>
+                            
+                            {/* Drawn Cells */}
                             <TableCell className="text-right">{row.drawn.basic}</TableCell>
                             <TableCell className="text-right">{row.drawn.da}</TableCell>
-                            <TableCell className="text-right">{row.drawn.hra}</TableCell>
-                            <TableCell className="text-right">{row.drawn.npa}</TableCell>
-                            <TableCell className="text-right">{row.drawn.ta}</TableCell>
-                            <TableCell className="text-right">{row.drawn.other}</TableCell>
-                            <TableCell className="text-right font-semibold border-r">{row.drawn.total}</TableCell>
+                            {activeCols.hra && <TableCell className="text-right">{row.drawn.hra}</TableCell>}
+                            {activeCols.npa && <TableCell className="text-right">{row.drawn.npa}</TableCell>}
+                            {activeCols.ta && <TableCell className="text-right">{row.drawn.ta}</TableCell>}
+                            {activeCols.other && <TableCell className="text-right">{row.drawn.other}</TableCell>}
+                            <TableCell className="text-right font-semibold border-r total-col">{row.drawn.total}</TableCell>
+
+                            {/* Due Cells */}
                             <TableCell className="text-right">{row.due.basic}</TableCell>
                             <TableCell className="text-right">{row.due.da}</TableCell>
-                            <TableCell className="text-right">{row.due.hra}</TableCell>
-                            <TableCell className="text-right">{row.due.npa}</TableCell>
-                            <TableCell className="text-right">{row.due.ta}</TableCell>
-                            <TableCell className="text-right">{row.due.other}</TableCell>
-                            <TableCell className="text-right font-semibold border-r">{row.due.total}</TableCell>
-                            <TableCell className="text-right font-bold">{row.difference}</TableCell>
+                            {activeCols.hra && <TableCell className="text-right">{row.due.hra}</TableCell>}
+                            {activeCols.npa && <TableCell className="text-right">{row.due.npa}</TableCell>}
+                            {activeCols.ta && <TableCell className="text-right">{row.due.ta}</TableCell>}
+                            {activeCols.other && <TableCell className="text-right">{row.due.other}</TableCell>}
+                            <TableCell className="text-right font-semibold border-r total-col">{row.due.total}</TableCell>
+
+                            <TableCell className="text-right font-bold diff-col">{row.difference}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
                       <UiTableFooter>
                         <TableRow className="bg-muted/50 font-bold">
-                          <TableCell className="border-r">Total</TableCell>
-                          <TableCell colSpan={6}></TableCell>
-                          <TableCell className="text-right border-r">{statement.totals.drawn.total}</TableCell>
-                          <TableCell colSpan={6}></TableCell>
-                          <TableCell className="text-right border-r">{statement.totals.due.total}</TableCell>
-                          <TableCell className="text-right">{statement.totals.difference}</TableCell>
+                          <TableCell className="border-r month-col">Total</TableCell>
+                          <TableCell colSpan={subColsCount - 1}></TableCell>
+                          <TableCell className="text-right border-r total-col">{statement.totals.drawn.total}</TableCell>
+                          <TableCell colSpan={subColsCount - 1}></TableCell>
+                          <TableCell className="text-right border-r total-col">{statement.totals.due.total}</TableCell>
+                          <TableCell className="text-right diff-col">{statement.totals.difference}</TableCell>
                         </TableRow>
                       </UiTableFooter>
                     </Table>
                   </div>
-                  <div className="pt-12 text-sm">
+                  <div className="pt-6 print:pt-4 text-sm signature-section">
                     {statement.totals.difference > 0 &&
-                      <div className="mb-8">
+                      <div className="mb-4 print:mb-2 font-medium">
                         Passed for pay of rupees {numberToWords(statement.totals.difference)}.
-
                       </div>
                     }
                     <div className="flex justify-between items-end">
                       <span>Date: {format(new Date(), "dd/MM/yyyy")}</span>
-                      <div className="grid grid-cols-3 gap-12 text-center w-full max-w-2xl mx-auto">
-                        <div className="pt-8">Dealing Assistant</div>
-                        <div className="pt-8">Section Officer</div>
-                        <div className="pt-8">Assistant Finance Officer (Salary)</div>
+                      <div className="grid grid-cols-3 gap-8 text-center w-full max-w-2xl mx-auto">
+                        <div className="pt-6 print:pt-4">Dealing Assistant</div>
+                        <div className="pt-6 print:pt-4">Section Officer</div>
+                        <div className="pt-6 print:pt-4">Assistant Finance Officer (Salary)</div>
                       </div>
                     </div>
                   </div>

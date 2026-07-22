@@ -59,14 +59,33 @@
 }
 
 @page {
-  size: A4 portrait;
-  margin: 0.5cm;
+  size: A4;
+  margin-top: 0.8cm;
+  margin-bottom: 1.2cm;
+  margin-left: 0.6cm;
+  margin-right: 0.6cm;
+
+  @bottom-center {
+    content: "Page " counter(page) " of " counter(pages);
+    font-size: 9pt;
+    color: #333;
+  }
 }
 
 @media print {
-  body {
+  html, body, main, #statement-section {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  html, body {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+    border: none !important;
+    background: #fff !important;
   }
   
   body * {
@@ -74,52 +93,146 @@
   }
 
   .printable-area {
-    counter-reset: pages;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto;
+    padding: 0 !important;
+    margin: 0 !important;
+    font-size: 11pt;
+    color: #000000 !important;
   }
 
   .printable-area, .printable-area * {
     visibility: visible;
-  }
-
-  .printable-area {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: auto;
-    padding: 0;
-    margin: 0;
-    font-size: 8pt;
+    color: #000000 !important;
   }
 
   .no-print {
     display: none !important;
   }
 
-  .printable-area .card {
-     border: none;
-     box-shadow: none;
+  .printable-area #printable-statement-card,
+  .printable-area div[class*="border"],
+  .printable-area [class*="card"] {
+    border: none !important;
+    box-shadow: none !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    padding-top: 0 !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    margin-top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    background: transparent !important;
+  }
+
+  .printable-area header,
+  .printable-area [class*="CardHeader"] {
+    text-align: center !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    padding-top: 0 !important;
+    margin-top: 0 !important;
   }
   
   .printable-area h1, .printable-area h2, .printable-area h3, .printable-area .text-3xl {
-    font-size: 12pt !important;
+    font-size: 16pt !important;
+    text-align: center !important;
+    font-weight: bold !important;
+    color: #000000 !important;
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+    margin-bottom: 4px !important;
   }
-  .printable-area .text-lg {
-    font-size: 9pt !important;
+
+  .printable-area [class*="CardDescription"] {
+    text-align: center !important;
+    font-size: 10.5pt !important;
+    color: #000000 !important;
+    line-height: 1.4 !important;
   }
-   .printable-area table {
-    width: 100%;
+
+  .printable-area .overflow-x-auto {
+    overflow: visible !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .printable-area table {
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: 100% !important;
     table-layout: fixed;
     border-collapse: collapse;
     word-wrap: normal;
+    font-size: 10pt;
+    color: #000000 !important;
   }
+
+  .printable-area thead {
+    display: table-header-group;
+  }
+
+  .printable-area tbody tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .printable-area tfoot {
+    display: table-row-group !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
   .printable-area th, .printable-area td {
-    padding: 2px 1px;
+    padding: 3.5px 2px;
     white-space: nowrap;
-    border: 0.25px solid black;
+    border: 0.25px solid #000000 !important;
+    color: #000000 !important;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.1px;
+    overflow: hidden;
   }
+
   .printable-area th.month-col, .printable-area td.month-col {
-    white-space: normal; /* Allow month to wrap */
+    white-space: normal;
+  }
+
+  .printable-area th.total-col, .printable-area td.total-col {
+    font-weight: bold;
+    color: #000000 !important;
+    font-size: 9.2pt !important;
+    padding-left: 1px !important;
+    padding-right: 2px !important;
+    letter-spacing: -0.2px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .printable-area th.diff-col, .printable-area td.diff-col {
+    font-weight: bold;
+    color: #000000 !important;
+    font-size: 9.2pt !important;
+    padding-left: 1px !important;
+    padding-right: 2px !important;
+    letter-spacing: -0.2px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .printable-area .signature-section {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    page-break-before: avoid;
+    break-before: avoid;
+    margin-top: 1.5rem;
+    color: #000000 !important;
+  }
+
+  .printable-area .signature-section * {
+    color: #000000 !important;
   }
 
   .printable-area .print-disclaimer {
@@ -131,42 +244,6 @@
   }
 
   .page-footer {
-    position: fixed;
-    bottom: -0.25cm;
-    left: 50%;
-    transform: translateX(-50%);
-    text-align: center;
-    width: 100%;
-    font-size: 8pt;
-    color: #666;
+    display: none !important;
   }
-
-  .page-footer::after {
-    counter-increment: pages;
-    content: "Page " counter(page) " of " counter(pages);
-    display: none; /* Hide by default */
-  }
-
-  
-  @media print {
-    @page {
-      margin-top: 0.25cm; /* Sets a 1cm top margin */
-      margin-left: 0;
-      margin-right: 0;
-      margin-bottom: 0;
-      border: none;
-      @bottom-center {
-        content: ""; /* Clear default footer */
-      }
-    }
-  
-    body {
-      border: none !important;
-    }
-  
-    .printable-area > .page:not(:first-child) .page-footer::after {
-      display: block;
-    }
-  }
-
 }
