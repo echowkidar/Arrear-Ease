@@ -981,8 +981,11 @@ export default function Home() {
                 newBasic = levelData.values[currentBasicIndex + 1];
               }
             }
-          } else {
-            newBasic = Math.round(trackerBasic * 1.03);
+          }
+
+          if (newBasic === null) {
+            // 6th CPC (and fallback): Annual increment @ 3% of Basic Pay, rounded off UP to the next multiple of 10
+            newBasic = Math.ceil((trackerBasic * 1.03) / 10) * 10;
           }
 
           if (newBasic !== null) {
@@ -1108,8 +1111,10 @@ export default function Home() {
       if (sideData.hraApplicable) {
         const prorationFactor = getProratedFactorForAllowance(sideData.hraFromDate, sideData.hraToDate);
         if (prorationFactor > 0) {
-          // If NPA is selected, it's added to Basic Pay for HRA calculation.
-          const hraBase = fullMonthBasic + (sideData.npaApplicable ? fullMonthNpaCalculated : 0);
+          // 6th CPC: HRA is on (Basic Pay + NPA). 7th CPC: HRA is on Basic Pay only.
+          const hraBase = is6thCpc
+            ? fullMonthBasic + (sideData.npaApplicable ? fullMonthNpaCalculated : 0)
+            : fullMonthBasic;
 
           if (is6thCpc) {
             // 6th CPC: HRA = hra6thRate% of (Basic Pay + NPA) — fixed rate, not DA-slab based
