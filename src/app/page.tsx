@@ -1341,7 +1341,20 @@ export default function Home() {
     if (!loadedStatementId || !user) return;
     setIsLoading(true);
 
-    const currentFormData = form.getValues();
+    const rawValues = form.getValues();
+    const parseResult = formSchema.safeParse(rawValues);
+    
+    if (!parseResult.success) {
+      toast({
+        variant: "destructive",
+        title: "Validation Error",
+        description: "Please ensure all required fields are filled correctly before updating.",
+      });
+      setIsLoading(false);
+      return;
+    }
+    
+    const currentFormData = parseResult.data;
 
     // Recalculate statement before saving
     const rows: StatementRow[] = [];
