@@ -962,8 +962,8 @@ export default function Home() {
         if (!sideData.incrementDate && currentMonth === incrementMonthValue && currentDate >= new Date(currentYear, incrementMonthValue - 1, 1)) {
           incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
         }
-        else if (sideData.incrementDate && currentMonth === sideData.incrementDate.getMonth() + 1 && currentYear === sideData.incrementDate.getFullYear()) {
-          incrementTriggerDate = sideData.incrementDate;
+        else if (sideData.incrementDate && currentMonth === sideData.incrementDate.getMonth() + 1 && currentYear >= sideData.incrementDate.getFullYear()) {
+          incrementTriggerDate = new Date(currentYear, sideData.incrementDate.getMonth(), sideData.incrementDate.getDate());
         }
 
         if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd })) {
@@ -979,6 +979,15 @@ export default function Home() {
               const currentBasicIndex = levelData.values.indexOf(trackerBasic);
               if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
                 newBasic = levelData.values[currentBasicIndex + 1];
+              } else {
+                // If refixed to a different level, try to find the basic in any level to get the next cell
+                for (const l of cpcData['7th'].payLevels) {
+                  const idx = l.values.indexOf(trackerBasic);
+                  if (idx !== -1 && idx + 1 < l.values.length) {
+                    newBasic = l.values[idx + 1];
+                    break;
+                  }
+                }
               }
             }
           }
