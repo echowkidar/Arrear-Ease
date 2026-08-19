@@ -50,6 +50,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Switch } from "@/components/ui/switch";
 
 export const dynamic = 'force-dynamic';
 
@@ -60,6 +61,7 @@ type AppUser = {
   phoneNumber: string;
   createdAt: Timestamp | Date;
   lastLogin?: Timestamp | Date;
+  allowBasicPayAutoFill?: boolean;
 };
 
 const editUserSchema = z.object({
@@ -145,6 +147,21 @@ const ProtectedUsersPage = () => {
         setIsLoading(false);
     };
 
+    const toggleBasicPayAutoFill = async (uid: string, currentVal: boolean | undefined) => {
+        setIsLoading(true);
+        const newVal = !currentVal;
+        try {
+            const userDocRef = doc(db!, "users", uid);
+            await updateDoc(userDocRef, { allowBasicPayAutoFill: newVal });
+            setUsers(prev => prev.map(u => u.uid === uid ? { ...u, allowBasicPayAutoFill: newVal } : u));
+            toast({ title: "Updated Setting", description: `Auto-fill basic pay is now ${newVal ? 'enabled' : 'disabled'} for this user.` });
+        } catch (error) {
+            console.error("Error toggling auto-fill:", error);
+            toast({ variant: "destructive", title: "Failed to update setting" });
+        }
+        setIsLoading(false);
+    };
+
     const deleteUserAndStatements = async (uid: string) => {
         setIsLoading(true);
         try {
@@ -217,6 +234,7 @@ const ProtectedUsersPage = () => {
                                     <TableHead className="hidden sm:table-cell">Phone</TableHead>
                                     <TableHead className="hidden sm:table-cell">Registered</TableHead>
                                     <TableHead>Last Login</TableHead>
+                                    <TableHead className="text-center">Auto Basic Pay</TableHead>
                                     <TableHead className="text-right">Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
@@ -240,6 +258,13 @@ const ProtectedUsersPage = () => {
                                            {formatDate(user.createdAt)}
                                         </TableCell>
                                         <TableCell>{formatDate(user.lastLogin)}</TableCell>
+                                        <TableCell className="text-center">
+                                            <Switch 
+                                                checked={!!user.allowBasicPayAutoFill} 
+                                                onCheckedChange={() => toggleBasicPayAutoFill(user.uid, user.allowBasicPayAutoFill)}
+                                                disabled={isLoading || user.email === "amulivealigarh@gmail.com"}
+                                            />
+                                        </TableCell>
                                         <TableCell className="text-right">
                                              <Button size="sm" variant="outline" onClick={() => handleEdit(user)} className="mr-2" disabled={isLoading || !!editingUser}>
                                                  <Edit className="h-4 w-4" />

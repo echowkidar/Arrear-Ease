@@ -31,7 +31,7 @@ import {
   History,
 } from "lucide-react";
 import { db, isFirebaseConfigured } from "@/lib/firebase";
-import { collection, addDoc, getDocs, doc, deleteDoc, Timestamp, writeBatch, setDoc, updateDoc, query, where, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, getDocs, getDoc, doc, deleteDoc, Timestamp, writeBatch, setDoc, updateDoc, query, where, serverTimestamp } from "firebase/firestore";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -398,6 +398,7 @@ export default function Home() {
   const [isOnline, setIsOnline] = React.useState(true);
   const [dbConfigured] = React.useState(isFirebaseConfigured());
   const [loadedStatementId, setLoadedStatementId] = React.useState<string | null>(null);
+  const [allowBasicPayAutoFill, setAllowBasicPayAutoFill] = React.useState(false);
 
   const { user, authStatus, loading, logout, openAuthModal } = useAuth();
   const { toast } = useToast();
@@ -462,6 +463,19 @@ export default function Home() {
       window.removeEventListener('offline', updateOnlineStatus);
     };
   }, []);
+
+  React.useEffect(() => {
+    if (user?.uid && dbConfigured && db) {
+      getDoc(doc(db, "users", user.uid)).then(snap => {
+        if (snap.exists()) {
+          const data = snap.data();
+          setAllowBasicPayAutoFill(data.allowBasicPayAutoFill === true || user.email === "amulivealigarh@gmail.com");
+        }
+      }).catch(err => console.error("Error fetching user doc:", err));
+    } else {
+      setAllowBasicPayAutoFill(false);
+    }
+  }, [user, dbConfigured]);
 
   const getLocalStatements = (): SavedStatement[] => {
     try {
@@ -745,6 +759,7 @@ export default function Home() {
   const watchedFromDate = form.watch("fromDate");
   React.useEffect(() => {
     const fetchBasicPayHistory = async () => {
+      if (!allowBasicPayAutoFill) return;
       if (watchedEmployeeId && watchedEmployeeId.length === 5 && watchedFromDate) {
         const dateObj = new Date(watchedFromDate);
         const month = dateObj.getMonth() + 1;
@@ -767,18 +782,18 @@ export default function Home() {
               }
 
               toast({
-                title: "History Data Found",
+                title: "Data Found",
                 description: `Auto-filled Basic Pay and Level for ${month}/${year}.`,
               });
             }
           }
         } catch (error) {
-          console.error("Error fetching history basic pay:", error);
+          console.error("Error fetching basic pay:", error);
         }
       }
     };
     fetchBasicPayHistory();
-  }, [watchedEmployeeId, watchedFromDate, form, toast]);
+  }, [watchedEmployeeId, watchedFromDate, form, toast, allowBasicPayAutoFill]);
 
   const getPayLevels = (cpc: '6th' | '7th' | undefined) => {
     if (!cpc) return [];
@@ -2187,12 +2202,22 @@ export default function Home() {
                         Passed for pay of rupees {numberToWords(statement.totals.difference)}.
                       </div>
                     }
-                    <div className="flex justify-between items-end">
-                      <span>Date: {format(new Date(), "dd/MM/yyyy")}</span>
-                      <div className="grid grid-cols-3 gap-8 text-center w-full max-w-2xl mx-auto">
-                        <div className="pt-6 print:pt-4">Dealing Assistant</div>
-                        <div className="pt-6 print:pt-4">Section Officer</div>
-                        <div className="pt-6 print:pt-4">Assistant Finance Officer (Salary)</div>
+                    <div className="flex justify-between items-start mt-4">
+                      <div className="pt-6 print:pt-4 flex flex-col">
+                        <span>Date:</span>
+                        <span>{format(new Date(), "dd/MM/yyyy")}</span>
+                      </div>
+                      <div className="flex flex-col w-full max-w-2xl mx-auto gap-12 print:gap-16">
+                        <div className="grid grid-cols-3 gap-8 text-center">
+                          <div className="pt-6 print:pt-4">Dealing Assistant</div>
+                          <div className="pt-6 print:pt-4">Section Officer</div>
+                          <div className="pt-6 print:pt-4">Assistant Finance Officer (Salary)</div>
+                        </div>
+                        {statement.totals.difference > 50000 && (
+                          <div className="text-center">
+                            Joint Finance Officer (Salary)
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
