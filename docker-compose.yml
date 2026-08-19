@@ -17,6 +17,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL}
     networks:
       - npm_network
     ports:
