@@ -29,6 +29,7 @@ import {
   Users,
   X,
   History,
+  Camera,
 } from "lucide-react";
 import { db, isFirebaseConfigured } from "@/lib/firebase";
 import { collection, addDoc, getDocs, getDoc, doc, deleteDoc, Timestamp, writeBatch, setDoc, updateDoc, query, where, serverTimestamp } from "firebase/firestore";
@@ -399,6 +400,8 @@ export default function Home() {
   const [dbConfigured] = React.useState(isFirebaseConfigured());
   const [loadedStatementId, setLoadedStatementId] = React.useState<string | null>(null);
   const [allowBasicPayAutoFill, setAllowBasicPayAutoFill] = React.useState(false);
+  const [isScanning, setIsScanning] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const { user, authStatus, loading, logout, openAuthModal } = useAuth();
   const { toast } = useToast();
@@ -1587,6 +1590,80 @@ export default function Home() {
     toast({ title: "Form Cleared", description: "All fields have been reset." });
   };
 
+  const handleScanClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsScanning(true);
+    toast({
+      title: "Scanning Document",
+      description: "Extracting data using AI, please wait...",
+    });
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch("/api/extract-proforma", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to process document");
+      }
+
+      const data = await response.json();
+      
+      if (data.employeeName) form.setValue("employeeName", data.employeeName);
+      if (data.employeeId) form.setValue("employeeId", data.employeeId);
+      if (data.designation) form.setValue("designation", data.designation);
+      if (data.department) form.setValue("department", data.department);
+      
+      if (data.fromDate) form.setValue("fromDate", new Date(data.fromDate));
+      if (data.payFixationRef) form.setValue("payFixationRef", data.payFixationRef);
+
+      const today = new Date();
+      const lastDayOfPrevMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+      form.setValue("toDate", lastDayOfPrevMonth);
+      
+      if (data.paid) {
+        if (data.paid.cpc) form.setValue("paid.cpc", data.paid.cpc);
+        if (data.paid.basicPay) form.setValue("paid.basicPay", data.paid.basicPay);
+        if (data.paid.payLevel) form.setValue("paid.payLevel", data.paid.payLevel);
+        if (data.paid.incrementMonth) form.setValue("paid.incrementMonth", data.paid.incrementMonth);
+      }
+      
+      if (data.toBePaid) {
+        if (data.toBePaid.cpc) form.setValue("toBePaid.cpc", data.toBePaid.cpc);
+        if (data.toBePaid.basicPay) form.setValue("toBePaid.basicPay", data.toBePaid.basicPay);
+        if (data.toBePaid.payLevel) form.setValue("toBePaid.payLevel", data.toBePaid.payLevel);
+        if (data.toBePaid.refixedBasicPay) form.setValue("toBePaid.refixedBasicPay", data.toBePaid.refixedBasicPay);
+        if (data.toBePaid.refixedBasicPayDate) form.setValue("toBePaid.refixedBasicPayDate", new Date(data.toBePaid.refixedBasicPayDate));
+        if (data.toBePaid.incrementMonth) form.setValue("toBePaid.incrementMonth", data.toBePaid.incrementMonth);
+      }
+
+      toast({
+        title: "Scan Complete",
+        description: "Form has been auto-filled with extracted data. Please verify.",
+      });
+    } catch (error) {
+      console.error(error);
+      toast({
+        variant: "destructive",
+        title: "Scan Failed",
+        description: "Could not extract data from the image.",
+      });
+    } finally {
+      setIsScanning(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
 
   const renderSalaryFields = (type: "paid" | "toBePaid") => {
     const cpc = form.watch(`${type}.cpc`);
@@ -1960,6 +2037,18 @@ export default function Home() {
         </header>
 
         <div className="flex flex-col sm:flex-row justify-end gap-2 mb-4 no-print">
+          <input 
+            type="file" 
+            accept="image/*" 
+            capture="environment" 
+            ref={fileInputRef} 
+            className="hidden" 
+            onChange={handleFileChange} 
+          />
+          <Button variant="outline" onClick={handleScanClick} disabled={isScanning} className="bg-primary/5 hover:bg-primary/10 border-primary/20 text-primary">
+            {isScanning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Camera className="mr-2 h-4 w-4" />}
+            {isScanning ? "Scanning..." : "Scan Pay Fixation"}
+          </Button>
           <Button variant="outline" onClick={handleClearForm}>
             <Trash2 className="mr-2 h-4 w-4" /> Clear Form
           </Button>
