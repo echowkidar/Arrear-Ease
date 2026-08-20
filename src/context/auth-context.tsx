@@ -3,7 +3,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { auth, db, isFirebaseConfigured, sendPasswordResetEmail } from '@/lib/firebase';
+import { auth, db, isFirebaseConfigured, sendPasswordResetEmail, GoogleAuthProvider, signInWithPopup } from '@/lib/firebase';
 import { 
     onAuthStateChanged, 
     signOut,
@@ -28,6 +28,7 @@ interface AuthContextType {
     isAuthModalOpen: boolean;
     signUpWithEmailPassword: (email: string, password: string, name: string, phoneNumber: string) => Promise<void>;
     signInWithEmailPassword: (email: string, password: string) => Promise<void>;
+    signInWithGoogle: () => Promise<void>;
     sendPasswordReset: (email: string) => Promise<void>;
     authError: string | null;
     authMessage: string | null;
@@ -65,9 +66,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 if (!sessionLoginUpdated && db) {
                     const userDocRef = doc(db, 'users', currentUser.uid);
                     try {
-                        await updateDoc(userDocRef, {
+                        // Use setDoc with merge: true instead of updateDoc
+                        // This prevents errors if onAuthStateChanged fires before the user doc is fully created during signup
+                        await setDoc(userDocRef, {
                             lastLogin: serverTimestamp()
-                        });
+                        }, { merge: true });
                         sessionLoginUpdated = true;
                     } catch (error) {
                         console.error("Failed to update last login time:", error);
@@ -147,6 +150,31 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
     };
     
+    const signInWithGoogle = async () => {
+        if (!auth || !db) return;
+        clearAuthMessages();
+        try {
+            const provider = new GoogleAuthProvider();
+            const result = await signInWithPopup(auth, provider);
+            const firebaseUser = result.user;
+            
+            // For Google sign-in, we check if the user doc exists. 
+            // If we want to safely set it without overwriting existing data, we can use setDoc with merge: true
+            await setDoc(doc(db, 'users', firebaseUser.uid), {
+                email: firebaseUser.email,
+                displayName: firebaseUser.displayName || 'Google User',
+                lastLogin: serverTimestamp(),
+            }, { merge: true });
+
+            setUser(firebaseUser);
+            toast({ title: "Successfully signed in!", description: 'Welcome via Google!' });
+            closeAuthModal();
+            setAuthStatus('authenticated');
+        } catch (error) {
+            handleAuthError(error as AuthError);
+        }
+    };
+
     const sendPasswordReset = async (email: string) => {
         if (!auth) return;
         clearAuthMessages();
@@ -185,6 +213,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             isAuthModalOpen,
             signUpWithEmailPassword,
             signInWithEmailPassword,
+            signInWithGoogle,
             sendPasswordReset,
             authError,
             authMessage,
