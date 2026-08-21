@@ -986,7 +986,10 @@ export default function Home() {
 
         if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd })) {
           let newBasic: number | null = null;
-          if (sideData.cpc === '7th' && sideData.payLevel) {
+
+          if (sideData.cpc === '7th' && trackerBasic >= 218200) {
+            newBasic = trackerBasic; // Freeze at 218200 or above
+          } else if (sideData.cpc === '7th' && sideData.payLevel) {
             let levelData = cpcData['7th'].payLevels.find(l => l.level === sideData.payLevel);
 
             if (!levelData) {
