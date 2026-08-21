@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import Link from "next/link";
 import { format, addMonths, differenceInCalendarMonths, getDaysInMonth, startOfMonth, endOfMonth, startOfDay, endOfDay, max, min, isWithinInterval, differenceInDays, addDays } from "date-fns";
+import { AIValidationModal } from "@/components/ai-validation-modal";
 import {
   User,
   Building,
@@ -112,13 +113,13 @@ const salaryComponentSchema = z.object({
   fixedBasicPayFromDate: z.date().optional(),
   fixedBasicPayToDate: z.date().optional(),
 
-  daApplicable: z.boolean().default(false),
+  daApplicable: z.boolean().default(true),
   daFixedRateApplicable: z.boolean().default(false),
   daFixedRate: z.coerce.number().min(0).optional(),
   daFixedRateFromDate: z.date().optional(),
   daFixedRateToDate: z.date().optional(),
 
-  hraApplicable: z.boolean().default(false),
+  hraApplicable: z.boolean().default(true),
   hraFromDate: z.date().optional(),
   hraToDate: z.date().optional(),
   hraFixedRateApplicable: z.boolean().default(false),
@@ -392,6 +393,9 @@ cpcData["7th"].payLevels.forEach((level, index) => payLevelIndexMap.set(level.le
 // Note: Debug useEffect removed — was incorrectly placed outside a React component.
 
 export default function Home() {
+  const [aiScannedData, setAiScannedData] = React.useState<any>(null);
+  const [isAiModalOpen, setIsAiModalOpen] = React.useState(false);
+  const [showDiffToast, setShowDiffToast] = React.useState<{ show: boolean, diff: number }>({ show: false, diff: 0 });
   const [statement, setStatement] = React.useState<Omit<SavedStatement, 'id' | 'savedAt' | 'isLocal'> | null>(null);
   const [savedStatements, setSavedStatements] = React.useState<SavedStatement[]>([]);
   const [isLoadDialogOpen, setLoadDialogOpen] = React.useState(false);
@@ -690,9 +694,9 @@ export default function Home() {
         payLevel: undefined,
         incrementMonth: undefined,
         fixedBasicPayApplicable: false,
-        daApplicable: false,
+        daApplicable: true,
         daFixedRateApplicable: false,
-        hraApplicable: false,
+        hraApplicable: true,
         hraFixedRateApplicable: false,
         npaApplicable: false,
         taApplicable: false,
@@ -708,9 +712,9 @@ export default function Home() {
         payLevel: undefined,
         incrementMonth: undefined,
         fixedBasicPayApplicable: false,
-        daApplicable: false,
+        daApplicable: true,
         daFixedRateApplicable: false,
-        hraApplicable: false,
+        hraApplicable: true,
         hraFixedRateApplicable: false,
         npaApplicable: false,
         taApplicable: false,
@@ -1276,10 +1280,14 @@ export default function Home() {
 
       const newStatement = { rows, totals, employeeInfo: data };
       setStatement(newStatement);
-      toast({
-        title: "Calculation Complete",
-        description: "Arrear statement has been generated below.",
-      });
+      
+      setShowDiffToast({ show: true, diff: totals.difference });
+      
+      // Auto-hide popup after 7 seconds
+      setTimeout(() => {
+        setShowDiffToast(prev => ({ ...prev, show: false }));
+      }, 7000);
+
       setTimeout(() => {
         document.getElementById("statement-section")?.scrollIntoView({ behavior: 'smooth' });
       }, 100);
@@ -1585,8 +1593,8 @@ export default function Home() {
       fromDate: undefined,
       toDate: undefined,
       payFixationRef: "",
-      paid: { cpc: "7th" as any, basicPay: '' as any, payLevel: undefined, incrementMonth: undefined, daApplicable: false, hraApplicable: false, npaApplicable: false, taApplicable: false, doubleTaApplicable: false, otherAllowance: '' as any, otherAllowanceName: "" },
-      toBePaid: { cpc: "7th" as any, basicPay: '' as any, payLevel: undefined, incrementMonth: undefined, daApplicable: false, hraApplicable: false, npaApplicable: false, taApplicable: false, doubleTaApplicable: false, otherAllowance: '' as any, otherAllowanceName: "", refixedBasicPay: '' as any },
+      paid: { cpc: "7th" as any, basicPay: '' as any, payLevel: undefined, incrementMonth: undefined, daApplicable: true, hraApplicable: true, npaApplicable: false, taApplicable: false, doubleTaApplicable: false, otherAllowance: '' as any, otherAllowanceName: "" },
+      toBePaid: { cpc: "7th" as any, basicPay: '' as any, payLevel: undefined, incrementMonth: undefined, daApplicable: true, hraApplicable: true, npaApplicable: false, taApplicable: false, doubleTaApplicable: false, otherAllowance: '' as any, otherAllowanceName: "", refixedBasicPay: '' as any },
     });
     setStatement(null);
     setLoadedStatementId(null);
@@ -1622,38 +1630,25 @@ export default function Home() {
 
       const data = await response.json();
       
-      if (data.employeeName) form.setValue("employeeName", data.employeeName);
-      if (data.employeeId) form.setValue("employeeId", data.employeeId);
-      if (data.designation) form.setValue("designation", data.designation);
-      if (data.department) form.setValue("department", data.department);
-      
-      if (data.fromDate) form.setValue("fromDate", new Date(data.fromDate));
-      if (data.payFixationRef) form.setValue("payFixationRef", data.payFixationRef);
-
+      // Calculate toDate based on fromDate just like the AI extraction logic
       const today = new Date();
       const lastDayOfPrevMonth = new Date(today.getFullYear(), today.getMonth(), 0);
-      form.setValue("toDate", lastDayOfPrevMonth);
       
-      if (data.paid) {
-        if (data.paid.cpc) form.setValue("paid.cpc", data.paid.cpc);
-        if (data.paid.basicPay) form.setValue("paid.basicPay", data.paid.basicPay);
-        if (data.paid.payLevel) form.setValue("paid.payLevel", data.paid.payLevel);
-        if (data.paid.incrementMonth) form.setValue("paid.incrementMonth", data.paid.incrementMonth);
-      }
-      
-      if (data.toBePaid) {
-        if (data.toBePaid.cpc) form.setValue("toBePaid.cpc", data.toBePaid.cpc);
-        if (data.toBePaid.basicPay) form.setValue("toBePaid.basicPay", data.toBePaid.basicPay);
-        if (data.toBePaid.payLevel) form.setValue("toBePaid.payLevel", data.toBePaid.payLevel);
-        if (data.toBePaid.refixedBasicPay) form.setValue("toBePaid.refixedBasicPay", data.toBePaid.refixedBasicPay);
-        if (data.toBePaid.refixedBasicPayDate) form.setValue("toBePaid.refixedBasicPayDate", new Date(data.toBePaid.refixedBasicPayDate));
-        if (data.toBePaid.incrementMonth) form.setValue("toBePaid.incrementMonth", data.toBePaid.incrementMonth);
-      }
+      const preparedData = {
+        employeeName: data.employeeName || '',
+        employeeId: data.employeeId || '',
+        designation: data.designation || '',
+        department: data.department || '',
+        fromDate: data.fromDate || '',
+        toDate: lastDayOfPrevMonth,
+        payFixationRef: data.payFixationRef || '',
+        paid: data.paid ? { ...data.paid } : {},
+        toBePaid: data.toBePaid ? { ...data.toBePaid } : {},
+      };
 
-      toast({
-        title: "Scan Complete",
-        description: "Form has been auto-filled with extracted data. Please verify.",
-      });
+      setAiScannedData(preparedData);
+      setIsAiModalOpen(true);
+      
     } catch (error) {
       console.error(error);
       toast({
@@ -1666,6 +1661,47 @@ export default function Home() {
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
+
+  const handleAiModalConfirm = (confirmedData: any) => {
+    // Fill the form with confirmed data
+    if (confirmedData.employeeName) form.setValue("employeeName", confirmedData.employeeName);
+    if (confirmedData.employeeId) form.setValue("employeeId", confirmedData.employeeId);
+    if (confirmedData.designation) form.setValue("designation", confirmedData.designation);
+    if (confirmedData.department) form.setValue("department", confirmedData.department);
+    
+    if (confirmedData.fromDate) form.setValue("fromDate", new Date(confirmedData.fromDate));
+    if (confirmedData.toDate) form.setValue("toDate", new Date(confirmedData.toDate));
+    if (confirmedData.payFixationRef) form.setValue("payFixationRef", confirmedData.payFixationRef);
+    
+    if (confirmedData.paid) {
+      if (confirmedData.paid.cpc) form.setValue("paid.cpc", confirmedData.paid.cpc);
+      if (confirmedData.paid.basicPay) form.setValue("paid.basicPay", confirmedData.paid.basicPay);
+      if (confirmedData.paid.payLevel) form.setValue("paid.payLevel", confirmedData.paid.payLevel);
+      if (confirmedData.paid.incrementMonth) form.setValue("paid.incrementMonth", confirmedData.paid.incrementMonth);
+    }
+    
+    if (confirmedData.toBePaid) {
+      if (confirmedData.toBePaid.cpc) form.setValue("toBePaid.cpc", confirmedData.toBePaid.cpc);
+      if (confirmedData.toBePaid.basicPay) form.setValue("toBePaid.basicPay", confirmedData.toBePaid.basicPay);
+      if (confirmedData.toBePaid.payLevel) form.setValue("toBePaid.payLevel", confirmedData.toBePaid.payLevel);
+      if (confirmedData.toBePaid.refixedBasicPay) form.setValue("toBePaid.refixedBasicPay", confirmedData.toBePaid.refixedBasicPay);
+      if (confirmedData.toBePaid.refixedBasicPayDate) form.setValue("toBePaid.refixedBasicPayDate", new Date(confirmedData.toBePaid.refixedBasicPayDate));
+      if (confirmedData.toBePaid.incrementMonth) form.setValue("toBePaid.incrementMonth", confirmedData.toBePaid.incrementMonth);
+    }
+
+    setIsAiModalOpen(false);
+    
+    toast({
+      title: "Data Applied",
+      description: "Form has been auto-filled with verified data. Calculating arrears...",
+    });
+
+    // Automatically trigger form submission (calculation)
+    setTimeout(() => {
+      form.handleSubmit(onSubmit)();
+    }, 100);
+  };
+
 
 
   const renderSalaryFields = (type: "paid" | "toBePaid") => {
@@ -1983,6 +2019,27 @@ export default function Home() {
 
 
   return (
+    <>
+      <AIValidationModal
+        isOpen={isAiModalOpen}
+        onClose={() => setIsAiModalOpen(false)}
+        data={aiScannedData}
+        onConfirm={handleAiModalConfirm}
+      />
+
+      <Dialog open={showDiffToast.show} onOpenChange={(open) => { if (!open) setShowDiffToast(prev => ({ ...prev, show: false })) }}>
+        <DialogContent className="sm:max-w-md text-center">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-center">Total Arrear Difference</DialogTitle>
+          </DialogHeader>
+          <div className="py-8">
+            <p className="text-5xl font-extrabold text-green-600">Rs. {showDiffToast.diff.toLocaleString('en-IN')}</p>
+            <p className="text-muted-foreground mt-4">Arrear statement calculated successfully!</p>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+
     <div className="min-h-screen bg-background">
       <main className="container mx-auto px-4 py-8 md:py-12">
         <AuthModal />
@@ -2371,5 +2428,6 @@ export default function Home() {
         )}
       </main>
     </div>
+    </>
   );
 }

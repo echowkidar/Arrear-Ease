@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cpcData } from "@/lib/cpc-data";
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,6 +24,8 @@ export async function POST(req: NextRequest) {
     if (ollamaApiKey) {
       headers["Authorization"] = `Bearer ${ollamaApiKey}`;
     }
+
+    const validPayLevels = cpcData['7th'].payLevels.map((l: any) => l.level).join(", ");
 
     const prompt = `
 You are a data extraction assistant. I will provide an image of a "PROFORMA FOR FIXATION OF PAY".
@@ -51,6 +54,9 @@ Extract the following information and return it strictly as a JSON object matchi
   }
 }
 
+IMPORTANT DATE INSTRUCTION:
+All dates in the image are in Indian format (DD.MM.YYYY or DD/MM/YYYY). For example, "09.04.2022" means 9th April 2022, NOT September 4th. You must correctly parse these dates and strictly format them as YYYY-MM-DD.
+
 Use the image to extract:
 - Name of employee
 - I.D. No.
@@ -58,10 +64,10 @@ Use the image to extract:
 - Department
 - From Date: Find the "Internal Audit Office Endorsement" section at the bottom. Extract the date immediately following the first "on" (e.g. "Pay Fixed at 26000 on 17.01.2023"). Format as YYYY-MM-DD.
 - Pay Fixation Reference: Combine the "D.No./PRC Dated" from the top right corner AND the details from Section 14 "O.M./Ref. No. & Date".
-- Existing Level in the revised pay structure (extract the level number, e.g. "1" from "Level - 1")
+- Existing Level in the revised pay structure (extract the level number, e.g. "12" from "Level - 12" or "AL-12" if applicable). IMPORTANT: Must EXACTLY match one of these valid levels: [${validPayLevels}]. If it doesn't match, choose the closest valid level.
 - Pay in the revised pay structure as on the effective date (this is paid.basicPay)
 - Date of Next Increment in the existing level (Section 8) (extract month number for paid.incrementMonth, e.g. "7" if July, "1" if Jan)
-- Level in which appointed/promoted (this is toBePaid.payLevel, e.g. "2" from "Level - 2")
+- Level in which appointed/promoted (this is toBePaid.payLevel, e.g. "13" from "Level - 13"). IMPORTANT: Must EXACTLY match one of these valid levels: [${validPayLevels}]. If it doesn't match, choose the closest valid level.
 - Pay in the upgraded Level (Section 12) (this is toBePaid.basicPay, e.g. 26000)
 - Date of Next Increment in upgraded level (Section 13) (extract month number for toBePaid.incrementMonth, e.g. "7" if July, "1" if Jan)
 - Re-fixed amount (Section 12(a)) (this is toBePaid.refixedBasicPay, e.g. 27600. If Section 12(a) does NOT exist, return 0)
