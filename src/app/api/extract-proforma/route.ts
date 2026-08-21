@@ -46,7 +46,7 @@ Extract the following information and return it strictly as a JSON object matchi
     "basicPay": 0,
     "payLevel": "string",
     "refixedBasicPay": 0,
-    "refixedBasicPayDate": "YYYY-MM-DD",
+    "refixedBasicPayDate": "",
     "incrementMonth": "string"
   }
 }
@@ -57,14 +57,15 @@ Use the image to extract:
 - Designation (Old)
 - Department
 - From Date: Find the "Internal Audit Office Endorsement" section at the bottom. Extract the date immediately following the first "on" (e.g. "Pay Fixed at 26000 on 17.01.2023"). Format as YYYY-MM-DD.
-- Pay Fixation Reference: Extract the "D.No." and "Dated" value from the top right (e.g., "D.No: 1044 /PRC Dated: 10/8/26").
+- Pay Fixation Reference: Combine the "D.No./PRC Dated" from the top right corner AND the details from Section 14 "O.M./Ref. No. & Date".
 - Existing Level in the revised pay structure (extract the level number, e.g. "1" from "Level - 1")
 - Pay in the revised pay structure as on the effective date (this is paid.basicPay)
-- Date of Next Increment (DNI) in the existing level (extract month for incrementMonth, e.g. "7" if July, "1" if Jan)
+- Date of Next Increment in the existing level (Section 8) (extract month number for paid.incrementMonth, e.g. "7" if July, "1" if Jan)
 - Level in which appointed/promoted (this is toBePaid.payLevel, e.g. "2" from "Level - 2")
 - Pay in the upgraded Level (Section 12) (this is toBePaid.basicPay, e.g. 26000)
-- Re-fixed amount (Section 12(a)) (this is toBePaid.refixedBasicPay, e.g. 27600)
-- Date of re-fixation (Section 12(a)) (for refixedBasicPayDate format as YYYY-MM-DD)
+- Date of Next Increment in upgraded level (Section 13) (extract month number for toBePaid.incrementMonth, e.g. "7" if July, "1" if Jan)
+- Re-fixed amount (Section 12(a)) (this is toBePaid.refixedBasicPay, e.g. 27600. If Section 12(a) does NOT exist, return 0)
+- Date of re-fixation (Section 12(a)) (this is toBePaid.refixedBasicPayDate format YYYY-MM-DD. If Section 12(a) does NOT exist, return "")
 
 Return ONLY the raw JSON object, without any markdown formatting, backticks, or extra text.
 `;

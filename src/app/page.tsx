@@ -2286,6 +2286,56 @@ export default function Home() {
                     </Table>
                   </div>
                   <div className="pt-6 print:pt-4 text-sm signature-section">
+                    {/* Financial Year Breakup */}
+                    {statement.rows.length > 0 && (
+                      <div className="mb-6 w-full print:w-full text-xs">
+                        <div className="font-bold pb-2 mb-2 w-max pr-4">Financial Year Breakup (Difference)</div>
+                        {(() => {
+                          const breakdown: Record<string, number> = {};
+                          statement.rows.forEach(row => {
+                            const [month, yearStr] = row.month.split(' ');
+                            const year = parseInt(yearStr, 10);
+                            const isBeforeApril = ['Jan', 'Feb', 'Mar'].includes(month);
+                            const fy = isBeforeApril 
+                              ? `${year - 1}-${year.toString().slice(-2)}` 
+                              : `${year}-${(year + 1).toString().slice(-2)}`;
+                            breakdown[fy] = (breakdown[fy] || 0) + row.difference;
+                          });
+                          const entries = Object.entries(breakdown);
+                          const chunkedRows = [];
+                          for (let i = 0; i < entries.length; i += 3) {
+                            chunkedRows.push(entries.slice(i, i + 3));
+                          }
+                          return (
+                            <Table className="border border-black text-xs min-w-full">
+                              <TableHeader>
+                                <TableRow className="bg-muted/50 border-b border-black">
+                                  <TableHead className="font-bold border-r border-black text-center py-1 h-8 text-black print:text-black">Financial Year</TableHead>
+                                  <TableHead className="font-bold border-r border-black text-center py-1 h-8 text-black print:text-black">Difference</TableHead>
+                                  <TableHead className="font-bold border-r border-black text-center py-1 h-8 text-black print:text-black">Financial Year</TableHead>
+                                  <TableHead className="font-bold border-r border-black text-center py-1 h-8 text-black print:text-black">Difference</TableHead>
+                                  <TableHead className="font-bold border-r border-black text-center py-1 h-8 text-black print:text-black">Financial Year</TableHead>
+                                  <TableHead className="font-bold text-center py-1 h-8 text-black print:text-black">Difference</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {chunkedRows.map((row, idx) => (
+                                  <TableRow key={idx} className="border-b border-black hover:bg-transparent">
+                                    <TableCell className="border-r border-black text-center py-1 h-8">{row[0] ? `FY ${row[0][0]}` : ''}</TableCell>
+                                    <TableCell className="border-r border-black text-right py-1 h-8 pr-4 font-semibold">{row[0] ? row[0][1] : ''}</TableCell>
+                                    <TableCell className="border-r border-black text-center py-1 h-8">{row[1] ? `FY ${row[1][0]}` : ''}</TableCell>
+                                    <TableCell className="border-r border-black text-right py-1 h-8 pr-4 font-semibold">{row[1] ? row[1][1] : ''}</TableCell>
+                                    <TableCell className="border-r border-black text-center py-1 h-8">{row[2] ? `FY ${row[2][0]}` : ''}</TableCell>
+                                    <TableCell className="text-right py-1 h-8 pr-4 font-semibold">{row[2] ? row[2][1] : ''}</TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          );
+                        })()}
+                      </div>
+                    )}
+
                     {statement.totals.difference > 0 &&
                       <div className="mb-4 print:mb-2 font-medium">
                         Passed for pay of rupees {numberToWords(statement.totals.difference)}.
