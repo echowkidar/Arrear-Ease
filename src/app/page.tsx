@@ -1181,9 +1181,14 @@ export default function Home() {
         if (prorationFactor > 0) {
           const taRateDetails = getRateForDate(taRates, currentDate, { basicPay: (side === 'paid' ? newDrawnTracker : newDueTracker), payLevel });
           if (taRateDetails) {
-            const taBaseAmount = taRateDetails.rate;
+            let taBaseAmount = taRateDetails.rate;
+            if (sideData.doubleTaApplicable) {
+              taBaseAmount *= 2;
+              if (sideData.cpc === '7th' && taBaseAmount < 2250) {
+                taBaseAmount = 2250;
+              }
+            }
             let fullMonthTa = taBaseAmount + (taBaseAmount * (effectiveDaRate / 100));
-            if (sideData.doubleTaApplicable) fullMonthTa *= 2;
             ta = fullMonthTa * monthProRataFactor;
           }
         }
