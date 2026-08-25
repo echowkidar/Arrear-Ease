@@ -988,7 +988,7 @@ export default function Home() {
           incrementTriggerDate = new Date(currentYear, sideData.incrementDate.getMonth(), sideData.incrementDate.getDate());
         }
 
-        if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd })) {
+        if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd }) && startOfDay(incrementTriggerDate) >= startOfDay(arrearFromDate)) {
           let newBasic: number | null = null;
 
           if (sideData.cpc === '7th' && trackerBasic >= 218200) {
@@ -1068,7 +1068,7 @@ export default function Home() {
 
     const effectiveMonthStart = max([monthStart, arrearFromDate]);
     const effectiveMonthEnd = min([monthEnd, arrearToDate]);
-    const daysToCalculateForMonth = differenceInDays(effectiveMonthEnd, effectiveMonthStart) + 1;
+    const daysToCalculateForMonth = differenceInDays(startOfDay(effectiveMonthEnd), startOfDay(effectiveMonthStart)) + 1;
     const monthProRataFactor = daysToCalculateForMonth > 0 ? daysToCalculateForMonth / daysInMonth : 0;
 
     const calculateAllowancesForSide = (side: 'paid' | 'toBePaid') => {
@@ -1090,7 +1090,7 @@ export default function Home() {
 
         if (intersectionStart > intersectionEnd) return 0;
 
-        const daysToCalc = differenceInDays(intersectionEnd, intersectionStart) + 1;
+        const daysToCalc = differenceInDays(startOfDay(intersectionEnd), startOfDay(intersectionStart)) + 1;
         return daysToCalc > 0 ? daysToCalc / daysInCalcMonth : 0;
       };
 
@@ -1270,7 +1270,7 @@ export default function Home() {
 
         const effectiveMonthStart = max([monthStart, arrearFromDate]);
         const effectiveMonthEnd = min([monthEnd, arrearToDate]);
-        const daysToCalculateForMonth = differenceInDays(effectiveMonthEnd, effectiveMonthStart) + 1;
+        const daysToCalculateForMonth = differenceInDays(startOfDay(effectiveMonthEnd), startOfDay(effectiveMonthStart)) + 1;
 
         if (daysToCalculateForMonth <= 0) continue;
 
