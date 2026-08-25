@@ -2114,6 +2114,18 @@ export default function Home() {
         </DialogContent>
       </Dialog>
 
+      {isScanning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="flex flex-col items-center p-8 bg-card rounded-2xl shadow-2xl border border-border animate-in zoom-in-95 duration-300">
+             <Loader2 className="h-16 w-16 animate-spin text-primary mb-6" />
+             <h2 className="text-2xl font-bold mb-2 text-foreground text-center">Analyzing Document</h2>
+             <p className="text-muted-foreground text-center max-w-xs md:max-w-sm">
+               Our AI is scanning your pay fixation proforma. This usually takes a few seconds...
+             </p>
+          </div>
+        </div>
+      )}
+
 
     <div className="min-h-screen bg-background">
       <main className="container mx-auto px-4 py-8 md:py-12">

@@ -65,82 +65,82 @@ export function AIValidationModal({ isOpen, onClose, data, onConfirm }: AIValida
 
         <div className="space-y-3 py-2">
           {/* Employee Details */}
-          <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-            <h3 className="text-base font-semibold mb-2 border-b border-blue-200 pb-1 text-blue-900">Employee Details</h3>
+          <div className="bg-blue-50 dark:bg-blue-950/20 p-4 rounded-lg border border-blue-200 dark:border-blue-900/50">
+            <h3 className="text-base font-semibold mb-2 border-b border-blue-200 dark:border-blue-900/50 pb-1 text-blue-900 dark:text-blue-300">Employee Details</h3>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label htmlFor="employeeName">Name</Label>
+                <Label htmlFor="employeeName" className="dark:text-blue-100">Name</Label>
                 <Input 
                   id="employeeName" 
                   value={formData.employeeName || ''} 
                   onChange={(e) => handleChange('employeeName', e.target.value)}
-                  className={isInvalid(formData.employeeName) ? 'border-red-500 bg-white' : 'bg-white'}
+                  className={isInvalid(formData.employeeName) ? 'border-red-500 dark:border-red-400' : ''}
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="employeeId">ID No.</Label>
+                <Label htmlFor="employeeId" className="dark:text-blue-100">ID No.</Label>
                 <Input 
                   id="employeeId" 
                   value={formData.employeeId || ''} 
                   onChange={(e) => handleChange('employeeId', e.target.value)}
-                  className={isInvalid(formData.employeeId) ? 'border-red-500 bg-white' : 'bg-white'}
+                  className={isInvalid(formData.employeeId) ? 'border-red-500 dark:border-red-400' : ''}
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="designation">Designation</Label>
+                <Label htmlFor="designation" className="dark:text-blue-100">Designation</Label>
                 <Input 
                   id="designation" 
                   value={formData.designation || ''} 
                   onChange={(e) => handleChange('designation', e.target.value)}
-                  className={isInvalid(formData.designation) ? 'border-red-500 bg-white' : 'bg-white'}
+                  className={isInvalid(formData.designation) ? 'border-red-500 dark:border-red-400' : ''}
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="department">Department</Label>
+                <Label htmlFor="department" className="dark:text-blue-100">Department</Label>
                 <Input 
                   id="department" 
                   value={formData.department || ''} 
                   onChange={(e) => handleChange('department', e.target.value)}
-                  className={isInvalid(formData.department) ? 'border-red-500 bg-white' : 'bg-white'}
+                  className={isInvalid(formData.department) ? 'border-red-500 dark:border-red-400' : ''}
                 />
               </div>
             </div>
           </div>
 
           {/* Pay Fixation Info */}
-          <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
-            <h3 className="text-base font-semibold mb-2 border-b border-purple-200 pb-1 text-purple-900">Fixation Details</h3>
+          <div className="bg-purple-50 dark:bg-purple-950/20 p-4 rounded-lg border border-purple-200 dark:border-purple-900/50">
+            <h3 className="text-base font-semibold mb-2 border-b border-purple-200 dark:border-purple-900/50 pb-1 text-purple-900 dark:text-purple-300">Fixation Details</h3>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label htmlFor="fromDate">Effective Date (From)</Label>
+                <Label htmlFor="fromDate" className="dark:text-purple-100">Effective Date (From)</Label>
                 <Input 
                   id="fromDate" 
                   type="date"
                   value={formData.fromDate || ''} 
                   onChange={(e) => handleChange('fromDate', e.target.value)}
-                  className={isInvalid(formData.fromDate) ? 'border-red-500 bg-white' : 'bg-white'}
+                  className={isInvalid(formData.fromDate) ? 'border-red-500 dark:border-red-400' : ''}
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="payFixationRef">Reference No. & Date</Label>
+                <Label htmlFor="payFixationRef" className="dark:text-purple-100">Reference No. & Date</Label>
                 <Input 
                   id="payFixationRef" 
                   value={formData.payFixationRef || ''} 
                   onChange={(e) => handleChange('payFixationRef', e.target.value)}
-                  className={isInvalid(formData.payFixationRef) ? 'border-red-500 bg-white' : 'bg-white'}
+                  className={isInvalid(formData.payFixationRef) ? 'border-red-500 dark:border-red-400' : ''}
                 />
               </div>
             </div>
           </div>
 
           {/* Already Paid */}
-          <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
-            <h3 className="text-base font-semibold mb-2 border-b border-orange-200 pb-1 text-orange-900">Existing Pay (Already Paid)</h3>
+          <div className="bg-orange-50 dark:bg-orange-950/20 p-4 rounded-lg border border-orange-200 dark:border-orange-900/50">
+            <h3 className="text-base font-semibold mb-2 border-b border-orange-200 dark:border-orange-900/50 pb-1 text-orange-900 dark:text-orange-300">Existing Pay (Already Paid)</h3>
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1">
-                <Label htmlFor="paid.payLevel">Level</Label>
+                <Label htmlFor="paid.payLevel" className="dark:text-orange-100">Level</Label>
                 <Select value={formData.paid?.payLevel || ''} onValueChange={(val) => handleChange('paid.payLevel', val)}>
-                  <SelectTrigger className={isInvalidDropdown(formData.paid?.payLevel, payLevels) ? 'border-red-500 bg-white' : 'bg-white'}>
+                  <SelectTrigger className={isInvalidDropdown(formData.paid?.payLevel, payLevels) ? 'border-red-500 dark:border-red-400' : ''}>
                     <SelectValue placeholder="Select Level" />
                   </SelectTrigger>
                   <SelectContent>
@@ -151,35 +151,35 @@ export function AIValidationModal({ isOpen, onClose, data, onConfirm }: AIValida
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label htmlFor="paid.basicPay">Basic Pay</Label>
+                <Label htmlFor="paid.basicPay" className="dark:text-orange-100">Basic Pay</Label>
                 <Input 
                   id="paid.basicPay" 
                   type="number"
                   value={formData.paid?.basicPay || ''} 
                   onChange={(e) => handleChange('paid.basicPay', parseFloat(e.target.value) || 0)}
-                  className={isInvalid(formData.paid?.basicPay) ? 'border-red-500 bg-white' : 'bg-white'}
+                  className={isInvalid(formData.paid?.basicPay) ? 'border-red-500 dark:border-red-400' : ''}
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="paid.incrementMonth">Increment Month</Label>
+                <Label htmlFor="paid.incrementMonth" className="dark:text-orange-100">Increment Month</Label>
                 <Input 
                   id="paid.incrementMonth" 
                   value={formData.paid?.incrementMonth || ''} 
                   onChange={(e) => handleChange('paid.incrementMonth', e.target.value)}
-                  className={isInvalid(formData.paid?.incrementMonth) ? 'border-red-500 bg-white' : 'bg-white'}
+                  className={isInvalid(formData.paid?.incrementMonth) ? 'border-red-500 dark:border-red-400' : ''}
                 />
               </div>
             </div>
           </div>
 
           {/* To Be Paid */}
-          <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-            <h3 className="text-base font-semibold mb-2 border-b border-green-200 pb-1 text-green-900">Revised Pay (To Be Paid)</h3>
+          <div className="bg-green-50 dark:bg-green-950/20 p-4 rounded-lg border border-green-200 dark:border-green-900/50">
+            <h3 className="text-base font-semibold mb-2 border-b border-green-200 dark:border-green-900/50 pb-1 text-green-900 dark:text-green-300">Revised Pay (To Be Paid)</h3>
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1">
-                <Label htmlFor="toBePaid.payLevel">Level</Label>
+                <Label htmlFor="toBePaid.payLevel" className="dark:text-green-100">Level</Label>
                 <Select value={formData.toBePaid?.payLevel || ''} onValueChange={(val) => handleChange('toBePaid.payLevel', val)}>
-                  <SelectTrigger className={isInvalidDropdown(formData.toBePaid?.payLevel, payLevels) ? 'border-red-500 bg-white' : 'bg-white'}>
+                  <SelectTrigger className={isInvalidDropdown(formData.toBePaid?.payLevel, payLevels) ? 'border-red-500 dark:border-red-400' : ''}>
                     <SelectValue placeholder="Select Level" />
                   </SelectTrigger>
                   <SelectContent>
@@ -190,47 +190,47 @@ export function AIValidationModal({ isOpen, onClose, data, onConfirm }: AIValida
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label htmlFor="toBePaid.basicPay">Basic Pay</Label>
+                <Label htmlFor="toBePaid.basicPay" className="dark:text-green-100">Basic Pay</Label>
                 <Input 
                   id="toBePaid.basicPay" 
                   type="number"
                   value={formData.toBePaid?.basicPay || ''} 
                   onChange={(e) => handleChange('toBePaid.basicPay', parseFloat(e.target.value) || 0)}
-                  className={isInvalid(formData.toBePaid?.basicPay) ? 'border-red-500 bg-white' : 'bg-white'}
+                  className={isInvalid(formData.toBePaid?.basicPay) ? 'border-red-500 dark:border-red-400' : ''}
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="toBePaid.incrementMonth">Increment Month</Label>
+                <Label htmlFor="toBePaid.incrementMonth" className="dark:text-green-100">Increment Month</Label>
                 <Input 
                   id="toBePaid.incrementMonth" 
                   value={formData.toBePaid?.incrementMonth || ''} 
                   onChange={(e) => handleChange('toBePaid.incrementMonth', e.target.value)}
-                  className={isInvalid(formData.toBePaid?.incrementMonth) ? 'border-red-500 bg-white' : 'bg-white'}
+                  className={isInvalid(formData.toBePaid?.incrementMonth) ? 'border-red-500 dark:border-red-400' : ''}
                 />
               </div>
               
               <div className="space-y-1">
-                <Label htmlFor="toBePaid.refixedBasicPay">Re-fixed Basic Pay</Label>
+                <Label htmlFor="toBePaid.refixedBasicPay" className="dark:text-green-100">Re-fixed Basic Pay</Label>
                 <Input 
                   id="toBePaid.refixedBasicPay" 
                   type="number"
                   value={formData.toBePaid?.refixedBasicPay || ''} 
                   onChange={(e) => handleChange('toBePaid.refixedBasicPay', parseFloat(e.target.value) || 0)}
-                  className={isInvalid(formData.toBePaid?.refixedBasicPay) ? 'border-yellow-500 bg-yellow-50' : 'bg-white'}
+                  className={isInvalid(formData.toBePaid?.refixedBasicPay) ? 'border-yellow-500 dark:border-yellow-400 bg-yellow-50 dark:bg-yellow-950/20' : ''}
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="toBePaid.refixedBasicPayDate">Re-fixed Date</Label>
+                <Label htmlFor="toBePaid.refixedBasicPayDate" className="dark:text-green-100">Re-fixed Date</Label>
                 <Input 
                   id="toBePaid.refixedBasicPayDate" 
                   type="date"
                   value={formData.toBePaid?.refixedBasicPayDate || ''} 
                   onChange={(e) => handleChange('toBePaid.refixedBasicPayDate', e.target.value)}
-                  className={isInvalid(formData.toBePaid?.refixedBasicPayDate) ? 'border-yellow-500 bg-yellow-50' : 'bg-white'}
+                  className={isInvalid(formData.toBePaid?.refixedBasicPayDate) ? 'border-yellow-500 dark:border-yellow-400 bg-yellow-50 dark:bg-yellow-950/20' : ''}
                 />
               </div>
             </div>
-            <p className="text-xs text-green-700/80 mt-2 font-medium leading-none">
+            <p className="text-xs text-green-700/80 dark:text-green-300/80 mt-2 font-medium leading-none">
               * Leave Re-fixed Basic Pay and Date empty if no re-fixation exists in Section 12(a)
             </p>
           </div>
