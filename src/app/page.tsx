@@ -31,6 +31,10 @@ import {
   X,
   History,
   Camera,
+  Sparkles,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from "lucide-react";
 import { db, isFirebaseConfigured } from "@/lib/firebase";
 import { collection, addDoc, getDocs, getDoc, doc, deleteDoc, Timestamp, writeBatch, setDoc, updateDoc, query, where, serverTimestamp } from "firebase/firestore";
@@ -398,6 +402,8 @@ export default function Home() {
   const [showDiffToast, setShowDiffToast] = React.useState<{ show: boolean, diff: number }>({ show: false, diff: 0 });
   const [statement, setStatement] = React.useState<Omit<SavedStatement, 'id' | 'savedAt' | 'isLocal'> | null>(null);
   const [savedStatements, setSavedStatements] = React.useState<SavedStatement[]>([]);
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [sortDirection, setSortDirection] = React.useState<'asc' | 'desc' | null>(null);
   const [isLoadDialogOpen, setLoadDialogOpen] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
   const [isOnline, setIsOnline] = React.useState(true);
@@ -805,6 +811,16 @@ export default function Home() {
   const getPayLevels = (cpc: '6th' | '7th' | undefined) => {
     if (!cpc) return [];
     return cpcData[cpc].payLevels.map((pl: any) => ({ value: pl.level, label: cpc === '6th' ? `GP ${pl.gradePay} (${pl.payBand})` : `Level ${pl.level}` }));
+  };
+
+  const getPayLevelDisplay = (cpc?: string, level?: string) => {
+    if (!level) return '';
+    if (cpc === '6th') {
+      const pl = cpcData['6th']?.payLevels?.find((p: any) => String(p.level) === String(level));
+      if (pl) return `GP ${pl.gradePay} (${pl.payBand})`;
+      return `Level ${level}`;
+    }
+    return String(level).startsWith('Level') || String(level).startsWith('AL-') || String(level).startsWith('GP') ? String(level) : `Level ${level}`;
   };
   const getRateForDate = (
     rates: Rate[],
@@ -1958,7 +1974,7 @@ export default function Home() {
   const formatDisplayDate = (dateString?: string) => {
     if (!dateString) return 'N/A';
     try {
-      return format(new Date(dateString), "PPP p");
+      return format(new Date(dateString), "dd-MM-yy hh:mm a");
     } catch {
       return 'Invalid Date';
     }
@@ -2095,10 +2111,12 @@ export default function Home() {
 
             <ThemeToggle />
           </div>
-          <h1 className="font-headline text-4xl md:text-5xl font-bold text-primary">Arrear Ease</h1>
-          <p className="text-muted-foreground mt-2 text-lg">A Simple Tool for Complex Salary Arrear Calculations</p>
-          <p className="text-muted-foreground mt-1">For Central Govt and State Govt employees (6th, 7th & 8th Central Pay Commission)</p>
-          <p className="text-muted-foreground mt-1 text-sm">Dedicated to AMU by Zafar Ali Khan</p>
+          <h1 className="font-headline text-4xl md:text-5xl font-bold bg-gradient-to-r from-blue-700 via-indigo-700 to-indigo-900 dark:from-blue-400 dark:via-indigo-400 dark:to-violet-400 bg-clip-text text-transparent tracking-tight">Arrear Ease</h1>
+          <p className="text-muted-foreground mt-2 text-lg font-medium">A Simple Tool for Complex Salary Arrear Calculations</p>
+          <p className="text-muted-foreground/80 mt-1 text-sm">For Central Govt and State Govt employees (6th, 7th & 8th Central Pay Commission)</p>
+          <div className="mt-2">
+            <span className="inline-block px-3 py-0.5 text-xs font-semibold bg-primary/10 text-primary rounded-full border border-primary/20">Dedicated to AMU by Zafar Ali Khan</span>
+          </div>
         </header>
 
         <div className="flex flex-col sm:flex-row justify-end gap-2 mb-4 no-print">
@@ -2110,68 +2128,137 @@ export default function Home() {
             className="hidden" 
             onChange={handleFileChange} 
           />
-          <Button variant="outline" onClick={handleScanClick} disabled={isScanning} className="bg-primary/5 hover:bg-primary/10 border-primary/20 text-primary">
-            {isScanning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Camera className="mr-2 h-4 w-4" />}
+          <Button 
+            onClick={handleScanClick} 
+            disabled={isScanning} 
+            className="bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:from-blue-700 hover:via-indigo-700 hover:to-violet-700 text-white font-medium shadow-sm hover:shadow-md transition-all duration-200 border-0 active:scale-95"
+          >
+            {isScanning ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <>
+                <Camera className="mr-1.5 h-4 w-4" />
+                <Sparkles className="mr-1.5 h-3.5 w-3.5 text-amber-300 animate-pulse" />
+              </>
+            )}
             {isScanning ? "Scanning..." : "Scan Pay Fixation"}
           </Button>
-          <Button variant="outline" onClick={handleClearForm}>
+          <Button 
+            variant="outline" 
+            onClick={handleClearForm}
+            className="border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 dark:border-rose-900/40 dark:text-rose-400 dark:hover:bg-rose-950/40 transition-colors"
+          >
             <Trash2 className="mr-2 h-4 w-4" /> Clear Form
           </Button>
-          <Button variant="outline" onClick={handleLoadClick}>
+          <Button 
+            variant="outline" 
+            onClick={handleLoadClick}
+            className="border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-300 dark:border-emerald-900/40 dark:text-emerald-400 dark:hover:bg-emerald-950/40 transition-colors"
+          >
             <FolderOpen className="mr-2 h-4 w-4" /> Load Saved Arrears
           </Button>
           <Dialog open={isLoadDialogOpen} onOpenChange={setLoadDialogOpen}>
-            <DialogContent className="sm:max-w-4xl">
+            <DialogContent className="max-w-5xl lg:max-w-6xl w-[95vw]">
               <DialogHeader>
                 <DialogTitle>Load Saved Arrear Statement</DialogTitle>
                 <DialogDescription>Select a previously saved statement to view or print it again.</DialogDescription>
               </DialogHeader>
-              <div className="max-h-[60vh] overflow-y-auto">
+              <div className="py-2 px-1">
+                <Input
+                  placeholder="Search by Employee ID or Name..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="max-w-sm"
+                />
+              </div>
+              <div className="max-h-[60vh] overflow-y-auto overflow-x-auto">
                 {isLoading ? (
                   <div className="flex justify-center items-center py-8"><Loader2 className="h-8 w-8 animate-spin" /></div>
-                ) : savedStatements.length > 0 ? (
+                ) : (() => {
+                  let result = [...savedStatements];
+                  if (searchQuery.trim() !== '') {
+                    const q = searchQuery.toLowerCase();
+                    result = result.filter(s => 
+                      (s.employeeInfo?.employeeName || '').toLowerCase().includes(q) ||
+                      (s.employeeInfo?.employeeId || '').toLowerCase().includes(q)
+                    );
+                  }
+                  if (sortDirection) {
+                    result.sort((a, b) => {
+                      const nameA = (a.employeeInfo?.employeeName || '').toLowerCase();
+                      const nameB = (b.employeeInfo?.employeeName || '').toLowerCase();
+                      if (nameA < nameB) return sortDirection === 'asc' ? -1 : 1;
+                      if (nameA > nameB) return sortDirection === 'asc' ? 1 : -1;
+                      return 0;
+                    });
+                  }
+                  return result.length > 0 ? (
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Employee</TableHead>
-                        {isAdmin && <TableHead className="hidden md:table-cell">User</TableHead>}
+                        <TableHead className="cursor-pointer hover:bg-muted/50 select-none" onClick={() => setSortDirection(prev => prev === 'asc' ? 'desc' : prev === 'desc' ? null : 'asc')}>
+                          <div className="flex items-center">
+                            Employee
+                            {sortDirection === 'asc' ? <ArrowUp className="ml-2 h-4 w-4" /> : sortDirection === 'desc' ? <ArrowDown className="ml-2 h-4 w-4" /> : <ArrowUpDown className="ml-2 h-4 w-4 text-muted-foreground/50" />}
+                          </div>
+                        </TableHead>
+                        <TableHead>Period</TableHead>
+                        <TableHead className="text-right">Difference</TableHead>
+                        {isAdmin && <TableHead className="hidden lg:table-cell">User</TableHead>}
                         <TableHead className="hidden sm:table-cell">Saved On</TableHead>
-                        <TableHead className="hidden lg:table-cell">Last Accessed</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
+                        <TableHead className="hidden 2xl:table-cell">Last Accessed</TableHead>
+                        <TableHead className="text-right sticky right-0 bg-background shadow-[-10px_0_15px_-3px_rgba(0,0,0,0.05)] z-10">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {savedStatements.map(s => (
-                        <TableRow key={s.id}>
-                          <TableCell className="font-medium">
+                      {result.map(s => (
+                        <TableRow key={s.id} className="group">
+                          <TableCell className="font-medium whitespace-nowrap">
                             {s.isLocal && <TooltipProvider><Tooltip><TooltipTrigger asChild><span className="inline-block mr-2"><CloudUpload className="h-4 w-4 text-muted-foreground" /></span></TooltipTrigger><TooltipContent><p>Saved locally. Will sync when online.</p></TooltipContent></Tooltip></TooltipProvider>}
-                            {s.employeeInfo.employeeName} <span className="text-muted-foreground">({s.employeeInfo.employeeId})</span>
+                            {s.employeeInfo.employeeId} {s.employeeInfo.employeeName}
                           </TableCell>
-                          {isAdmin && <TableCell className="hidden md:table-cell text-xs">{s.userName || 'N/A'}<br /><span className="text-muted-foreground">{s.userEmail}</span></TableCell>}
-                          <TableCell className="hidden sm:table-cell">{formatDisplayDate(s.savedAt)}</TableCell>
-                          <TableCell className="hidden lg:table-cell">{formatDisplayDate(s.lastAccessedAt)}</TableCell>
-                          <TableCell className="text-right">
-                            <Button size="sm" onClick={() => loadStatement(s)} className="mr-2" disabled={isLoading}>Load</Button>
-                            <Button size="sm" variant="destructive" onClick={() => deleteStatement(s.id, s.isLocal)} disabled={isLoading}><Trash2 className="h-4 w-4" /></Button>
+                          <TableCell className="whitespace-nowrap text-muted-foreground text-xs">
+                            {format(s.employeeInfo.fromDate, "dd-MM-yy")} - {format(s.employeeInfo.toDate, "dd-MM-yy")}
+                          </TableCell>
+                          <TableCell className="font-semibold text-right">
+                            {s.totals?.difference?.toLocaleString('en-IN') || 0}
+                          </TableCell>
+                          {isAdmin && <TableCell className="hidden lg:table-cell text-xs">{s.userName || 'N/A'}<br /><span className="text-muted-foreground">{s.userEmail}</span></TableCell>}
+                          <TableCell className="hidden sm:table-cell whitespace-nowrap text-xs text-muted-foreground">{formatDisplayDate(s.savedAt)}</TableCell>
+                          <TableCell className="hidden 2xl:table-cell whitespace-nowrap text-xs text-muted-foreground">{formatDisplayDate(s.lastAccessedAt)}</TableCell>
+                          <TableCell className="text-right sticky right-0 bg-background group-hover:bg-muted/50 shadow-[-10px_0_15px_-3px_rgba(0,0,0,0.05)] z-10">
+                            <div className="flex justify-end gap-2">
+                              <Button size="sm" onClick={() => loadStatement(s)} disabled={isLoading}>Load</Button>
+                              <Button size="sm" variant="destructive" onClick={() => deleteStatement(s.id, s.isLocal)} disabled={isLoading}><Trash2 className="h-4 w-4" /></Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
-                ) : (
-                  <p className="text-center text-muted-foreground py-8">No saved statements found.</p>
-                )}
+                  ) : (
+                    <p className="text-center text-muted-foreground py-8">No saved statements found.</p>
+                  );
+                })()}
               </div>
             </DialogContent>
           </Dialog>
           {authStatus === 'authenticated' && isAdmin && (
             <>
-              <Button variant="outline" asChild>
+              <Button 
+                variant="outline" 
+                asChild
+                className="border-sky-200 text-sky-700 hover:bg-sky-50 hover:text-sky-800 hover:border-sky-300 dark:border-sky-900/40 dark:text-sky-400 dark:hover:bg-sky-950/40 transition-colors"
+              >
                 <Link href="/users">
                   <Users className="mr-2 h-4 w-4" /> User Management
                 </Link>
               </Button>
-              <Button variant="outline" asChild>
+              <Button 
+                variant="outline" 
+                asChild
+                className="border-purple-200 text-purple-700 hover:bg-purple-50 hover:text-purple-800 hover:border-purple-300 dark:border-purple-900/40 dark:text-purple-400 dark:hover:bg-purple-950/40 transition-colors"
+              >
                 <Link href="/rates">
                   <Settings className="mr-2 h-4 w-4" /> Rate Configuration
                 </Link>
@@ -2184,18 +2271,18 @@ export default function Home() {
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8 no-print">
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
               <div className="lg:col-span-2 space-y-8">
-                <Card id="employee-details-card">
-                  <CardHeader><CardTitle className="flex items-center gap-2"><User /> Employee Details</CardTitle></CardHeader>
-                  <CardContent className="space-y-4">
+                <Card id="employee-details-card" className="border-border/80 shadow-sm hover:shadow-md transition-shadow">
+                  <CardHeader className="pb-3 border-b bg-muted/20"><CardTitle className="flex items-center gap-2.5 text-base font-semibold"><span className="p-1.5 rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-400"><User className="h-4 w-4" /></span> Employee Details</CardTitle></CardHeader>
+                  <CardContent className="space-y-4 pt-4">
                     <FormField control={form.control} name="employeeId" render={({ field }) => (<FormItem> <FormLabel>Employee ID</FormLabel> <FormControl><Input placeholder="Employee ID" {...field} maxLength={5} onChange={(e) => { const val = e.target.value.replace(/\D/g, '').slice(0, 5); field.onChange(val); }} /></FormControl> <FormMessage /> </FormItem>)} />
                     <FormField control={form.control} name="employeeName" render={({ field }) => (<FormItem> <FormLabel>Employee Name</FormLabel> <FormControl><Input placeholder="Full Name" {...field} /></FormControl> <FormMessage /> </FormItem>)} />
                     <FormField control={form.control} name="designation" render={({ field }) => (<FormItem> <FormLabel>Designation</FormLabel> <FormControl><Input placeholder="Designation" {...field} /></FormControl> <FormMessage /> </FormItem>)} />
                     <FormField control={form.control} name="department" render={({ field }) => (<FormItem> <FormLabel>Department</FormLabel> <FormControl><Input placeholder="Department" {...field} /></FormControl> <FormMessage /> </FormItem>)} />
                   </CardContent>
                 </Card>
-                <Card>
-                  <CardHeader><CardTitle className="flex items-center gap-2"><CalendarDays /> Calculation Period & Pay Details</CardTitle></CardHeader>
-                  <CardContent className="space-y-4">
+                <Card className="border-border/80 shadow-sm hover:shadow-md transition-shadow">
+                  <CardHeader className="pb-3 border-b bg-muted/20"><CardTitle className="flex items-center gap-2.5 text-base font-semibold"><span className="p-1.5 rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400"><CalendarDays className="h-4 w-4" /></span> Calculation Period & Pay Details</CardTitle></CardHeader>
+                  <CardContent className="space-y-4 pt-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <FormField control={form.control} name="fromDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>From Date</FormLabel><FormDateInput field={field} /><FormMessage /></FormItem>)} />
                       <FormField control={form.control} name="toDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>To Date</FormLabel><FormDateInput field={field} /><FormMessage /></FormItem>)} />
@@ -2205,13 +2292,16 @@ export default function Home() {
                 </Card>
               </div>
               <div className="lg:col-span-3">
-                <Card>
-                  <CardHeader><CardTitle className="flex items-center gap-2"><FileText /> Salary Components</CardTitle><CardDescription>Define salary structures before and after the revision.</CardDescription></CardHeader>
-                  <CardContent>
+                <Card className="border-border/80 shadow-sm hover:shadow-md transition-shadow">
+                  <CardHeader className="pb-3 border-b bg-muted/20">
+                    <CardTitle className="flex items-center gap-2.5 text-base font-semibold"><span className="p-1.5 rounded-lg bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-400"><FileText className="h-4 w-4" /></span> Salary Components</CardTitle>
+                    <CardDescription>Define salary structures before and after the revision.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="pt-4">
                     <Tabs defaultValue="paid" className="w-full">
-                      <TabsList className="grid w-full grid-cols-2">
-                        <TabsTrigger value="paid">Already Paid</TabsTrigger>
-                        <TabsTrigger value="toBePaid">To be Paid</TabsTrigger>
+                      <TabsList className="grid w-full grid-cols-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                        <TabsTrigger value="paid" className="data-[state=active]:bg-white data-[state=active]:text-slate-900 dark:data-[state=active]:bg-slate-900 dark:data-[state=active]:text-slate-100 font-semibold shadow-sm">Already Paid</TabsTrigger>
+                        <TabsTrigger value="toBePaid" className="data-[state=active]:bg-white data-[state=active]:text-indigo-600 dark:data-[state=active]:bg-slate-900 dark:data-[state=active]:text-indigo-400 font-semibold shadow-sm">To be Paid</TabsTrigger>
                       </TabsList>
                       <TabsContent value="paid" className="mt-4">{renderSalaryFields("paid")}</TabsContent>
                       <TabsContent value="toBePaid" className="mt-4">{renderSalaryFields("toBePaid")}</TabsContent>
@@ -2221,9 +2311,9 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="flex justify-center">
-              <Button type="submit" size="lg" className="font-bold text-lg">
-                <Calculator className="mr-2 h-5 w-5" /> Calculate Arrears
+            <div className="flex justify-center pt-2">
+              <Button type="submit" size="lg" className="font-bold text-lg px-10 py-6 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:from-blue-700 hover:via-indigo-700 hover:to-violet-700 text-white shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 hover:scale-[1.01] active:scale-[0.99] transition-all rounded-xl border-0">
+                <Calculator className="mr-2.5 h-5 w-5" /> Calculate Arrears
               </Button>
             </div>
           </form>
@@ -2232,35 +2322,60 @@ export default function Home() {
         {statement && (
           <div id="statement-section" className="mt-12">
             <div className="printable-area page">
-              <Card id="printable-statement-card" className="print:p-0 print:border-none print:shadow-none">
-                <CardHeader className="flex-col md:flex-row items-start md:items-center justify-between gap-4 print:p-0 print:pb-4 print:text-center print:items-center print:w-full">
+              <Card id="printable-statement-card" className="border-border/80 shadow-md print:p-0 print:border-none print:shadow-none overflow-hidden">
+                <CardHeader className="flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-muted/20 border-b print:bg-transparent print:p-0 print:pb-4 print:text-center print:items-center print:w-full">
                   <div className="w-full text-left print:text-center print:mx-auto">
-                    <CardTitle className="font-headline text-3xl print:text-center print:text-2xl print:font-bold">Arrear Statement</CardTitle>
-                    <CardDescription className="print:text-center print:text-black print:text-sm">
-                      For: {statement.employeeInfo.employeeName} ({statement.employeeInfo.employeeId}) <br />
+                    <CardTitle className="font-headline text-3xl print:text-center print:text-2xl print:font-bold text-primary print:text-black">Arrear Statement</CardTitle>
+                    <CardDescription className="print:text-center print:text-black print:text-sm mt-1">
+                      <span className="text-lg md:text-xl font-bold text-foreground print:text-black print:!text-[13pt] tracking-tight inline-block mb-0.5">
+                        {statement.employeeInfo.employeeName} ({statement.employeeInfo.employeeId})
+                      </span>
+                      <br />
                       {statement.employeeInfo.designation}, {statement.employeeInfo.department} <br />
-                      {statement.employeeInfo.payFixationRef && `Ref: ${statement.employeeInfo.payFixationRef}`} <br />
+                      {(statement.employeeInfo.paid?.basicPay != null || statement.employeeInfo.toBePaid?.basicPay != null) && (
+                        <>
+                          <span>
+                            {statement.employeeInfo.paid?.basicPay != null && (
+                              <span>
+                                <strong>Pre-revised Pay:</strong> {statement.employeeInfo.paid.payLevel ? `${getPayLevelDisplay(statement.employeeInfo.paid.cpc, statement.employeeInfo.paid.payLevel)} ` : ''}(Basic: Rs. {statement.employeeInfo.paid.basicPay.toLocaleString('en-IN')})
+                              </span>
+                            )}
+                            {statement.employeeInfo.paid?.basicPay != null && statement.employeeInfo.toBePaid?.basicPay != null && (
+                              <span className="mx-2 font-normal">|</span>
+                            )}
+                            {statement.employeeInfo.toBePaid?.basicPay != null && (
+                              <span>
+                                <strong>Revised Pay:</strong> {statement.employeeInfo.toBePaid.payLevel ? `${getPayLevelDisplay(statement.employeeInfo.toBePaid.cpc, statement.employeeInfo.toBePaid.payLevel)} ` : ''}(Basic: Rs. {statement.employeeInfo.toBePaid.basicPay.toLocaleString('en-IN')})
+                              </span>
+                            )}
+                          </span>
+                          <br />
+                        </>
+                      )}
+                      {statement.employeeInfo.payFixationRef && (
+                        <>Ref: {statement.employeeInfo.payFixationRef} <br /></>
+                      )}
                       {statement.employeeInfo.fromDate && statement.employeeInfo.toDate &&
                         `Period: ${format(new Date(statement.employeeInfo.fromDate), "dd/MM/yyyy")} to ${format(new Date(statement.employeeInfo.toDate), "dd/MM/yyyy")}`
                       }
                     </CardDescription>
                   </div>
                   <div className="flex flex-wrap gap-2 no-print">
-                    <Button onClick={handleSaveOrUpdate} variant="outline" disabled={isLoading}>
+                    <Button onClick={handleSaveOrUpdate} disabled={isLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm font-medium">
                       {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (loadedStatementId ? <Edit className="mr-2 h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />)}
                       {loadedStatementId ? "Update Arrear" : "Save Arrear"}
                     </Button>
                     {loadedStatementId && (
-                      <Button onClick={handleCopy} variant="outline" disabled={isLoading || authStatus !== 'authenticated'}>
+                      <Button onClick={handleCopy} variant="outline" disabled={isLoading || authStatus !== 'authenticated'} className="border-blue-200 text-blue-700 hover:bg-blue-50 hover:text-blue-800 dark:border-blue-900/40 dark:text-blue-400 dark:hover:bg-blue-950/40">
                         <Copy className="mr-2 h-4 w-4" /> Copy Arrear
                       </Button>
                     )}
-                    <Button onClick={handlePrint} variant="outline">
+                    <Button onClick={handlePrint} variant="outline" className="border-primary/40 text-primary hover:bg-primary/10 shadow-sm font-medium">
                       <Download className="mr-2 h-4 w-4" /> Download PDF
                     </Button>
                   </div>
                 </CardHeader>
-                <CardContent className="print:p-0">
+                <CardContent className="print:p-0 pt-4">
                   <div className="overflow-x-auto">
                     <Table className="min-w-full">
                       <colgroup>
@@ -2286,34 +2401,34 @@ export default function Home() {
                       </colgroup>
                       <TableHeader>
                         <TableRow>
-                          <TableHead rowSpan={2} className="text-center align-middle border-r month-col">Month</TableHead>
-                          <TableHead colSpan={subColsCount} className="text-center border-r">Amount Drawn</TableHead>
-                          <TableHead colSpan={subColsCount} className="text-center border-r">Amount Due</TableHead>
-                          <TableHead rowSpan={2} className="text-center align-middle diff-col">Difference</TableHead>
+                          <TableHead rowSpan={2} className="text-center align-middle border-r month-col bg-muted/50 print:bg-transparent">Month</TableHead>
+                          <TableHead colSpan={subColsCount} className="text-center border-r bg-blue-50/70 dark:bg-blue-950/30 text-blue-900 dark:text-blue-200 font-semibold print:bg-transparent print:text-black">Amount Drawn</TableHead>
+                          <TableHead colSpan={subColsCount} className="text-center border-r bg-indigo-50/70 dark:bg-indigo-950/30 text-indigo-900 dark:text-indigo-200 font-semibold print:bg-transparent print:text-black">Amount Due</TableHead>
+                          <TableHead rowSpan={2} className="text-center align-middle diff-col bg-emerald-50/70 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-200 font-bold print:bg-transparent print:text-black">Difference</TableHead>
                         </TableRow>
                         <TableRow>
                           {/* Drawn Subheaders */}
-                          <TableHead className="text-right">Basic</TableHead>
-                          <TableHead className="text-right">DA</TableHead>
-                          {activeCols.hra && <TableHead className="text-right">HRA</TableHead>}
-                          {activeCols.npa && <TableHead className="text-right">NPA</TableHead>}
-                          {activeCols.ta && <TableHead className="text-right">TA</TableHead>}
-                          {activeCols.other && <TableHead className="text-right">Other</TableHead>}
-                          <TableHead className="text-right font-bold border-r total-col">Total</TableHead>
+                          <TableHead className="text-right bg-blue-50/40 dark:bg-blue-950/20 text-xs font-semibold print:bg-transparent">Basic</TableHead>
+                          <TableHead className="text-right bg-blue-50/40 dark:bg-blue-950/20 text-xs font-semibold print:bg-transparent">DA</TableHead>
+                          {activeCols.hra && <TableHead className="text-right bg-blue-50/40 dark:bg-blue-950/20 text-xs font-semibold print:bg-transparent">HRA</TableHead>}
+                          {activeCols.npa && <TableHead className="text-right bg-blue-50/40 dark:bg-blue-950/20 text-xs font-semibold print:bg-transparent">NPA</TableHead>}
+                          {activeCols.ta && <TableHead className="text-right bg-blue-50/40 dark:bg-blue-950/20 text-xs font-semibold print:bg-transparent">TA</TableHead>}
+                          {activeCols.other && <TableHead className="text-right bg-blue-50/40 dark:bg-blue-950/20 text-xs font-semibold print:bg-transparent">Other</TableHead>}
+                          <TableHead className="text-right font-bold border-r total-col bg-blue-100/50 dark:bg-blue-900/30 text-blue-950 dark:text-blue-100 print:bg-transparent print:text-black">Total</TableHead>
 
                           {/* Due Subheaders */}
-                          <TableHead className="text-right">Basic</TableHead>
-                          <TableHead className="text-right">DA</TableHead>
-                          {activeCols.hra && <TableHead className="text-right">HRA</TableHead>}
-                          {activeCols.npa && <TableHead className="text-right">NPA</TableHead>}
-                          {activeCols.ta && <TableHead className="text-right">TA</TableHead>}
-                          {activeCols.other && <TableHead className="text-right">Other</TableHead>}
-                          <TableHead className="text-right font-bold border-r total-col">Total</TableHead>
+                          <TableHead className="text-right bg-indigo-50/40 dark:bg-indigo-950/20 text-xs font-semibold print:bg-transparent">Basic</TableHead>
+                          <TableHead className="text-right bg-indigo-50/40 dark:bg-indigo-950/20 text-xs font-semibold print:bg-transparent">DA</TableHead>
+                          {activeCols.hra && <TableHead className="text-right bg-indigo-50/40 dark:bg-indigo-950/20 text-xs font-semibold print:bg-transparent">HRA</TableHead>}
+                          {activeCols.npa && <TableHead className="text-right bg-indigo-50/40 dark:bg-indigo-950/20 text-xs font-semibold print:bg-transparent">NPA</TableHead>}
+                          {activeCols.ta && <TableHead className="text-right bg-indigo-50/40 dark:bg-indigo-950/20 text-xs font-semibold print:bg-transparent">TA</TableHead>}
+                          {activeCols.other && <TableHead className="text-right bg-indigo-50/40 dark:bg-indigo-950/20 text-xs font-semibold print:bg-transparent">Other</TableHead>}
+                          <TableHead className="text-right font-bold border-r total-col bg-indigo-100/50 dark:bg-indigo-900/30 text-indigo-950 dark:text-indigo-100 print:bg-transparent print:text-black">Total</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {statement.rows.map(row => (
-                          <TableRow key={row.month}>
+                          <TableRow key={row.month} className="hover:bg-muted/40 transition-colors">
                             <TableCell className="font-medium border-r month-col">{row.month.replace(/(\s\d{2})\d{2}$/, '$1')}</TableCell>
                             
                             {/* Drawn Cells */}
@@ -2323,7 +2438,7 @@ export default function Home() {
                             {activeCols.npa && <TableCell className="text-right">{row.drawn.npa}</TableCell>}
                             {activeCols.ta && <TableCell className="text-right">{row.drawn.ta}</TableCell>}
                             {activeCols.other && <TableCell className="text-right">{row.drawn.other}</TableCell>}
-                            <TableCell className="text-right font-semibold border-r total-col">{row.drawn.total}</TableCell>
+                            <TableCell className="text-right font-semibold border-r total-col bg-blue-50/30 dark:bg-blue-950/10 print:bg-transparent">{row.drawn.total}</TableCell>
 
                             {/* Due Cells */}
                             <TableCell className="text-right">{row.due.basic}</TableCell>
@@ -2332,20 +2447,20 @@ export default function Home() {
                             {activeCols.npa && <TableCell className="text-right">{row.due.npa}</TableCell>}
                             {activeCols.ta && <TableCell className="text-right">{row.due.ta}</TableCell>}
                             {activeCols.other && <TableCell className="text-right">{row.due.other}</TableCell>}
-                            <TableCell className="text-right font-semibold border-r total-col">{row.due.total}</TableCell>
+                            <TableCell className="text-right font-semibold border-r total-col bg-indigo-50/30 dark:bg-indigo-950/10 print:bg-transparent">{row.due.total}</TableCell>
 
-                            <TableCell className="text-right font-bold diff-col">{row.difference}</TableCell>
+                            <TableCell className="text-right font-bold diff-col text-emerald-700 dark:text-emerald-400 bg-emerald-50/20 dark:bg-emerald-950/10 print:text-black print:bg-transparent">{row.difference}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
                       <UiTableFooter>
-                        <TableRow className="bg-muted/50 font-bold">
-                          <TableCell className="border-r month-col">Total</TableCell>
+                        <TableRow className="bg-slate-100/90 dark:bg-slate-800/90 font-bold border-t-2 border-slate-300 dark:border-slate-600 print:bg-transparent">
+                          <TableCell className="border-r month-col font-bold">Total</TableCell>
                           <TableCell colSpan={subColsCount - 1}></TableCell>
-                          <TableCell className="text-right border-r total-col">{statement.totals.drawn.total}</TableCell>
+                          <TableCell className="text-right border-r total-col font-bold text-blue-900 dark:text-blue-200 print:text-black">{statement.totals.drawn.total}</TableCell>
                           <TableCell colSpan={subColsCount - 1}></TableCell>
-                          <TableCell className="text-right border-r total-col">{statement.totals.due.total}</TableCell>
-                          <TableCell className="text-right diff-col">{statement.totals.difference}</TableCell>
+                          <TableCell className="text-right border-r total-col font-bold text-indigo-900 dark:text-indigo-200 print:text-black">{statement.totals.due.total}</TableCell>
+                          <TableCell className="text-right diff-col font-bold text-emerald-700 dark:text-emerald-300 print:text-black">{statement.totals.difference}</TableCell>
                         </TableRow>
                       </UiTableFooter>
                     </Table>
