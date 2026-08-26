@@ -56,6 +56,18 @@ export function AIValidationModal({ isOpen, onClose, data, onConfirm }: AIValida
     return !options.includes(val);
   };
 
+  const isInvalidBasicPay = (payLevel: string, basicPay: number) => {
+    if (!payLevel || !basicPay) return false;
+    let levelData = cpcData['7th'].payLevels.find((l: any) => l.level === payLevel);
+    if (!levelData) {
+      levelData = cpcData['7th'].payLevels.find((l: any) => l.level.includes('/') && l.level.split('/').includes(payLevel));
+    }
+    if (levelData && !levelData.values.includes(basicPay)) {
+      return true;
+    }
+    return false;
+  };
+
   if (!isOpen) return null;
 
   const payLevels = cpcData['7th'].payLevels.map((l: any) => l.level);
@@ -200,8 +212,14 @@ export function AIValidationModal({ isOpen, onClose, data, onConfirm }: AIValida
                   type="number"
                   value={formData.paid?.basicPay || ''} 
                   onChange={(e) => handleChange('paid.basicPay', parseFloat(e.target.value) || 0)}
-                  className={isInvalid(formData.paid?.basicPay) ? 'border-red-500 dark:border-red-400' : ''}
+                  className={cn(
+                    isInvalid(formData.paid?.basicPay) ? 'border-red-500 dark:border-red-400' : '',
+                    isInvalidBasicPay(formData.paid?.payLevel, formData.paid?.basicPay) ? 'border-red-500 dark:border-red-400 text-red-600 focus-visible:ring-red-500' : ''
+                  )}
                 />
+                {isInvalidBasicPay(formData.paid?.payLevel, formData.paid?.basicPay) && (
+                  <p className="text-[10px] text-red-500 leading-tight">Mismatch in matrix</p>
+                )}
               </div>
               <div className="space-y-1">
                 <Label htmlFor="paid.incrementMonth" className="dark:text-orange-100">Increment Month</Label>
@@ -239,8 +257,14 @@ export function AIValidationModal({ isOpen, onClose, data, onConfirm }: AIValida
                   type="number"
                   value={formData.toBePaid?.basicPay || ''} 
                   onChange={(e) => handleChange('toBePaid.basicPay', parseFloat(e.target.value) || 0)}
-                  className={isInvalid(formData.toBePaid?.basicPay) ? 'border-red-500 dark:border-red-400' : ''}
+                  className={cn(
+                    isInvalid(formData.toBePaid?.basicPay) ? 'border-red-500 dark:border-red-400' : '',
+                    isInvalidBasicPay(formData.toBePaid?.payLevel, formData.toBePaid?.basicPay) ? 'border-red-500 dark:border-red-400 text-red-600 focus-visible:ring-red-500' : ''
+                  )}
                 />
+                {isInvalidBasicPay(formData.toBePaid?.payLevel, formData.toBePaid?.basicPay) && (
+                  <p className="text-[10px] text-red-500 leading-tight">Mismatch in matrix</p>
+                )}
               </div>
               <div className="space-y-1">
                 <Label htmlFor="toBePaid.incrementMonth" className="dark:text-green-100">Increment Month</Label>

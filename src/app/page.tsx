@@ -169,6 +169,7 @@ const formSchema = z.object({
   fromDate: z.date({ required_error: "From date is required." }),
   toDate: z.date({ required_error: "To date is required." }),
   payFixationRef: z.string().optional(),
+  remark: z.string().optional(),
   paid: salaryComponentSchema,
   toBePaid: salaryComponentSchema,
 }).refine(data => data.toDate >= data.fromDate, {
@@ -494,6 +495,7 @@ export default function Home() {
   const [allowBasicPayAutoFill, setAllowBasicPayAutoFill] = React.useState(false);
   const [isScanning, setIsScanning] = React.useState(false);
   const [currentPeriodIndex, setCurrentPeriodIndex] = React.useState(0);
+  const [basicPayWarning, setBasicPayWarning] = React.useState<{ show: boolean, basicPay: number, payLevel: string, fieldName?: any } | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const { user, authStatus, loading, logout, openAuthModal } = useAuth();
@@ -705,6 +707,7 @@ export default function Home() {
             lastAccessedAt: toISOStringSafe(processedData.lastAccessedAt),
             rows: restOfData.rows,
             totals: restOfData.totals,
+            periods: restOfData.periods,
             employeeInfo: employeeInfo,
             isLocal: false,
             userId: data.userId,
@@ -777,6 +780,7 @@ export default function Home() {
       fromDate: undefined,
       toDate: undefined,
       payFixationRef: "",
+      remark: "",
       paid: {
         cpc: "7th" as any,
         basicPay: '' as any,
@@ -816,6 +820,12 @@ export default function Home() {
       },
     },
   });
+
+  const { dirtyFields } = form.formState;
+  const isCalcFieldDirty = React.useMemo(() => {
+    const dirtyKeys = Object.keys(dirtyFields);
+    return dirtyKeys.some(key => !['employeeId', 'employeeName', 'designation', 'department', 'payFixationRef', 'remark'].includes(key));
+  }, [dirtyFields]);
 
   const watchedEmployeeId = form.watch("employeeId");
   React.useEffect(() => {
@@ -1437,6 +1447,12 @@ export default function Home() {
         };
         const updatedEmployeeInfo = {
           ...statement.employeeInfo,
+          employeeId: data.employeeId,
+          employeeName: data.employeeName,
+          designation: data.designation,
+          department: data.department,
+          payFixationRef: data.payFixationRef,
+          remark: data.remark,
           toDate: currentPeriods[currentPeriods.length - 1].formData.toDate
         };
 
@@ -1457,6 +1473,8 @@ export default function Home() {
         document.getElementById("statement-section")?.scrollIntoView({ behavior: 'smooth' });
       }, 100);
 
+      // Reset form dirty state so the calculate button becomes inactive again
+      form.reset(data);
     } catch (error) {
       console.error(error);
       toast({
@@ -1470,6 +1488,24 @@ export default function Home() {
   const handleSaveOrUpdate = async () => {
     if (!statement || authStatus !== 'authenticated') {
       openAuthModal();
+      return;
+    }
+
+    if (statement.periods && currentPeriodIndex >= statement.periods.length) {
+      toast({
+        variant: "destructive",
+        title: "Calculation Required",
+        description: "Please click 'Calculate & Append' to process the new period before saving."
+      });
+      return;
+    }
+
+    if (isCalcFieldDirty) {
+      toast({
+        variant: "destructive",
+        title: "Uncalculated Changes",
+        description: "You have changed calculation fields. Please click 'Recalculate Arrears' before saving."
+      });
       return;
     }
 
@@ -1555,6 +1591,19 @@ export default function Home() {
       ...currentData,
       fromDate: nextStartDate,
       toDate: undefined as any,
+      remark: "",
+      paid: {
+        ...currentData.paid,
+        basicPay: '' as any,
+        payLevel: undefined,
+        incrementMonth: undefined,
+      },
+      toBePaid: {
+        ...currentData.toBePaid,
+        basicPay: '' as any,
+        payLevel: undefined,
+        incrementMonth: undefined,
+      }
     });
     
     toast({
@@ -1568,8 +1617,36 @@ export default function Home() {
 
   const loadPeriodIntoForm = (index: number) => {
     if (!statement || !statement.periods || index < 0 || index >= statement.periods.length) return;
+    
+    if (isCalcFieldDirty) {
+      toast({
+        variant: "destructive",
+        title: "Uncalculated Changes",
+        description: "You have changed calculation fields. Please click 'Recalculate Arrears' before navigating to another period."
+      });
+      return;
+    }
+
+    const currentData = form.getValues();
+    let updatedPeriods = [...statement.periods];
+    if (updatedPeriods[currentPeriodIndex]) {
+      updatedPeriods[currentPeriodIndex] = {
+        ...updatedPeriods[currentPeriodIndex],
+        formData: {
+          ...updatedPeriods[currentPeriodIndex].formData,
+          remark: currentData.remark,
+          payFixationRef: currentData.payFixationRef,
+        }
+      };
+      setStatement({ ...statement, periods: updatedPeriods });
+    }
+
     setCurrentPeriodIndex(index);
-    form.reset(statement.periods[index].formData);
+    form.reset({
+      ...updatedPeriods[index].formData,
+      remark: updatedPeriods[index].formData.remark || "",
+      payFixationRef: updatedPeriods[index].formData.payFixationRef || ""
+    });
     window.scrollTo({ top: 0, behavior: 'smooth' });
     toast({
       title: `Loaded Period ${index + 1}`,
@@ -1581,8 +1658,44 @@ export default function Home() {
     if (!loadedStatementId || !user || !statement) return;
     setIsLoading(true);
 
-    const docToUpdate: Omit<SavedStatement, 'isLocal'> = {
+    const formData = form.getValues();
+
+    const updatedEmployeeInfo = {
+      ...statement.employeeInfo,
+      employeeId: formData.employeeId,
+      employeeName: formData.employeeName,
+      designation: formData.designation,
+      department: formData.department,
+      payFixationRef: formData.payFixationRef,
+      remark: formData.remark,
+    };
+
+    let updatedPeriods = statement.periods ? [...statement.periods] : [];
+    if (updatedPeriods[currentPeriodIndex]) {
+      updatedPeriods[currentPeriodIndex] = {
+        ...updatedPeriods[currentPeriodIndex],
+        formData: {
+          ...updatedPeriods[currentPeriodIndex].formData,
+          employeeId: formData.employeeId,
+          employeeName: formData.employeeName,
+          designation: formData.designation,
+          department: formData.department,
+          payFixationRef: formData.payFixationRef,
+          remark: formData.remark,
+        }
+      };
+    }
+
+    const statementToSave = {
       ...statement,
+      employeeInfo: updatedEmployeeInfo,
+      periods: updatedPeriods
+    };
+
+    setStatement(statementToSave);
+
+    const docToUpdate: Omit<SavedStatement, 'isLocal'> = {
+      ...statementToSave,
       id: loadedStatementId,
       savedAt: new Date().toISOString(),
       lastAccessedAt: new Date().toISOString(),
@@ -1669,23 +1782,6 @@ export default function Home() {
     const fullyProcessedInfo = processFirestoreDataRecursive(employeeInfo);
     const fullyProcessedRest = processFirestoreDataRecursive(restOfStatement);
 
-    const { paid, toBePaid, ...restInfo } = fullyProcessedInfo;
-    const { payLevel: paidPayLevel, ...restPaid } = paid || {};
-    const { payLevel: toBePaidPayLevel, ...restToBePaid } = toBePaid || {};
-
-    const formDataToReset = {
-      ...restInfo,
-      paid: restPaid,
-      toBePaid: restToBePaid,
-    }
-
-    form.reset(formDataToReset as ArrearFormData);
-
-    setTimeout(() => {
-      if (paidPayLevel) form.setValue('paid.payLevel', paidPayLevel);
-      if (toBePaidPayLevel) form.setValue('toBePaid.payLevel', toBePaidPayLevel);
-    }, 0);
-
     let periodsToLoad = fullyProcessedRest.periods;
     if (!periodsToLoad || periodsToLoad.length === 0) {
       periodsToLoad = [{
@@ -1695,6 +1791,23 @@ export default function Home() {
         totals: fullyProcessedRest.totals
       }];
     }
+
+    const firstPeriodData = periodsToLoad[0].formData;
+    
+    const formDataToReset = {
+      ...firstPeriodData,
+      employeeId: fullyProcessedInfo.employeeId || "",
+      employeeName: fullyProcessedInfo.employeeName || "",
+      designation: fullyProcessedInfo.designation || "",
+      department: fullyProcessedInfo.department || "",
+    }
+
+    form.reset(formDataToReset as ArrearFormData);
+
+    setTimeout(() => {
+      if (formDataToReset.paid?.payLevel) form.setValue('paid.payLevel', formDataToReset.paid.payLevel);
+      if (formDataToReset.toBePaid?.payLevel) form.setValue('toBePaid.payLevel', formDataToReset.toBePaid.payLevel);
+    }, 0);
 
     setStatement({
       ...fullyProcessedRest,
@@ -1774,6 +1887,7 @@ export default function Home() {
       fromDate: undefined,
       toDate: undefined,
       payFixationRef: "",
+      remark: "",
       paid: { cpc: "7th" as any, basicPay: '' as any, payLevel: undefined, incrementMonth: undefined, daApplicable: true, hraApplicable: true, npaApplicable: false, taApplicable: false, doubleTaApplicable: false, otherAllowance: '' as any, otherAllowanceName: "" },
       toBePaid: { cpc: "7th" as any, basicPay: '' as any, payLevel: undefined, incrementMonth: undefined, daApplicable: true, hraApplicable: true, npaApplicable: false, taApplicable: false, doubleTaApplicable: false, otherAllowance: '' as any, otherAllowanceName: "", refixedBasicPay: '' as any },
     });
@@ -1957,234 +2071,306 @@ export default function Home() {
             <span>Configuring: <strong>To be Paid (Upgraded / Revised Due)</strong> Salary Structure</span>
           </div>
         )}
-        <FormField control={form.control} name={`${type}.cpc`} render={({ field }) => (
-          <FormItem>
-            <FormLabel>CPC</FormLabel>
-            <Select onValueChange={(value) => {
-              field.onChange(value);
-              form.setValue(`${type}.payLevel`, undefined as any);
-            }} value={field.value}>
-              <FormControl><SelectTrigger><SelectValue placeholder="Select CPC" /></SelectTrigger></FormControl>
-              <SelectContent>
-                <SelectItem value="6th">6th CPC</SelectItem>
-                <SelectItem value="7th">7th CPC</SelectItem>
-              </SelectContent>
-            </Select>
-            <FormMessage />
-          </FormItem>
-        )} />
 
-        <FormField control={form.control} name={`${type}.payLevel`} render={({ field }) => (
-          <FormItem>
-            <FormLabel>Pay Level</FormLabel>
-            <Select onValueChange={field.onChange} value={field.value} disabled={!cpc}>
-              <FormControl><SelectTrigger><SelectValue placeholder={cpc ? "Select a level" : "Select CPC first"} /></SelectTrigger></FormControl>
-              <SelectContent>
-                {payLevels.map(level => <SelectItem key={level.value} value={level.value}>{level.label}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <FormMessage />
-          </FormItem>
-        )} />
-        <FormField control={form.control} name={`${type}.basicPay`} render={({ field }) => (
-          <FormItem>
-            <FormLabel>Basic Pay</FormLabel>
-            <FormControl><Input type="number" placeholder="e.g., 50000" {...field} /></FormControl>
-            <FormMessage />
-          </FormItem>
-        )} />
-        <div className="space-y-4 rounded-md border p-4 bg-muted/20">
-          <h4 className="font-medium">Annual Increment</h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <FormField control={form.control} name={`${type}.incrementMonth`} render={({ field }) => (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <FormField control={form.control} name={`${type}.cpc`} render={({ field }) => (
+                <FormItem>
+                  <FormLabel>CPC</FormLabel>
+                  <Select onValueChange={(value) => {
+                    field.onChange(value);
+                    form.setValue(`${type}.payLevel`, undefined as any);
+                  }} value={field.value}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Select CPC" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value="6th">6th CPC</SelectItem>
+                      <SelectItem value="7th">7th CPC</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name={`${type}.payLevel`} render={({ field, fieldState }) => (
+                <FormItem>
+                  <FormLabel>Pay Level</FormLabel>
+                  <Select onValueChange={(val) => {
+                    field.onChange(val);
+                    form.clearErrors(`${type}.payLevel`);
+                    form.clearErrors(`${type}.basicPay`);
+                  }} value={field.value} disabled={!cpc}>
+                    <FormControl><SelectTrigger className={fieldState.error ? "border-red-500 focus-visible:ring-red-500" : ""}><SelectValue placeholder={cpc ? "Select a level" : "Select CPC first"} /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {payLevels.map(level => <SelectItem key={level.value} value={level.value}>{level.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            </div>
+            <FormField control={form.control} name={`${type}.basicPay`} render={({ field, fieldState }) => (
               <FormItem>
-                <FormLabel>Increment Month</FormLabel>
-                <Select onValueChange={(value) => {
-                  field.onChange(value);
-                  form.setValue(`${type}.incrementDate`, undefined);
-                }} value={field.value}>
-                  <FormControl><SelectTrigger><SelectValue placeholder="Select a month" /></SelectTrigger></FormControl>
-                  <SelectContent>{INCREMENT_MONTHS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent>
-                </Select>
+                <FormLabel>Basic Pay</FormLabel>
+                <FormControl>
+                  <Input 
+                    type="number" 
+                    placeholder="e.g., 50000" 
+                    {...field} 
+                    className={fieldState.error ? "border-red-500 focus-visible:ring-red-500" : ""}
+                    onBlur={(e) => {
+                      field.onBlur();
+                      const basicPay = Number(e.target.value);
+                      if (!basicPay || isNaN(basicPay)) {
+                        form.clearErrors(`${type}.basicPay`);
+                        form.clearErrors(`${type}.payLevel`);
+                        return;
+                      }
+                      const cpc = form.getValues(`${type}.cpc`);
+                      const payLevel = form.getValues(`${type}.payLevel`);
+                      if (cpc === "7th" && payLevel) {
+                        let levelData = cpcData['7th'].payLevels.find(l => l.level === payLevel);
+                        if (!levelData) {
+                           levelData = cpcData['7th'].payLevels.find(l => l.level.includes('/') && l.level.split('/').includes(payLevel));
+                        }
+                        if (levelData) {
+                          if (!levelData.values.includes(basicPay)) {
+                            setBasicPayWarning({ show: true, basicPay, payLevel, fieldName: `${type}.basicPay` });
+                          } else {
+                            form.clearErrors(`${type}.basicPay`);
+                            form.clearErrors(`${type}.payLevel`);
+                          }
+                        }
+                      }
+                    }}
+                  />
+                </FormControl>
                 <FormMessage />
               </FormItem>
             )} />
-            <FormField control={form.control} name={`${type}.incrementDate`} render={({ field }) => (
-              <FormItem className="flex flex-col">
-                <FormLabel>Date of next Increment (Optional)</FormLabel>
-                <FormDateInput field={field} label="Prorate Date" />
-                <FormMessage />
-              </FormItem>
-            )} />
-          </div>
-        </div>
-
-        <div className="space-y-4 rounded-md border p-4 bg-muted/20">
-          <FormField
-            control={form.control}
-            name={`${type}.fixedBasicPayApplicable`}
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-center justify-between">
-                <FormLabel>Fixed Basic Pay (Overrides Increment)</FormLabel>
-                <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-              </FormItem>
-            )}
-          />
-          {isFixedBasicApplicable && (
-            <div className="space-y-4 pt-2">
+            <div className="space-y-4 rounded-md border p-4 bg-muted/20">
+              <h4 className="font-medium">Annual Increment</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <FormField control={form.control} name={`${type}.incrementMonth`} render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Increment Month</FormLabel>
+                    <Select onValueChange={(value) => {
+                      field.onChange(value);
+                      form.setValue(`${type}.incrementDate`, undefined);
+                    }} value={field.value}>
+                      <FormControl><SelectTrigger><SelectValue placeholder="Select a month" /></SelectTrigger></FormControl>
+                      <SelectContent>{INCREMENT_MONTHS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name={`${type}.incrementDate`} render={({ field }) => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel>Date of next Increment (Optional)</FormLabel>
+                    <FormDateInput field={field} label="Prorate Date" />
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </div>
+            </div>
+            <div className="space-y-4 rounded-md border p-4 bg-muted/20">
               <FormField
                 control={form.control}
-                name={`${type}.fixedBasicPayValue`}
+                name={`${type}.fixedBasicPayApplicable`}
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Fixed Basic Pay Amount</FormLabel>
-                    <FormControl><Input type="number" placeholder="e.g., 52000" {...field} value={field.value ?? ''} /></FormControl>
-                    <FormMessage />
+                  <FormItem className="flex flex-row items-center justify-between">
+                    <FormLabel>Fixed Basic Pay (Overrides Increment)</FormLabel>
+                    <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
                   </FormItem>
                 )}
               />
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <FormField
-                  control={form.control}
-                  name={`${type}.fixedBasicPayFromDate`}
-                  render={({ field }) => (
-                    <FormItem><FormDateInput field={field} label="From Date" /></FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name={`${type}.fixedBasicPayToDate`}
-                  render={({ field }) => (
-                    <FormItem><FormDateInput field={field} label="To Date" /></FormItem>
-                  )}
-                />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {type === 'toBePaid' && (
-          <div className="space-y-4 rounded-md border p-4 bg-muted/20">
-            <h4 className="font-medium">Pay Refixation (Optional)</h4>
-            <FormField control={form.control} name="toBePaid.refixedBasicPay" render={({ field }) => (
-              <FormItem>
-                <FormLabel>Refixed Basic Pay</FormLabel>
-                <FormControl><Input type="number" placeholder="New basic pay" {...field} value={field.value ?? ''} /></FormControl>
-                <FormMessage />
-              </FormItem>
-            )} />
-            <FormField control={form.control} name="toBePaid.refixedBasicPayDate" render={({ field }) => (
-              <FormItem className="flex flex-col">
-                <FormLabel>Refixation Date</FormLabel>
-                <FormDateInput field={field} label="Effective Date" />
-                <FormMessage />
-              </FormItem>
-            )} />
-          </div>
-        )}
-        <div className="space-y-4 rounded-md border p-4">
-          <h4 className="font-medium">Applicable Allowances</h4>
-          <div className="space-y-2">
-            <FormField control={form.control} name={`${type}.daApplicable`} render={({ field }) => (
-              <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                <FormLabel className="font-normal">DA (Dearness Allowance)</FormLabel>
-              </FormItem>
-            )} />
-            {isDAApplicable && <FixedRateFields type={type} name="da" />}
-          </div>
-
-          <div className="space-y-2">
-            <AllowanceField type={type} name="hra" label="HRA (House Rent Allowance)" />
-          </div>
-
-          <div className="space-y-2">
-            <AllowanceField type={type} name="npa" label="NPA (Non-Practicing Allowance)" />
-          </div>
-
-          <div className="space-y-2">
-            <FormField
-              control={form.control}
-              name={`${type}.taApplicable`}
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-center space-x-3 space-y-0">
-                  <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                  <FormLabel className="font-normal">TA (Transport Allowance)</FormLabel>
-                </FormItem>
+              {isFixedBasicApplicable && (
+                <div className="space-y-4 pt-2">
+                  <FormField
+                    control={form.control}
+                    name={`${type}.fixedBasicPayValue`}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Fixed Basic Pay Amount</FormLabel>
+                        <FormControl><Input type="number" placeholder="e.g., 52000" {...field} value={field.value ?? ''} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <FormField
+                      control={form.control}
+                      name={`${type}.fixedBasicPayFromDate`}
+                      render={({ field }) => (
+                        <FormItem><FormDateInput field={field} label="From Date" /></FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name={`${type}.fixedBasicPayToDate`}
+                      render={({ field }) => (
+                        <FormItem><FormDateInput field={field} label="To Date" /></FormItem>
+                      )}
+                    />
+                  </div>
+                </div>
               )}
-            />
-            {isTAApplicable && (
-              <div className="space-y-2 pl-7 pt-2">
+            </div>
+            {type === 'toBePaid' && (
+              <div className="space-y-4 rounded-md border p-4 bg-muted/20">
+                <h4 className="font-medium">Pay Refixation (Optional)</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <FormField control={form.control} name="toBePaid.refixedBasicPay" render={({ field, fieldState }) => (
+                    <FormItem>
+                      <FormLabel>Refixed Basic Pay</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="number" 
+                          placeholder="New basic pay" 
+                          {...field} 
+                          value={field.value ?? ''} 
+                          className={fieldState.error ? "border-red-500 focus-visible:ring-red-500" : ""}
+                          onBlur={(e) => {
+                            field.onBlur();
+                            const basicPay = Number(e.target.value);
+                            if (!basicPay || isNaN(basicPay)) {
+                              form.clearErrors(`toBePaid.refixedBasicPay`);
+                              return;
+                            }
+                            const cpc = form.getValues(`toBePaid.cpc`);
+                            const payLevel = form.getValues(`toBePaid.payLevel`);
+                            if (cpc === "7th" && payLevel) {
+                              let levelData = cpcData['7th'].payLevels.find(l => l.level === payLevel);
+                              if (!levelData) {
+                                 levelData = cpcData['7th'].payLevels.find(l => l.level.includes('/') && l.level.split('/').includes(payLevel));
+                              }
+                              if (levelData) {
+                                if (!levelData.values.includes(basicPay)) {
+                                  setBasicPayWarning({ show: true, basicPay, payLevel, fieldName: `toBePaid.refixedBasicPay` });
+                                } else {
+                                  form.clearErrors(`toBePaid.refixedBasicPay`);
+                                }
+                              }
+                            }
+                          }}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="toBePaid.refixedBasicPayDate" render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>Refixation Date</FormLabel>
+                      <FormDateInput field={field} label="Effective Date" />
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="space-y-4">
+            <div className="space-y-4 rounded-md border p-4">
+              <h4 className="font-medium">Applicable Allowances</h4>
+              <div className="space-y-2">
+                <FormField control={form.control} name={`${type}.daApplicable`} render={({ field }) => (
+                  <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                    <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                    <FormLabel className="font-normal">DA (Dearness Allowance)</FormLabel>
+                  </FormItem>
+                )} />
+                {isDAApplicable && <FixedRateFields type={type} name="da" />}
+              </div>
+              <div className="space-y-2">
+                <AllowanceField type={type} name="hra" label="HRA (House Rent Allowance)" />
+              </div>
+              <div className="space-y-2">
+                <AllowanceField type={type} name="npa" label="NPA (Non-Practicing Allowance)" />
+              </div>
+              <div className="space-y-2">
                 <FormField
                   control={form.control}
-                  name={`${type}.doubleTaApplicable`}
+                  name={`${type}.taApplicable`}
                   render={({ field }) => (
                     <FormItem className="flex flex-row items-center space-x-3 space-y-0">
                       <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                      <FormLabel className="font-normal">Double Transport Allowance</FormLabel>
+                      <FormLabel className="font-normal">TA (Transport Allowance)</FormLabel>
                     </FormItem>
                   )}
                 />
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {isTAApplicable && (
+                  <div className="space-y-2 pl-7 pt-2">
+                    <FormField
+                      control={form.control}
+                      name={`${type}.doubleTaApplicable`}
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-center space-x-3 space-y-0">
+                          <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                          <FormLabel className="font-normal">Double Transport Allowance</FormLabel>
+                        </FormItem>
+                      )}
+                    />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <FormField
+                        control={form.control}
+                        name={`${type}.taFromDate`}
+                        render={({ field }) => (
+                          <FormItem><FormDateInput field={field} label="From Date" /></FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name={`${type}.taToDate`}
+                        render={({ field }) => (
+                          <FormItem><FormDateInput field={field} label="To Date" /></FormItem>
+                        )}
+                      />
+                    </div>
+                    <FixedRateFields type={type} name="ta" isAmount />
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="space-y-2 rounded-md border p-4">
+              <h4 className="font-medium">Other Allowance</h4>
+              <FormField control={form.control} name={`${type}.otherAllowanceName`} render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Other Allowance Name</FormLabel>
+                  <FormControl><Input placeholder="e.g., Special Duty Allowance" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name={`${type}.otherAllowance`} render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Other Allowance Amount</FormLabel>
+                  <FormControl><Input type="number" placeholder="e.g., 1500" {...field} value={field.value ?? ''} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              {otherAllowanceAmount > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
                   <FormField
                     control={form.control}
-                    name={`${type}.taFromDate`}
+                    name={`${type}.otherAllowanceFromDate`}
                     render={({ field }) => (
                       <FormItem><FormDateInput field={field} label="From Date" /></FormItem>
                     )}
                   />
                   <FormField
                     control={form.control}
-                    name={`${type}.taToDate`}
+                    name={`${type}.otherAllowanceToDate`}
                     render={({ field }) => (
                       <FormItem><FormDateInput field={field} label="To Date" /></FormItem>
                     )}
                   />
                 </div>
-                <FixedRateFields type={type} name="ta" isAmount />
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="space-y-2 rounded-md border p-4">
-          <h4 className="font-medium">Other Allowance</h4>
-          <FormField control={form.control} name={`${type}.otherAllowanceName`} render={({ field }) => (
-            <FormItem>
-              <FormLabel>Other Allowance Name</FormLabel>
-              <FormControl><Input placeholder="e.g., Special Duty Allowance" {...field} /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
-          <FormField control={form.control} name={`${type}.otherAllowance`} render={({ field }) => (
-            <FormItem>
-              <FormLabel>Other Allowance Amount</FormLabel>
-              <FormControl><Input type="number" placeholder="e.g., 1500" {...field} value={field.value ?? ''} /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
-          {otherAllowanceAmount > 0 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
-              <FormField
-                control={form.control}
-                name={`${type}.otherAllowanceFromDate`}
-                render={({ field }) => (
-                  <FormItem><FormDateInput field={field} label="From Date" /></FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name={`${type}.otherAllowanceToDate`}
-                render={({ field }) => (
-                  <FormItem><FormDateInput field={field} label="To Date" /></FormItem>
-                )}
-              />
+              )}
+              <FixedRateFields type={type} name="otherAllowance" isAmount />
             </div>
-          )}
-          <FixedRateFields type={type} name="otherAllowance" isAmount />
+          </div>
         </div>
       </div>
     );
-  }
+  };
 
   const formatDisplayDate = (dateString?: string) => {
     if (!dateString) return 'N/A';
@@ -2193,7 +2379,7 @@ export default function Home() {
     } catch {
       return 'Invalid Date';
     }
-  }
+  };
 
   const handleLoadClick = () => {
     if (authStatus !== 'authenticated') {
@@ -2262,16 +2448,49 @@ export default function Home() {
         data={aiScannedData}
         onConfirm={handleAiModalConfirm}
       />
-
       <Dialog open={showDiffToast.show} onOpenChange={(open) => { if (!open) setShowDiffToast(prev => ({ ...prev, show: false })) }}>
         <DialogContent className="sm:max-w-md text-center">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold text-center">Total Arrear Difference</DialogTitle>
           </DialogHeader>
-          <div className="py-8">
-            <p className="text-5xl font-extrabold text-green-600">Rs. {showDiffToast.diff.toLocaleString('en-IN')}</p>
-            <p className="text-muted-foreground mt-4">Arrear statement calculated successfully!</p>
+          <div className="flex justify-center items-center py-6">
+            <span className={cn("text-4xl font-extrabold tracking-tight", showDiffToast.diff > 0 ? "text-emerald-600 dark:text-emerald-500" : showDiffToast.diff < 0 ? "text-red-600 dark:text-red-500" : "text-gray-600")}>
+              Rs. {showDiffToast.diff.toLocaleString('en-IN')}
+            </span>
           </div>
+          <p className="text-muted-foreground mt-4">Arrear statement calculated successfully!</p>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={basicPayWarning?.show || false} onOpenChange={(open) => { if (!open) setBasicPayWarning(null) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-red-600 flex items-center gap-2">
+              <Info className="h-6 w-6" /> Basic Pay Warning
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4 text-center space-y-4">
+            <p className="text-muted-foreground text-[15px]">
+              The basic pay <strong>Rs. {basicPayWarning?.basicPay}</strong> does not exist in <strong>Level {basicPayWarning?.payLevel}</strong> of the 7th CPC Pay Matrix.
+            </p>
+            <p className="text-sm font-semibold text-amber-600">
+              Please check your selected Pay Level and Basic Pay.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => {
+              if (basicPayWarning?.fieldName) {
+                form.setError(basicPayWarning.fieldName, { type: "manual", message: "Invalid basic pay for selected level." });
+                if (basicPayWarning.fieldName !== 'toBePaid.refixedBasicPay') {
+                  const payLevelFieldName = basicPayWarning.fieldName.replace('basicPay', 'payLevel') as any;
+                  form.setError(payLevelFieldName, { type: "manual", message: "Invalid level for basic pay." });
+                }
+              }
+              setBasicPayWarning(null);
+            }} variant="default">
+              Understood
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -2445,7 +2664,7 @@ export default function Home() {
                             {s.employeeInfo.employeeId} {s.employeeInfo.employeeName}
                           </TableCell>
                           <TableCell className="whitespace-nowrap text-muted-foreground text-xs">
-                            {format(s.employeeInfo.fromDate, "dd-MM-yy")} - {format(s.employeeInfo.toDate, "dd-MM-yy")}
+                            {s.employeeInfo.fromDate ? format(new Date(s.employeeInfo.fromDate), "dd-MM-yy") : "-"} - {s.employeeInfo.toDate ? format(new Date(s.employeeInfo.toDate), "dd-MM-yy") : "-"}
                           </TableCell>
                           <TableCell className="font-semibold text-right">
                             {s.totals?.difference?.toLocaleString('en-IN') || 0}
@@ -2496,9 +2715,10 @@ export default function Home() {
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8 no-print">
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-              <div className="lg:col-span-2 space-y-8">
-                <Card id="employee-details-card" className="border-t-4 border-t-blue-500 border-border/80 shadow-sm hover:shadow-md transition-shadow bg-card">
+            {/* Top row: Employee Details & Calculation Period side-by-side */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <Card id="employee-details-card" className="border-t-4 border-t-blue-500 border-border/80 shadow-sm hover:shadow-md transition-shadow bg-card flex flex-col justify-between">
+                <div>
                   <CardHeader className="pb-3 border-b bg-blue-50/40 dark:bg-blue-950/20">
                     <CardTitle className="flex items-center gap-2.5 text-base font-semibold text-blue-950 dark:text-blue-100">
                       <span className="p-1.5 rounded-lg bg-blue-600 text-white shadow-sm shadow-blue-500/20">
@@ -2508,13 +2728,20 @@ export default function Home() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4 pt-4">
-                    <FormField control={form.control} name="employeeId" render={({ field }) => (<FormItem> <FormLabel>Employee ID</FormLabel> <FormControl><Input placeholder="Employee ID" {...field} maxLength={5} onChange={(e) => { const val = e.target.value.replace(/\D/g, '').slice(0, 5); field.onChange(val); }} /></FormControl> <FormMessage /> </FormItem>)} />
-                    <FormField control={form.control} name="employeeName" render={({ field }) => (<FormItem> <FormLabel>Employee Name</FormLabel> <FormControl><Input placeholder="Full Name" {...field} /></FormControl> <FormMessage /> </FormItem>)} />
-                    <FormField control={form.control} name="designation" render={({ field }) => (<FormItem> <FormLabel>Designation</FormLabel> <FormControl><Input placeholder="Designation" {...field} /></FormControl> <FormMessage /> </FormItem>)} />
-                    <FormField control={form.control} name="department" render={({ field }) => (<FormItem> <FormLabel>Department</FormLabel> <FormControl><Input placeholder="Department" {...field} /></FormControl> <FormMessage /> </FormItem>)} />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <FormField control={form.control} name="employeeId" render={({ field }) => (<FormItem> <FormLabel>Employee ID</FormLabel> <FormControl><Input placeholder="Employee ID" {...field} maxLength={5} onChange={(e) => { const val = e.target.value.replace(/\D/g, '').slice(0, 5); field.onChange(val); }} /></FormControl> <FormMessage /> </FormItem>)} />
+                      <FormField control={form.control} name="employeeName" render={({ field }) => (<FormItem> <FormLabel>Employee Name</FormLabel> <FormControl><Input placeholder="Full Name" {...field} /></FormControl> <FormMessage /> </FormItem>)} />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <FormField control={form.control} name="designation" render={({ field }) => (<FormItem> <FormLabel>Designation</FormLabel> <FormControl><Input placeholder="Designation" {...field} /></FormControl> <FormMessage /> </FormItem>)} />
+                      <FormField control={form.control} name="department" render={({ field }) => (<FormItem> <FormLabel>Department</FormLabel> <FormControl><Input placeholder="Department" {...field} /></FormControl> <FormMessage /> </FormItem>)} />
+                    </div>
                   </CardContent>
-                </Card>
-                <Card className="border-t-4 border-t-amber-500 border-border/80 shadow-sm hover:shadow-md transition-shadow bg-card">
+                </div>
+              </Card>
+
+              <Card className="border-t-4 border-t-amber-500 border-border/80 shadow-sm hover:shadow-md transition-shadow bg-card flex flex-col justify-between">
+                <div>
                   <CardHeader className="pb-3 border-b bg-amber-50/40 dark:bg-amber-950/20">
                     <div className="flex items-center justify-between">
                       <CardTitle className="flex items-center gap-2.5 text-base font-semibold text-amber-950 dark:text-amber-100">
@@ -2539,7 +2766,7 @@ export default function Home() {
                           </span>
                           <Button 
                             type="button"
-                            variant="outline"
+                            variant="outline" 
                             size="sm"
                             disabled={currentPeriodIndex >= statement.periods.length - 1} 
                             onClick={() => loadPeriodIntoForm(currentPeriodIndex + 1)}
@@ -2551,53 +2778,67 @@ export default function Home() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4 pt-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <FormField control={form.control} name="fromDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>From Date</FormLabel><FormDateInput field={field} /><FormMessage /></FormItem>)} />
                       <FormField control={form.control} name="toDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>To Date</FormLabel><FormDateInput field={field} /><FormMessage /></FormItem>)} />
                     </div>
-                    <FormField control={form.control} name="payFixationRef" render={({ field }) => (<FormItem><FormLabel>Pay Fixation Reference</FormLabel><FormControl><Input placeholder="Reference No." {...field} /></FormControl></FormItem>)} />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <FormField control={form.control} name="payFixationRef" render={({ field }) => (<FormItem><FormLabel>Pay Fixation Reference</FormLabel><FormControl><Input placeholder="Reference No." {...field} /></FormControl></FormItem>)} />
+                      <FormField control={form.control} name="remark" render={({ field }) => (<FormItem><FormLabel>Remark (Optional)</FormLabel><FormControl><Input placeholder="Any remark for pay fixation..." {...field} /></FormControl><p className="text-xs text-muted-foreground mt-1">This will be printed below the statement table.</p></FormItem>)} />
+                    </div>
                   </CardContent>
-                </Card>
-              </div>
-              <div className="lg:col-span-3">
-                <Card className="border-t-4 border-t-indigo-600 border-border/80 shadow-sm hover:shadow-md transition-shadow bg-card">
-                  <CardHeader className="pb-3 border-b bg-indigo-50/40 dark:bg-indigo-950/20">
-                    <CardTitle className="flex items-center gap-2.5 text-base font-semibold text-indigo-950 dark:text-indigo-100">
-                      <span className="p-1.5 rounded-lg bg-indigo-600 text-white shadow-sm shadow-indigo-500/20">
-                        <FileText className="h-4 w-4" />
-                      </span> 
-                      Salary Components
-                    </CardTitle>
-                    <CardDescription>Define salary structures before and after the revision.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="pt-4">
-                    <Tabs defaultValue="paid" className="w-full">
-                      <TabsList className="grid w-full grid-cols-2 p-1.5 bg-slate-100 dark:bg-slate-800/90 rounded-xl gap-2 h-auto">
-                        <TabsTrigger 
-                          value="paid" 
-                          className="data-[state=active]:bg-amber-500 data-[state=active]:text-white dark:data-[state=active]:bg-amber-600 dark:data-[state=active]:text-white font-semibold transition-all shadow-sm rounded-lg py-2.5 flex items-center justify-center gap-2 text-slate-600 dark:text-slate-300 hover:text-amber-700 dark:hover:text-amber-300"
-                        >
-                          <History className="h-4 w-4" /> Already Paid (Pre-revised)
-                        </TabsTrigger>
-                        <TabsTrigger 
-                          value="toBePaid" 
-                          className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white dark:data-[state=active]:bg-emerald-600 dark:data-[state=active]:text-white font-semibold transition-all shadow-sm rounded-lg py-2.5 flex items-center justify-center gap-2 text-slate-600 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-300"
-                        >
-                          <TrendingUp className="h-4 w-4" /> To be Paid (Revised Due)
-                        </TabsTrigger>
-                      </TabsList>
-                      <TabsContent value="paid" className="mt-4 focus-visible:outline-none">{renderSalaryFields("paid")}</TabsContent>
-                      <TabsContent value="toBePaid" className="mt-4 focus-visible:outline-none">{renderSalaryFields("toBePaid")}</TabsContent>
-                    </Tabs>
-                  </CardContent>
-                </Card>
-              </div>
+                </div>
+              </Card>
+            </div>
+
+            {/* Bottom: Salary Components Card full width */}
+            <div>
+              <Card className="border-t-4 border-t-indigo-600 border-border/80 shadow-sm hover:shadow-md transition-shadow bg-card">
+                <CardHeader className="pb-3 border-b bg-indigo-50/40 dark:bg-indigo-950/20">
+                  <CardTitle className="flex items-center gap-2.5 text-base font-semibold text-indigo-950 dark:text-indigo-100">
+                    <span className="p-1.5 rounded-lg bg-indigo-600 text-white shadow-sm shadow-indigo-500/20">
+                      <FileText className="h-4 w-4" />
+                    </span> 
+                    Salary Components
+                  </CardTitle>
+                  <CardDescription>Define salary structures before and after the revision.</CardDescription>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <Tabs defaultValue="paid" className="w-full">
+                    <TabsList className="grid w-full grid-cols-2 p-1.5 bg-slate-100 dark:bg-slate-800/90 rounded-xl gap-2 h-auto">
+                      <TabsTrigger 
+                        value="paid" 
+                        className="data-[state=active]:bg-amber-500 data-[state=active]:text-white dark:data-[state=active]:bg-amber-600 dark:data-[state=active]:text-white font-semibold transition-all shadow-sm rounded-lg py-2.5 flex items-center justify-center gap-2 text-slate-600 dark:text-slate-300 hover:text-amber-700 dark:hover:text-amber-300"
+                      >
+                        <History className="h-4 w-4" /> Already Paid (Pre-revised)
+                      </TabsTrigger>
+                      <TabsTrigger 
+                        value="toBePaid" 
+                        className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white dark:data-[state=active]:bg-emerald-600 dark:data-[state=active]:text-white font-semibold transition-all shadow-sm rounded-lg py-2.5 flex items-center justify-center gap-2 text-slate-600 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-300"
+                      >
+                        <TrendingUp className="h-4 w-4" /> To be Paid (Revised Due)
+                      </TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="paid" className="mt-4 focus-visible:outline-none">{renderSalaryFields("paid")}</TabsContent>
+                    <TabsContent value="toBePaid" className="mt-4 focus-visible:outline-none">{renderSalaryFields("toBePaid")}</TabsContent>
+                  </Tabs>
+                </CardContent>
+              </Card>
             </div>
 
             <div className="flex justify-center pt-2 gap-4">
-              <Button type="submit" size="lg" className="font-bold text-lg px-10 py-6 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:from-blue-700 hover:via-indigo-700 hover:to-violet-700 text-white shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 hover:scale-[1.01] active:scale-[0.99] transition-all rounded-xl border-0">
-                <Calculator className="mr-2.5 h-5 w-5" /> 
-                {(!statement || !statement.periods) ? "Calculate Arrears" : (currentPeriodIndex < statement.periods.length ? "Update Period" : "Append to Statement")}
+              <Button type="submit" disabled={isLoading || (!!(statement && statement.periods) && currentPeriodIndex < statement.periods.length && !isCalcFieldDirty)} size="lg" className="w-full sm:w-auto font-bold text-lg px-10 py-6 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:from-blue-700 hover:via-indigo-700 hover:to-violet-700 text-white shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 hover:scale-[1.01] active:scale-[0.99] transition-all rounded-xl border-0 disabled:opacity-50 disabled:scale-100">
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    Calculating...
+                  </>
+                ) : (
+                  <>
+                    <Calculator className="mr-2 h-5 w-5" />
+                    {(!statement || !statement.periods) ? "Calculate Arrears" : (currentPeriodIndex < statement.periods.length ? "Recalculate Arrears" : "Calculate & Append")}
+                  </>
+                )}
               </Button>
               {statement && statement.periods && currentPeriodIndex === statement.periods.length && (
                 <Button type="button" onClick={() => loadPeriodIntoForm(statement.periods!.length - 1)} size="lg" variant="outline" className="font-bold text-lg px-8 py-6 text-slate-600 border-slate-300 hover:bg-slate-100 rounded-xl">
@@ -2621,32 +2862,67 @@ export default function Home() {
                       </span>
                       <br />
                       {statement.employeeInfo.designation}, {statement.employeeInfo.department} <br />
-                      {(statement.employeeInfo.paid?.basicPay != null || statement.employeeInfo.toBePaid?.basicPay != null) && (
+                      {statement.periods && statement.periods.length > 0 ? (
+                        statement.periods.map((p, idx) => (
+                          <div key={p.id} className="mt-1.5 leading-snug">
+                            {statement.periods!.length > 1 && <span className="inline-block bg-primary/10 text-primary print:bg-transparent print:border print:border-black print:text-black font-semibold text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded mr-2 mb-1">Period {idx + 1}</span>}
+                            {(p.formData.paid?.basicPay != null || p.formData.toBePaid?.basicPay != null) && (
+                              <span className="inline-block">
+                                {p.formData.paid?.basicPay != null && (
+                                  <span>
+                                    <strong>Pre-revised Pay:</strong> {p.formData.paid.payLevel ? `${getPayLevelDisplay(p.formData.paid.cpc, p.formData.paid.payLevel)} ` : ''}(Basic: Rs. {p.formData.paid.basicPay.toLocaleString('en-IN')})
+                                  </span>
+                                )}
+                                {p.formData.paid?.basicPay != null && p.formData.toBePaid?.basicPay != null && (
+                                  <span className="mx-2 font-normal text-muted-foreground print:text-black">|</span>
+                                )}
+                                {p.formData.toBePaid?.basicPay != null && (
+                                  <span>
+                                    <strong>Revised Pay:</strong> {p.formData.toBePaid.payLevel ? `${getPayLevelDisplay(p.formData.toBePaid.cpc, p.formData.toBePaid.payLevel)} ` : ''}(Basic: Rs. {p.formData.toBePaid.basicPay.toLocaleString('en-IN')})
+                                  </span>
+                                )}
+                              </span>
+                            )}
+                            <div className="text-muted-foreground print:text-black text-xs sm:text-sm mt-0.5">
+                              {p.formData.payFixationRef && (
+                                <span className="mr-3"><strong>Ref:</strong> {p.formData.payFixationRef}</span>
+                              )}
+                              {p.formData.fromDate && p.formData.toDate && (
+                                <span><strong>Period:</strong> {format(new Date(p.formData.fromDate), "dd/MM/yyyy")} to {format(new Date(p.formData.toDate), "dd/MM/yyyy")}</span>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      ) : (
                         <>
-                          <span>
-                            {statement.employeeInfo.paid?.basicPay != null && (
+                          {(statement.employeeInfo.paid?.basicPay != null || statement.employeeInfo.toBePaid?.basicPay != null) && (
+                            <>
                               <span>
-                                <strong>Pre-revised Pay:</strong> {statement.employeeInfo.paid.payLevel ? `${getPayLevelDisplay(statement.employeeInfo.paid.cpc, statement.employeeInfo.paid.payLevel)} ` : ''}(Basic: Rs. {statement.employeeInfo.paid.basicPay.toLocaleString('en-IN')})
+                                {statement.employeeInfo.paid?.basicPay != null && (
+                                  <span>
+                                    <strong>Pre-revised Pay:</strong> {statement.employeeInfo.paid.payLevel ? `${getPayLevelDisplay(statement.employeeInfo.paid.cpc, statement.employeeInfo.paid.payLevel)} ` : ''}(Basic: Rs. {statement.employeeInfo.paid.basicPay.toLocaleString('en-IN')})
+                                  </span>
+                                )}
+                                {statement.employeeInfo.paid?.basicPay != null && statement.employeeInfo.toBePaid?.basicPay != null && (
+                                  <span className="mx-2 font-normal">|</span>
+                                )}
+                                {statement.employeeInfo.toBePaid?.basicPay != null && (
+                                  <span>
+                                    <strong>Revised Pay:</strong> {statement.employeeInfo.toBePaid.payLevel ? `${getPayLevelDisplay(statement.employeeInfo.toBePaid.cpc, statement.employeeInfo.toBePaid.payLevel)} ` : ''}(Basic: Rs. {statement.employeeInfo.toBePaid.basicPay.toLocaleString('en-IN')})
+                                  </span>
+                                )}
                               </span>
-                            )}
-                            {statement.employeeInfo.paid?.basicPay != null && statement.employeeInfo.toBePaid?.basicPay != null && (
-                              <span className="mx-2 font-normal">|</span>
-                            )}
-                            {statement.employeeInfo.toBePaid?.basicPay != null && (
-                              <span>
-                                <strong>Revised Pay:</strong> {statement.employeeInfo.toBePaid.payLevel ? `${getPayLevelDisplay(statement.employeeInfo.toBePaid.cpc, statement.employeeInfo.toBePaid.payLevel)} ` : ''}(Basic: Rs. {statement.employeeInfo.toBePaid.basicPay.toLocaleString('en-IN')})
-                              </span>
-                            )}
-                          </span>
-                          <br />
+                              <br />
+                            </>
+                          )}
+                          {statement.employeeInfo.payFixationRef && (
+                            <>Ref: {statement.employeeInfo.payFixationRef} <br /></>
+                          )}
+                          {statement.employeeInfo.fromDate && statement.employeeInfo.toDate &&
+                            `Period: ${format(new Date(statement.employeeInfo.fromDate), "dd/MM/yyyy")} to ${format(new Date(statement.employeeInfo.toDate), "dd/MM/yyyy")}`
+                          }
                         </>
                       )}
-                      {statement.employeeInfo.payFixationRef && (
-                        <>Ref: {statement.employeeInfo.payFixationRef} <br /></>
-                      )}
-                      {statement.employeeInfo.fromDate && statement.employeeInfo.toDate &&
-                        `Period: ${format(new Date(statement.employeeInfo.fromDate), "dd/MM/yyyy")} to ${format(new Date(statement.employeeInfo.toDate), "dd/MM/yyyy")}`
-                      }
                     </CardDescription>
                   </div>
                     <div className="flex flex-wrap gap-2 no-print">
@@ -2663,7 +2939,7 @@ export default function Home() {
                       </Button>
                     )}
                     <Button onClick={handlePrint} variant="outline" className="border-primary/40 text-primary hover:bg-primary/10 shadow-sm font-medium">
-                      <Download className="mr-2 h-4 w-4" /> Download PDF
+                      <Download className="mr-2 h-4 w-4" /> Print / Download PDF
                     </Button>
                   </div>
                 </CardHeader>
@@ -2724,21 +3000,21 @@ export default function Home() {
                             <TableCell className="font-medium border-r month-col">{row.month.replace(/(\s\d{2})\d{2}$/, '$1')}</TableCell>
                             
                             {/* Drawn Cells */}
-                            <TableCell className="p-0 text-right"><input type="number" value={row.drawn.basic} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'drawn', 'basic', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>
-                            <TableCell className="p-0 text-right"><input type="number" value={row.drawn.da} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'drawn', 'da', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>
-                            {activeCols.hra && <TableCell className="p-0 text-right"><input type="number" value={row.drawn.hra} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'drawn', 'hra', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
-                            {activeCols.npa && <TableCell className="p-0 text-right"><input type="number" value={row.drawn.npa} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'drawn', 'npa', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
-                            {activeCols.ta && <TableCell className="p-0 text-right"><input type="number" value={row.drawn.ta} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'drawn', 'ta', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
-                            {activeCols.other && <TableCell className="p-0 text-right"><input type="number" value={row.drawn.other} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'drawn', 'other', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
+                            <TableCell className="p-0 text-right"><input type="number" value={row.drawn.basic} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'drawn', 'basic', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 print:px-0 print:py-0 print:bg-transparent hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>
+                            <TableCell className="p-0 text-right"><input type="number" value={row.drawn.da} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'drawn', 'da', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 print:px-0 print:py-0 print:bg-transparent hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>
+                            {activeCols.hra && <TableCell className="p-0 text-right"><input type="number" value={row.drawn.hra} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'drawn', 'hra', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 print:px-0 print:py-0 print:bg-transparent hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
+                            {activeCols.npa && <TableCell className="p-0 text-right"><input type="number" value={row.drawn.npa} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'drawn', 'npa', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 print:px-0 print:py-0 print:bg-transparent hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
+                            {activeCols.ta && <TableCell className="p-0 text-right"><input type="number" value={row.drawn.ta} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'drawn', 'ta', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 print:px-0 print:py-0 print:bg-transparent hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
+                            {activeCols.other && <TableCell className="p-0 text-right"><input type="number" value={row.drawn.other} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'drawn', 'other', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 print:px-0 print:py-0 print:bg-transparent hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
                             <TableCell className="text-right font-semibold border-r total-col bg-blue-50/30 dark:bg-blue-950/10 print:bg-transparent">{row.drawn.total}</TableCell>
 
                             {/* Due Cells */}
-                            <TableCell className="p-0 text-right"><input type="number" value={row.due.basic} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'due', 'basic', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>
-                            <TableCell className="p-0 text-right"><input type="number" value={row.due.da} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'due', 'da', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>
-                            {activeCols.hra && <TableCell className="p-0 text-right"><input type="number" value={row.due.hra} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'due', 'hra', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
-                            {activeCols.npa && <TableCell className="p-0 text-right"><input type="number" value={row.due.npa} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'due', 'npa', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
-                            {activeCols.ta && <TableCell className="p-0 text-right"><input type="number" value={row.due.ta} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'due', 'ta', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
-                            {activeCols.other && <TableCell className="p-0 text-right"><input type="number" value={row.due.other} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'due', 'other', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
+                            <TableCell className="p-0 text-right"><input type="number" value={row.due.basic} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'due', 'basic', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 print:px-0 print:py-0 print:bg-transparent hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>
+                            <TableCell className="p-0 text-right"><input type="number" value={row.due.da} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'due', 'da', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 print:px-0 print:py-0 print:bg-transparent hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>
+                            {activeCols.hra && <TableCell className="p-0 text-right"><input type="number" value={row.due.hra} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'due', 'hra', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 print:px-0 print:py-0 print:bg-transparent hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
+                            {activeCols.npa && <TableCell className="p-0 text-right"><input type="number" value={row.due.npa} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'due', 'npa', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 print:px-0 print:py-0 print:bg-transparent hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
+                            {activeCols.ta && <TableCell className="p-0 text-right"><input type="number" value={row.due.ta} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'due', 'ta', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 print:px-0 print:py-0 print:bg-transparent hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
+                            {activeCols.other && <TableCell className="p-0 text-right"><input type="number" value={row.due.other} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'due', 'other', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 print:px-0 print:py-0 print:bg-transparent hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
                             <TableCell className="text-right font-semibold border-r total-col bg-indigo-50/30 dark:bg-indigo-950/10 print:bg-transparent">{row.due.total}</TableCell>
 
                             <TableCell className="text-right font-bold diff-col text-emerald-700 dark:text-emerald-400 bg-emerald-50/20 dark:bg-emerald-950/10 print:text-black print:bg-transparent">{row.difference}</TableCell>
@@ -2757,7 +3033,16 @@ export default function Home() {
                       </UiTableFooter>
                     </Table>
                   </div>
-                  <div className="pt-6 print:pt-4 text-sm signature-section">
+                  {statement.periods && statement.periods.some(p => p.formData.remark) ? (
+                    <div className="mt-2 print:mt-1 mb-2 text-sm font-medium w-full text-left print:text-black break-words">
+                      <span className="font-bold">Remark:</span> {statement.periods.filter(p => p.formData.remark).map(p => p.formData.remark).join(" & ")}
+                    </div>
+                  ) : statement.employeeInfo.remark ? (
+                    <div className="mt-2 print:mt-1 mb-2 text-sm font-medium w-full text-left print:text-black break-words">
+                      <span className="font-bold">Remark:</span> {statement.employeeInfo.remark}
+                    </div>
+                  ) : null}
+                  <div className="pt-6 print:pt-3 text-sm signature-section">
                     {/* Financial Year Breakup */}
                     {statement.rows.length > 0 && (
                       <div className="mb-6 w-full print:w-full text-xs">

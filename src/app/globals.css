@@ -176,10 +176,10 @@
     width: 100% !important;
     min-width: 100% !important;
     max-width: 100% !important;
-    table-layout: fixed;
+    table-layout: auto;
     border-collapse: collapse;
     word-wrap: normal;
-    font-size: 10pt;
+    font-size: 8.5pt;
     color: #000000 !important;
   }
 
@@ -199,13 +199,12 @@
   }
 
   .printable-area th, .printable-area td {
-    padding: 3.5px 2px;
+    padding: 2.5px 1.5px;
     white-space: nowrap;
     border: 0.25px solid #000000 !important;
     color: #000000 !important;
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.1px;
-    overflow: hidden;
   }
 
   .printable-area th.month-col, .printable-area td.month-col {
@@ -215,7 +214,7 @@
   .printable-area th.total-col, .printable-area td.total-col {
     font-weight: bold;
     color: #000000 !important;
-    font-size: 9.2pt !important;
+    font-size: 8.5pt !important;
     padding-left: 1px !important;
     padding-right: 2px !important;
     letter-spacing: -0.2px;
@@ -225,7 +224,7 @@
   .printable-area th.diff-col, .printable-area td.diff-col {
     font-weight: bold;
     color: #000000 !important;
-    font-size: 9.2pt !important;
+    font-size: 8.5pt !important;
     padding-left: 1px !important;
     padding-right: 2px !important;
     letter-spacing: -0.2px;
