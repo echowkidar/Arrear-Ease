@@ -70,10 +70,10 @@
 
 @page {
   size: A4;
-  margin-top: 0.5cm;
-  margin-bottom: 0.8cm;
-  margin-left: 0.5cm;
-  margin-right: 0.5cm;
+  margin-top: 0.8cm;
+  margin-bottom: 1.2cm;
+  margin-left: 0.6cm;
+  margin-right: 0.6cm;
 
   @bottom-center {
     content: "Page " counter(page) " of " counter(pages);
@@ -83,67 +83,36 @@
 }
 
 @media print {
-  html, body {
+  html, body, main, #statement-section {
     width: 100% !important;
-    height: auto !important;
-    min-height: 0 !important;
-    max-height: none !important;
-    overflow: visible !important;
-    position: static !important;
+    max-width: 100% !important;
+    min-width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
-    background: #fff !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
   }
 
+  html, body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    border: none !important;
+    background: #fff !important;
+  }
+  
   body * {
     visibility: hidden;
   }
 
-  /* When printing from Master Modal, completely remove the main page DOM from layout */
-  body.printing-master-modal #app-main-root,
-  body.printing-master-modal .min-h-screen,
-  body.printing-master-modal main,
-  body:has(.master-print-container) #app-main-root,
-  body:has(.master-print-container) .min-h-screen,
-  body:has(.master-print-container) main {
+  .no-print {
     display: none !important;
-    height: 0 !important;
-    min-height: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
   }
 
-  /* Reset all height and padding constraints on main page containers during regular print */
-  #app-main-root,
-  .min-h-screen {
-    min-height: 0 !important;
-    height: auto !important;
-  }
-
-  main {
-    padding: 0 !important;
-    margin: 0 !important;
-  }
-
-  /* Reset Radix portal & dialog overflow so all pages paginate cleanly */
-  [data-radix-portal],
-  [role="dialog"] {
-    position: static !important;
-    overflow: visible !important;
-    height: auto !important;
-    max-height: none !important;
-    transform: none !important;
-    margin: 0 !important;
-    padding: 0 !important;
-  }
-
-  /* Main statement printable area */
+  /* ─────────────────────────────────────────────────────────────
+     1. DEFAULT MODE: MAIN ARREAR STATEMENT PRINTING
+     ───────────────────────────────────────────────────────────── */
   .printable-area {
     width: 100% !important;
     max-width: 100% !important;
-    height: auto !important;
+    height: auto;
     padding: 0 !important;
     margin: 0 !important;
     font-size: 11pt;
@@ -153,56 +122,6 @@
   .printable-area, .printable-area * {
     visibility: visible;
     color: #000000 !important;
-  }
-
-  /* Master Rates & Pay Matrix Print Container */
-  .master-print-container,
-  .master-print-container * {
-    visibility: visible !important;
-    color: #000000 !important;
-  }
-
-  .master-print-container {
-    display: block !important;
-    position: static !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    height: auto !important;
-    overflow: visible !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    background: #ffffff !important;
-    page-break-before: avoid !important;
-    break-before: avoid !important;
-  }
-
-  .master-print-container table {
-    width: 100% !important;
-    border-collapse: collapse !important;
-    font-size: 8pt !important;
-    line-height: 1.2 !important;
-    page-break-inside: auto;
-  }
-
-  .master-print-container thead {
-    display: table-header-group !important;
-  }
-
-  .master-print-container tbody tr {
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-  }
-
-  .master-print-container th, .master-print-container td {
-    border: 0.5px solid #000000 !important;
-    padding: 1.8px 2px !important;
-    color: #000000 !important;
-    background: transparent !important;
-    line-height: 1.2 !important;
-  }
-
-  .no-print {
-    display: none !important;
   }
 
   .printable-area #printable-statement-card,
@@ -338,5 +257,91 @@
 
   .page-footer {
     display: none !important;
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     2. DEDICATED MODE: PAY MATRIX & RATES MODAL PRINTING
+     Triggered STRICTLY when body has class "printing-master-modal"
+     ───────────────────────────────────────────────────────────── */
+  body.printing-master-modal #app-main-root,
+  body.printing-master-modal .printable-area,
+  body.printing-master-modal #statement-section {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body.printing-master-modal [data-radix-dialog-overlay] {
+    display: none !important;
+  }
+
+  body.printing-master-modal [data-radix-portal],
+  body.printing-master-modal [data-radix-dialog-content],
+  body.printing-master-modal [role="dialog"] {
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    transform: none !important;
+    overflow: visible !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+  }
+
+  body.printing-master-modal [role="dialog"] > *:not(.master-print-container) {
+    display: none !important;
+  }
+
+  body.printing-master-modal .master-print-container,
+  body.printing-master-modal .master-print-container * {
+    visibility: visible !important;
+    color: #000000 !important;
+  }
+
+  body.printing-master-modal .master-print-container {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
+
+  body.printing-master-modal .master-print-container table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 8pt !important;
+    line-height: 1.2 !important;
+    page-break-inside: auto;
+  }
+
+  body.printing-master-modal .master-print-container thead {
+    display: table-header-group !important;
+  }
+
+  body.printing-master-modal .master-print-container tbody tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  body.printing-master-modal .master-print-container th,
+  body.printing-master-modal .master-print-container td {
+    border: 0.5px solid #000000 !important;
+    padding: 1.8px 2px !important;
+    color: #000000 !important;
+    background: transparent !important;
+    line-height: 1.2 !important;
   }
 }

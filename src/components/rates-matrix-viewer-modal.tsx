@@ -178,10 +178,14 @@ export function RatesMatrixViewerModal({
   // Direct Print Handler
   const handlePrint = () => {
     document.body.classList.add("printing-master-modal");
-    window.print();
-    setTimeout(() => {
-      document.body.classList.remove("printing-master-modal");
-    }, 1500);
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        window.print();
+        setTimeout(() => {
+          document.body.classList.remove("printing-master-modal");
+        }, 1500);
+      }, 50);
+    });
   };
 
   // Helper to format level headers cleanly across lines

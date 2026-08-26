@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/toaster"
 import { RatesProvider } from '@/context/rates-context';
 import { ThemeProvider } from '@/components/theme-provider';
 import { AuthProvider } from '@/context/auth-context';
+import { SubscriptionProvider } from '@/context/subscription-context';
 
 export const metadata: Metadata = {
   title: 'Arrear Ease: Salary Arrear Calculator',
@@ -33,9 +34,11 @@ export default function RootLayout({
             disableTransitionOnChange
         >
           <AuthProvider>
-            <RatesProvider>
-              {children}
-            </RatesProvider>
+            <SubscriptionProvider>
+              <RatesProvider>
+                {children}
+              </RatesProvider>
+            </SubscriptionProvider>
           </AuthProvider>
           <Toaster />
         </ThemeProvider>

@@ -9,6 +9,9 @@ import Link from "next/link";
 import { format, addMonths, differenceInCalendarMonths, getDaysInMonth, startOfMonth, endOfMonth, startOfDay, endOfDay, max, min, isWithinInterval, differenceInDays, addDays } from "date-fns";
 import { AIValidationModal } from "@/components/ai-validation-modal";
 import { RatesMatrixViewerModal } from "@/components/rates-matrix-viewer-modal";
+import { AIPricingModal } from "@/components/ai-pricing-modal";
+import { AIAuditReportModal, AIAuditResult } from "@/components/ai-audit-report-modal";
+import { useSubscription } from "@/context/subscription-context";
 import {
   User,
   Building,
@@ -41,12 +44,14 @@ import {
   ArrowRight,
   Plus,
   TableProperties,
+  ShieldCheck,
 } from "lucide-react";
 import { db, isFirebaseConfigured } from "@/lib/firebase";
 import { collection, addDoc, getDocs, getDoc, doc, deleteDoc, Timestamp, writeBatch, setDoc, updateDoc, query, where, serverTimestamp } from "firebase/firestore";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -499,11 +504,16 @@ export default function Home() {
   const [currentPeriodIndex, setCurrentPeriodIndex] = React.useState(0);
   const [basicPayWarning, setBasicPayWarning] = React.useState<{ show: boolean, basicPay: number, payLevel: string, fieldName?: any, suggestedLevels?: string[] } | null>(null);
   const [isRatesMatrixOpen, setIsRatesMatrixOpen] = React.useState(false);
+  const [isPricingModalOpen, setIsPricingModalOpen] = React.useState(false);
+  const [isAuditReportOpen, setIsAuditReportOpen] = React.useState(false);
+  const [auditResult, setAuditResult] = React.useState<AIAuditResult | null>(null);
+  const [isAuditing, setIsAuditing] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const { user, authStatus, loading, logout, openAuthModal } = useAuth();
   const { toast } = useToast();
   const { daRates, hraRates, npaRates, taRates, da6thRates, sixthCpcConfig } = useRates();
+  const { hasCredits, isUnlimited, consumeCredit, credits } = useSubscription();
 
   const isAdmin = user?.email === "amulivealigarh@gmail.com";
 
@@ -2042,6 +2052,72 @@ export default function Home() {
     }, 100);
   };
 
+  const handleStartAiAudit = async () => {
+    if (!statement || !statement.rows || statement.rows.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "No Statement Available",
+        description: "Please calculate an arrear statement before requesting an AI audit.",
+      });
+      return;
+    }
+
+    // Check if statement already has verified audit result
+    if ((statement as any).aiAuditResult) {
+      setAuditResult((statement as any).aiAuditResult);
+      setIsAuditReportOpen(true);
+      return;
+    }
+
+    if (!hasCredits() && !isUnlimited()) {
+      setIsPricingModalOpen(true);
+      return;
+    }
+
+    setIsAuditing(true);
+    setIsAuditReportOpen(true);
+    try {
+      const response = await fetch("/api/ai-audit-statement", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          employeeInfo: statement.employeeInfo,
+          rows: statement.rows,
+          totals: statement.totals,
+          cpc: statement.employeeInfo?.paid?.cpc || "7th",
+          periods: statement.periods,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("AI Audit verification failed.");
+      }
+
+      const auditData: AIAuditResult = await response.json();
+      setAuditResult(auditData);
+      consumeCredit();
+
+      setStatement((prev: any) => ({
+        ...prev,
+        aiAuditResult: auditData,
+      }));
+
+      toast({
+        title: "AI Audit Complete! ✅",
+        description: `Verified with accuracy score of ${auditData.score}%.`,
+      });
+    } catch (err: any) {
+      console.error("AI Audit error:", err);
+      toast({
+        variant: "destructive",
+        title: "AI Audit Encountered an Issue",
+        description: err.message || "Failed to complete AI verification.",
+      });
+    } finally {
+      setIsAuditing(false);
+    }
+  };
+
   const handleRowEdit = (
     rowIndex: number,
     type: 'drawn' | 'due',
@@ -2497,17 +2573,63 @@ export default function Home() {
         isOpen={isRatesMatrixOpen}
         onClose={() => setIsRatesMatrixOpen(false)}
       />
+      <AIPricingModal
+        isOpen={isPricingModalOpen}
+        onClose={() => setIsPricingModalOpen(false)}
+        isAdmin={isAdmin}
+        onPaymentSuccess={() => {
+          handleStartAiAudit();
+        }}
+      />
+      <AIAuditReportModal
+        isOpen={isAuditReportOpen}
+        onClose={() => setIsAuditReportOpen(false)}
+        auditResult={auditResult}
+        isLoading={isAuditing}
+      />
       <Dialog open={showDiffToast.show} onOpenChange={(open) => { if (!open) setShowDiffToast(prev => ({ ...prev, show: false })) }}>
-        <DialogContent className="sm:max-w-md text-center">
+        <DialogContent className="sm:max-w-md text-center p-6 space-y-4">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold text-center">Total Arrear Difference</DialogTitle>
           </DialogHeader>
-          <div className="flex justify-center items-center py-6">
+          <div className="flex justify-center items-center py-2">
             <span className={cn("text-4xl font-extrabold tracking-tight", showDiffToast.diff > 0 ? "text-emerald-600 dark:text-emerald-500" : showDiffToast.diff < 0 ? "text-red-600 dark:text-red-500" : "text-gray-600")}>
               Rs. {showDiffToast.diff.toLocaleString('en-IN')}
             </span>
           </div>
-          <p className="text-muted-foreground mt-4">Arrear statement calculated successfully!</p>
+          <p className="text-muted-foreground text-sm">Arrear statement calculated successfully!</p>
+
+          {/* AI Audit Prompt Banner */}
+          <div className="p-4 rounded-xl bg-gradient-to-br from-primary/10 via-purple-500/10 to-blue-500/10 border border-primary/20 text-left space-y-3 shadow-sm">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary shrink-0" />
+              <span className="font-bold text-xs text-foreground">Verify with AI Audit?</span>
+            </div>
+            <p className="text-[12px] text-muted-foreground leading-relaxed">
+              Ensure 100% compliance with official Pay Matrix stages, DA slabs, and HRA rules before printing or submitting.
+            </p>
+            <div className="flex gap-2 pt-1">
+              <Button
+                size="sm"
+                onClick={() => {
+                  setShowDiffToast(prev => ({ ...prev, show: false }));
+                  handleStartAiAudit();
+                }}
+                className="w-full bg-primary text-primary-foreground font-semibold text-xs h-8 shadow-sm flex items-center justify-center gap-1.5"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                <span>Verify with AI</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowDiffToast(prev => ({ ...prev, show: false }))}
+                className="text-xs h-8"
+              >
+                Later
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -2591,13 +2713,40 @@ export default function Home() {
             ) : authStatus === 'authenticated' && user ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="flex items-center gap-2">
+                  <Button variant="outline" className="flex items-center gap-2 border-primary/20 bg-primary/5 hover:bg-primary/10">
                     <User className="h-4 w-4" />
-                    <span>{user.displayName || user.email}</span>
+                    <span className="font-semibold">{user.displayName || user.email}</span>
+                    {isUnlimited() ? (
+                      <Badge className="bg-gradient-to-r from-amber-500 to-yellow-500 text-black text-[10px] font-black px-2 py-0.5 shadow-sm">
+                        👑 UNLIMITED
+                      </Badge>
+                    ) : hasCredits() ? (
+                      <Badge className="bg-primary text-primary-foreground text-[10px] font-bold px-2 py-0.5">
+                        ⚡ {credits} {credits === 1 ? "Credit" : "Credits"}
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-[10px] text-muted-foreground border-border">
+                        Free Plan
+                      </Badge>
+                    )}
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={logout}>
+                <DropdownMenuContent align="end" className="w-60 p-2">
+                  <div className="p-2 border-b text-xs space-y-1">
+                    <p className="font-bold text-foreground">{user.displayName || "User"}</p>
+                    <p className="text-muted-foreground truncate">{user.email}</p>
+                    <div className="pt-1.5 flex items-center justify-between text-[11px]">
+                      <span>AI Verification:</span>
+                      <strong className="text-primary font-bold">
+                        {isUnlimited() ? "👑 Unlimited Access" : `⚡ ${credits} Credits Remaining`}
+                      </strong>
+                    </div>
+                  </div>
+                  <DropdownMenuItem onClick={() => setIsPricingModalOpen(true)} className="cursor-pointer text-xs mt-1">
+                    <Sparkles className="mr-2 h-4 w-4 text-amber-500" />
+                    <span>Upgrade / Buy AI Credits</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={logout} className="cursor-pointer text-xs text-red-600">
                     <LogOut className="mr-2 h-4 w-4" />
                     <span>Log out</span>
                   </DropdownMenuItem>
@@ -2916,7 +3065,9 @@ export default function Home() {
               <Card id="printable-statement-card" className="border-border/80 shadow-md print:p-0 print:border-none print:shadow-none overflow-hidden">
                 <CardHeader className="flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-muted/20 border-b print:bg-transparent print:p-0 print:pb-4 print:text-center print:items-center print:w-full">
                   <div className="w-full text-left print:text-center print:mx-auto">
-                    <CardTitle className="font-headline text-3xl print:text-center print:text-2xl print:font-bold text-primary print:text-black">Arrear Statement</CardTitle>
+                    <CardTitle className="font-headline text-3xl print:text-center print:text-2xl print:font-bold text-primary print:text-black">
+                      Arrear Statement
+                    </CardTitle>
                     <CardDescription className="print:text-center print:text-black print:text-sm mt-1">
                       <span className="text-lg md:text-xl font-bold text-foreground print:text-black print:!text-[13pt] tracking-tight inline-block mb-0.5">
                         {statement.employeeInfo.employeeName} ({statement.employeeInfo.employeeId})
@@ -2987,6 +3138,31 @@ export default function Home() {
                     </CardDescription>
                   </div>
                     <div className="flex flex-wrap gap-2 no-print">
+                    {/* AI Statement Audit Trigger */}
+                    <Button
+                      onClick={handleStartAiAudit}
+                      disabled={isLoading || isAuditing}
+                      className={cn(
+                        "font-semibold shadow-sm text-white transition-all flex items-center gap-1.5",
+                        (statement as any)?.aiAuditResult
+                          ? "bg-emerald-600 hover:bg-emerald-700"
+                          : "bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                      )}
+                    >
+                      {isAuditing ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (statement as any)?.aiAuditResult ? (
+                        <ShieldCheck className="h-4 w-4 text-emerald-200" />
+                      ) : (
+                        <Sparkles className="h-4 w-4 text-amber-300" />
+                      )}
+                      <span>
+                        {(statement as any)?.aiAuditResult
+                          ? "View AI Audit Certificate"
+                          : "Audit Sheet with AI"}
+                      </span>
+                    </Button>
+
                     <Button onClick={handlePrepareNextPeriod} disabled={isLoading} variant="outline" className="border-purple-200 text-purple-700 hover:bg-purple-50 hover:text-purple-800 shadow-sm font-medium dark:border-purple-900/40 dark:text-purple-400 dark:hover:bg-purple-950/40">
                       <Plus className="mr-2 h-4 w-4" /> Add Next Period
                     </Button>

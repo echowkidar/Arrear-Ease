@@ -10,9 +10,16 @@ import {
   ArrowLeft,
   Save,
   Lock,
+  CreditCard,
+  Smartphone,
+  Sparkles,
+  Loader2,
 } from "lucide-react";
 import { format } from "date-fns";
 import isEqual from "lodash.isequal";
+
+import { db } from "@/lib/firebase";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -400,6 +407,135 @@ const SixthCpcFixedRates = ({
     );
 };
 
+// ─── Merchant UPI & Payment Configuration Card ──────────────────────────────
+const LOCALSTORAGE_PAYMENT_CONFIG_KEY = "arrearEase_payment_config";
+
+const MerchantPaymentSettingsCard = () => {
+    const [merchantUpiId, setMerchantUpiId] = React.useState("arrearease@upi");
+    const [merchantName, setMerchantName] = React.useState("Arrear Ease");
+    const [isLoading, setIsLoading] = React.useState(true);
+    const [isSaving, setIsSaving] = React.useState(false);
+    const { toast } = useToast();
+
+    React.useEffect(() => {
+        const loadSettings = async () => {
+            // 1. Try loading from localStorage first
+            try {
+                const local = localStorage.getItem(LOCALSTORAGE_PAYMENT_CONFIG_KEY);
+                if (local) {
+                    const parsed = JSON.parse(local);
+                    if (parsed.merchantUpiId) setMerchantUpiId(parsed.merchantUpiId);
+                    if (parsed.merchantName) setMerchantName(parsed.merchantName);
+                }
+            } catch (e) {
+                console.warn("Local payment settings note:", e);
+            }
+
+            // 2. Try loading from Firestore configurations collection
+            if (db) {
+                try {
+                    const docSnap = await getDoc(doc(db, "configurations", "payment_settings"));
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        if (data.merchantUpiId) setMerchantUpiId(data.merchantUpiId);
+                        if (data.merchantName) setMerchantName(data.merchantName);
+                        localStorage.setItem(LOCALSTORAGE_PAYMENT_CONFIG_KEY, JSON.stringify(data));
+                    }
+                } catch (err) {
+                    console.warn("Payment settings load note:", err);
+                }
+            }
+            setIsLoading(false);
+        };
+        loadSettings();
+    }, []);
+
+    const handleSavePaymentSettings = async () => {
+        if (!merchantUpiId.trim()) {
+            toast({ variant: "destructive", title: "UPI ID Required", description: "Please enter a valid Merchant UPI ID." });
+            return;
+        }
+        setIsSaving(true);
+        const configData = {
+            merchantUpiId: merchantUpiId.trim(),
+            merchantName: merchantName.trim() || "Arrear Ease",
+            updatedAt: new Date().toISOString(),
+        };
+
+        // Save locally first for 100% reliable persistence
+        try {
+            localStorage.setItem(LOCALSTORAGE_PAYMENT_CONFIG_KEY, JSON.stringify(configData));
+        } catch (e) {
+            console.warn("Local storage write error:", e);
+        }
+
+        // Save to Firestore configurations collection
+        try {
+            if (db) {
+                await setDoc(doc(db, "configurations", "payment_settings"), configData, { merge: true });
+            }
+            toast({
+                title: "Payment Settings Saved! ✅",
+                description: `Receiving UPI ID updated to ${merchantUpiId.trim()}. Users will now scan and pay to this ID.`,
+            });
+        } catch (err: any) {
+            console.error("Firestore payment settings save:", err);
+            toast({
+                title: "Payment Settings Saved Locally ✅",
+                description: `Receiving UPI ID updated to ${merchantUpiId.trim()} in browser storage. (Firestore permission note: ${err.message || 'Check firestore.rules'})`,
+            });
+        }
+        setIsSaving(false);
+    };
+
+    return (
+        <Card className="border-t-4 border-t-emerald-500 border-border shadow-sm mb-10">
+            <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2.5 text-lg font-bold text-emerald-950 dark:text-emerald-100">
+                    <span className="p-1.5 rounded-lg bg-emerald-600 text-white shadow-sm shadow-emerald-500/20">
+                        <CreditCard className="h-4 w-4" />
+                    </span>
+                    AI Subscription Merchant UPI Configuration
+                </CardTitle>
+                <CardDescription>
+                    Configure the receiving UPI VPA ID and Merchant Name used across all dynamic QR codes and payment triggers in the app.
+                </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-foreground">Merchant UPI ID (VPA)</label>
+                        <Input
+                            placeholder="e.g. arrearease@upi or yourname@okaxis"
+                            value={merchantUpiId}
+                            onChange={e => setMerchantUpiId(e.target.value)}
+                            className="font-mono text-sm"
+                            disabled={isLoading}
+                        />
+                        <p className="text-[11px] text-muted-foreground">All user QR codes and UPI payment links will direct to this ID.</p>
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-foreground">Merchant / Business Name</label>
+                        <Input
+                            placeholder="e.g. Arrear Ease"
+                            value={merchantName}
+                            onChange={e => setMerchantName(e.target.value)}
+                            disabled={isLoading}
+                        />
+                        <p className="text-[11px] text-muted-foreground">Displayed as payee name inside GPay, PhonePe, Paytm, BHIM.</p>
+                    </div>
+                </div>
+            </CardContent>
+            <CardFooter className="flex justify-end border-t pt-4">
+                <Button onClick={handleSavePaymentSettings} disabled={isSaving || isLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">
+                    {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                    Save Payment Configuration
+                </Button>
+            </CardFooter>
+        </Card>
+    );
+};
+
 // ─── Main Protected Page ──────────────────────────────────────────────────────
 const ProtectedRatesPage = () => {
     const { 
@@ -423,12 +559,15 @@ const ProtectedRatesPage = () => {
                     <ThemeToggle />
                 </div>
                 <h1 className="font-headline text-4xl md:text-5xl font-bold text-primary text-center mt-4">
-                    Allowances Rate Configuration
+                    Allowances & Payment Configuration
                 </h1>
                 <p className="text-muted-foreground mt-2 text-lg text-center">
-                    Define the applicable rates for various allowances.
+                    Define allowance rates and configure AI subscription merchant UPI details.
                 </p>
             </header>
+
+            {/* ── Merchant UPI Payment Configuration ── */}
+            <MerchantPaymentSettingsCard />
 
             {/* ── 7th CPC Section ── */}
             <div className="mb-4">
