@@ -30,11 +30,15 @@ import {
   Users,
   X,
   History,
+  TrendingUp,
   Camera,
   Sparkles,
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
+  ArrowLeft,
+  ArrowRight,
+  Plus,
 } from "lucide-react";
 import { db, isFirebaseConfigured } from "@/lib/firebase";
 import { collection, addDoc, getDocs, getDoc, doc, deleteDoc, Timestamp, writeBatch, setDoc, updateDoc, query, where, serverTimestamp } from "firebase/firestore";
@@ -197,6 +201,13 @@ type StatementTotals = {
 
 type EmployeeInfo = Partial<ArrearFormData>;
 
+type FixationPeriod = {
+  id: string;
+  formData: ArrearFormData;
+  rows: StatementRow[];
+  totals: StatementTotals;
+};
+
 type SavedStatement = {
   id: string;
   isLocal?: boolean;
@@ -205,6 +216,7 @@ type SavedStatement = {
   rows: StatementRow[];
   totals: StatementTotals;
   employeeInfo: EmployeeInfo;
+  periods?: FixationPeriod[];
   userId?: string;
   userName?: string;
   userEmail?: string;
@@ -241,16 +253,18 @@ const sanitizeForFirebase = (obj: any): any => {
 };
 
 const FormDateInput = ({ field, label }: { field: any, label?: string }) => {
+  const [open, setOpen] = React.useState(false);
   const { name } = useFormField();
   const form = useFormContext();
   const handleClear = (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
     form.setValue(name, undefined, { shouldDirty: true, shouldValidate: true });
+    setOpen(false);
   };
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !field.value && "text-muted-foreground")}>
           <CalendarDays className="mr-2 h-4 w-4" />
@@ -269,12 +283,28 @@ const FormDateInput = ({ field, label }: { field: any, label?: string }) => {
         <Calendar
           mode="single"
           selected={field.value}
-          onSelect={(date) => field.onChange(date)}
+          onSelect={(date) => {
+            field.onChange(date);
+            if (date) setOpen(false);
+          }}
           defaultMonth={field.value ? new Date(field.value) : undefined}
           captionLayout="dropdown-buttons"
           fromYear={1990}
           toYear={2050}
         />
+        <div className="p-2 border-t border-border">
+          <Button 
+            variant="ghost" 
+            className="w-full text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+            onClick={(e) => {
+              e.preventDefault();
+              form.setValue(name, undefined, { shouldDirty: true, shouldValidate: true });
+              setOpen(false);
+            }}
+          >
+            Clear Date
+          </Button>
+        </div>
       </PopoverContent>
     </Popover>
   );
@@ -463,6 +493,7 @@ export default function Home() {
   const [loadedStatementId, setLoadedStatementId] = React.useState<string | null>(null);
   const [allowBasicPayAutoFill, setAllowBasicPayAutoFill] = React.useState(false);
   const [isScanning, setIsScanning] = React.useState(false);
+  const [currentPeriodIndex, setCurrentPeriodIndex] = React.useState(0);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const { user, authStatus, loading, logout, openAuthModal } = useAuth();
@@ -1315,6 +1346,39 @@ export default function Home() {
     }
 
     try {
+      let currentPeriods = statement ? (statement.periods || [{ 
+        id: crypto.randomUUID(), 
+        formData: statement.employeeInfo as ArrearFormData, 
+        rows: statement.rows, 
+        totals: statement.totals 
+      }]) : [];
+
+      if (statement) {
+        // Overlap checks
+        if (currentPeriodIndex > 0) {
+          const prevPeriod = currentPeriods[currentPeriodIndex - 1];
+          if (data.fromDate <= new Date(prevPeriod.formData.toDate)) {
+            toast({
+              variant: "destructive",
+              title: "Overlapping Dates",
+              description: `Start date must be after Period ${currentPeriodIndex}'s end date.`,
+            });
+            return;
+          }
+        }
+        if (currentPeriodIndex < currentPeriods.length - 1) {
+          const nextPeriod = currentPeriods[currentPeriodIndex + 1];
+          if (data.toDate >= new Date(nextPeriod.formData.fromDate)) {
+            toast({
+              variant: "destructive",
+              title: "Overlapping Dates",
+              description: `End date must be before Period ${currentPeriodIndex + 2}'s start date.`,
+            });
+            return;
+          }
+        }
+      }
+
       const rows: StatementRow[] = [];
       const totals: StatementTotals = { drawn: { total: 0 }, due: { total: 0 }, difference: 0 };
 
@@ -1351,8 +1415,36 @@ export default function Home() {
       totals.due.total = rows.reduce((acc, row) => acc + row.due.total, 0);
       totals.difference = rows.reduce((acc, row) => acc + row.difference, 0);
 
-      const newStatement = { rows, totals, employeeInfo: data };
-      setStatement(newStatement);
+      const newPeriod: FixationPeriod = {
+        id: crypto.randomUUID(),
+        formData: data,
+        rows,
+        totals
+      };
+
+      if (statement) {
+        if (currentPeriodIndex < currentPeriods.length) {
+          currentPeriods[currentPeriodIndex] = newPeriod;
+        } else {
+          currentPeriods.push(newPeriod);
+        }
+
+        const combinedRows = currentPeriods.flatMap(p => p.rows);
+        const combinedTotals = {
+          drawn: { total: currentPeriods.reduce((acc, p) => acc + p.totals.drawn.total, 0) },
+          due: { total: currentPeriods.reduce((acc, p) => acc + p.totals.due.total, 0) },
+          difference: currentPeriods.reduce((acc, p) => acc + p.totals.difference, 0)
+        };
+        const updatedEmployeeInfo = {
+          ...statement.employeeInfo,
+          toDate: currentPeriods[currentPeriods.length - 1].formData.toDate
+        };
+
+        setStatement({ rows: combinedRows, totals: combinedTotals, employeeInfo: updatedEmployeeInfo, periods: currentPeriods });
+      } else {
+        const newStatement = { rows, totals, employeeInfo: data, periods: [newPeriod] };
+        setStatement(newStatement);
+      }
       
       setShowDiffToast({ show: true, diff: totals.difference });
       
@@ -1421,7 +1513,7 @@ export default function Home() {
           title: "Arrear Saved",
           description: "The statement has been saved to your account.",
         });
-      } catch (error) {
+} catch (error) {
         console.error("Failed to save statement to Firestore:", error);
         toast({
           title: "Saved Locally",
@@ -1439,57 +1531,61 @@ export default function Home() {
     setIsLoading(false);
   };
 
+  const handlePrepareNextPeriod = () => {
+    if (!statement || !statement.employeeInfo.toDate) return;
+    
+    let currentPeriods = statement.periods || [{ 
+      id: crypto.randomUUID(), 
+      formData: statement.employeeInfo as ArrearFormData, 
+      rows: statement.rows, 
+      totals: statement.totals 
+    }];
+
+    const nextIndex = currentPeriods.length;
+    setCurrentPeriodIndex(nextIndex);
+
+    // Set new fromDate to the day after the last period's toDate
+    const lastPeriodToDate = currentPeriods[currentPeriods.length - 1].formData.toDate;
+    const nextStartDate = addDays(new Date(lastPeriodToDate), 1);
+    
+    // Clear the form but retain top level non-period specific data if possible, or just reset and set specific fields
+    // We can use form.reset with a partial payload to keep employee details
+    const currentData = form.getValues();
+    form.reset({
+      ...currentData,
+      fromDate: nextStartDate,
+      toDate: undefined as any,
+    });
+    
+    toast({
+      title: "Ready for Next Period",
+      description: `Please enter the details for Period ${nextIndex + 1} and click Calculate.`,
+    });
+    
+    // Scroll to form top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const loadPeriodIntoForm = (index: number) => {
+    if (!statement || !statement.periods || index < 0 || index >= statement.periods.length) return;
+    setCurrentPeriodIndex(index);
+    form.reset(statement.periods[index].formData);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    toast({
+      title: `Loaded Period ${index + 1}`,
+      description: "You can now view or edit this period's configuration.",
+    });
+  };
+
   const updateStatement = async () => {
-    if (!loadedStatementId || !user) return;
+    if (!loadedStatementId || !user || !statement) return;
     setIsLoading(true);
 
-    const rawValues = form.getValues();
-    const parseResult = formSchema.safeParse(rawValues);
-    
-    if (!parseResult.success) {
-      toast({
-        variant: "destructive",
-        title: "Validation Error",
-        description: "Please ensure all required fields are filled correctly before updating.",
-      });
-      setIsLoading(false);
-      return;
-    }
-    
-    const currentFormData = parseResult.data;
-
-    // Recalculate statement before saving
-    const rows: StatementRow[] = [];
-    const totals: StatementTotals = { drawn: { total: 0 }, due: { total: 0 }, difference: 0 };
-    const arrearFromDate = currentFormData.fromDate;
-    const arrearToDate = currentFormData.toDate;
-    const firstMonth = startOfMonth(arrearFromDate);
-    const monthCount = differenceInCalendarMonths(arrearToDate, arrearFromDate);
-
-    let trackers = { drawnBasic: currentFormData.paid.basicPay, dueBasic: currentFormData.toBePaid.basicPay };
-    for (let i = 0; i <= monthCount; i++) {
-      const currentDate = addMonths(firstMonth, i);
-      if (currentDate < arrearFromDate && !isWithinInterval(arrearFromDate, { start: startOfMonth(currentDate), end: endOfMonth(currentDate) })) continue;
-      if (currentDate > arrearToDate && !isWithinInterval(arrearToDate, { start: startOfMonth(currentDate), end: endOfMonth(currentDate) })) continue;
-
-      const { row, newTrackers } = calculateMonthlyRow(currentDate, arrearFromDate, arrearToDate, currentFormData, trackers);
-      rows.push(row);
-      trackers = newTrackers;
-    }
-    totals.drawn.total = rows.reduce((acc, row) => acc + row.drawn.total, 0);
-    totals.due.total = rows.reduce((acc, row) => acc + row.due.total, 0);
-    totals.difference = rows.reduce((acc, row) => acc + row.difference, 0);
-
-    const updatedStatement = { rows, totals, employeeInfo: currentFormData };
-    setStatement(updatedStatement);
-
     const docToUpdate: Omit<SavedStatement, 'isLocal'> = {
+      ...statement,
       id: loadedStatementId,
       savedAt: new Date().toISOString(),
       lastAccessedAt: new Date().toISOString(),
-      rows: updatedStatement.rows,
-      totals: updatedStatement.totals,
-      employeeInfo: currentFormData,
       userId: user.uid,
       userName: user.displayName || undefined,
       userEmail: user.email || undefined,
@@ -1515,25 +1611,24 @@ export default function Home() {
 
         toast({
           title: "Arrear Updated",
-          description: "The statement has been updated successfully.",
+          description: "Your changes have been saved to your account.",
         });
       } catch (error) {
         console.error("Failed to update statement in Firestore:", error);
         toast({
-          variant: "destructive",
-          title: "Update Failed",
-          description: "Could not update in database, but saved locally.",
+          title: "Updated Locally",
+          description: "Changes saved to your browser. Will sync when online.",
         });
       }
     } else {
       toast({
         title: "Updated Locally",
-        description: "Your changes have been saved to your browser and will sync when online.",
+        description: "Changes saved to your browser. Will sync when online.",
       });
     }
 
     setIsLoading(false);
-  }
+  };
 
   const handleCopy = () => {
     if (!statement) return;
@@ -1572,6 +1667,7 @@ export default function Home() {
     const { employeeInfo, ...restOfStatement } = statementToLoad;
 
     const fullyProcessedInfo = processFirestoreDataRecursive(employeeInfo);
+    const fullyProcessedRest = processFirestoreDataRecursive(restOfStatement);
 
     const { paid, toBePaid, ...restInfo } = fullyProcessedInfo;
     const { payLevel: paidPayLevel, ...restPaid } = paid || {};
@@ -1590,11 +1686,23 @@ export default function Home() {
       if (toBePaidPayLevel) form.setValue('toBePaid.payLevel', toBePaidPayLevel);
     }, 0);
 
+    let periodsToLoad = fullyProcessedRest.periods;
+    if (!periodsToLoad || periodsToLoad.length === 0) {
+      periodsToLoad = [{
+        id: fullyProcessedRest.id || crypto.randomUUID(),
+        formData: fullyProcessedInfo as ArrearFormData,
+        rows: fullyProcessedRest.rows,
+        totals: fullyProcessedRest.totals
+      }];
+    }
 
     setStatement({
-      ...restOfStatement,
+      ...fullyProcessedRest,
       employeeInfo: fullyProcessedInfo,
+      periods: periodsToLoad
     });
+    
+    setCurrentPeriodIndex(0);
     setLoadedStatementId(statementToLoad.id);
 
     if (isOnline && dbConfigured && db) {
@@ -1777,6 +1885,48 @@ export default function Home() {
     }, 100);
   };
 
+  const handleRowEdit = (
+    rowIndex: number,
+    type: 'drawn' | 'due',
+    field: 'basic' | 'da' | 'hra' | 'ta' | 'npa' | 'other',
+    value: number
+  ) => {
+    if (!statement) return;
+
+    const updatedRows = [...statement.rows];
+    const row = { ...updatedRows[rowIndex] };
+    row[type] = { ...row[type], [field]: value };
+
+    // Recalculate row totals
+    row[type].total = row[type].basic + row[type].da + row[type].hra + row[type].ta + row[type].npa + row[type].other;
+    row.difference = row.due.total - row.drawn.total;
+
+    updatedRows[rowIndex] = row;
+
+    // Recalculate statement totals
+    const newTotals = {
+      drawn: { basic: 0, da: 0, hra: 0, ta: 0, npa: 0, other: 0, total: 0 },
+      due: { basic: 0, da: 0, hra: 0, ta: 0, npa: 0, other: 0, total: 0 },
+      difference: 0
+    };
+
+    updatedRows.forEach(r => {
+      ['drawn', 'due'].forEach(t => {
+        const cat = t as 'drawn' | 'due';
+        newTotals[cat].basic += r[cat].basic;
+        newTotals[cat].da += r[cat].da;
+        newTotals[cat].hra += r[cat].hra;
+        newTotals[cat].ta += r[cat].ta;
+        newTotals[cat].npa += r[cat].npa;
+        newTotals[cat].other += r[cat].other;
+        newTotals[cat].total += r[cat].total;
+      });
+      newTotals.difference += r.difference;
+    });
+
+    setStatement({ ...statement, rows: updatedRows, totals: newTotals });
+  };
+
 
 
   const renderSalaryFields = (type: "paid" | "toBePaid") => {
@@ -1796,6 +1946,17 @@ export default function Home() {
 
     return (
       <div className="space-y-4">
+        {type === "paid" ? (
+          <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg bg-amber-500/10 border border-amber-300/80 dark:border-amber-700/50 text-amber-900 dark:text-amber-200 text-xs font-semibold">
+            <History className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+            <span>Configuring: <strong>Already Paid (Existing / Pre-revised)</strong> Salary Structure</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg bg-emerald-500/10 border border-emerald-300/80 dark:border-emerald-700/50 text-emerald-900 dark:text-emerald-200 text-xs font-semibold">
+            <TrendingUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span>Configuring: <strong>To be Paid (Upgraded / Revised Due)</strong> Salary Structure</span>
+          </div>
+        )}
         <FormField control={form.control} name={`${type}.cpc`} render={({ field }) => (
           <FormItem>
             <FormLabel>CPC</FormLabel>
@@ -2337,8 +2498,15 @@ export default function Home() {
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8 no-print">
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
               <div className="lg:col-span-2 space-y-8">
-                <Card id="employee-details-card" className="border-border/80 shadow-sm hover:shadow-md transition-shadow">
-                  <CardHeader className="pb-3 border-b bg-muted/20"><CardTitle className="flex items-center gap-2.5 text-base font-semibold"><span className="p-1.5 rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-400"><User className="h-4 w-4" /></span> Employee Details</CardTitle></CardHeader>
+                <Card id="employee-details-card" className="border-t-4 border-t-blue-500 border-border/80 shadow-sm hover:shadow-md transition-shadow bg-card">
+                  <CardHeader className="pb-3 border-b bg-blue-50/40 dark:bg-blue-950/20">
+                    <CardTitle className="flex items-center gap-2.5 text-base font-semibold text-blue-950 dark:text-blue-100">
+                      <span className="p-1.5 rounded-lg bg-blue-600 text-white shadow-sm shadow-blue-500/20">
+                        <User className="h-4 w-4" />
+                      </span> 
+                      Employee Details
+                    </CardTitle>
+                  </CardHeader>
                   <CardContent className="space-y-4 pt-4">
                     <FormField control={form.control} name="employeeId" render={({ field }) => (<FormItem> <FormLabel>Employee ID</FormLabel> <FormControl><Input placeholder="Employee ID" {...field} maxLength={5} onChange={(e) => { const val = e.target.value.replace(/\D/g, '').slice(0, 5); field.onChange(val); }} /></FormControl> <FormMessage /> </FormItem>)} />
                     <FormField control={form.control} name="employeeName" render={({ field }) => (<FormItem> <FormLabel>Employee Name</FormLabel> <FormControl><Input placeholder="Full Name" {...field} /></FormControl> <FormMessage /> </FormItem>)} />
@@ -2346,8 +2514,42 @@ export default function Home() {
                     <FormField control={form.control} name="department" render={({ field }) => (<FormItem> <FormLabel>Department</FormLabel> <FormControl><Input placeholder="Department" {...field} /></FormControl> <FormMessage /> </FormItem>)} />
                   </CardContent>
                 </Card>
-                <Card className="border-border/80 shadow-sm hover:shadow-md transition-shadow">
-                  <CardHeader className="pb-3 border-b bg-muted/20"><CardTitle className="flex items-center gap-2.5 text-base font-semibold"><span className="p-1.5 rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400"><CalendarDays className="h-4 w-4" /></span> Calculation Period & Pay Details</CardTitle></CardHeader>
+                <Card className="border-t-4 border-t-amber-500 border-border/80 shadow-sm hover:shadow-md transition-shadow bg-card">
+                  <CardHeader className="pb-3 border-b bg-amber-50/40 dark:bg-amber-950/20">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="flex items-center gap-2.5 text-base font-semibold text-amber-950 dark:text-amber-100">
+                        <span className="p-1.5 rounded-lg bg-amber-500 text-white shadow-sm shadow-amber-500/20">
+                          <CalendarDays className="h-4 w-4" />
+                        </span> 
+                        Calculation Period & Pay Details
+                      </CardTitle>
+                      {statement && statement.periods && (
+                        <div className="flex items-center gap-2 lg:gap-4 no-print">
+                          <Button 
+                            type="button"
+                            variant="outline" 
+                            size="sm"
+                            disabled={currentPeriodIndex === 0} 
+                            onClick={() => loadPeriodIntoForm(currentPeriodIndex - 1)}
+                          >
+                            <ArrowLeft className="h-4 w-4" />
+                          </Button>
+                          <span className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                            Period {currentPeriodIndex + 1} of {Math.max(currentPeriodIndex + 1, statement.periods.length)}
+                          </span>
+                          <Button 
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={currentPeriodIndex >= statement.periods.length - 1} 
+                            onClick={() => loadPeriodIntoForm(currentPeriodIndex + 1)}
+                          >
+                            <ArrowRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </CardHeader>
                   <CardContent className="space-y-4 pt-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <FormField control={form.control} name="fromDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>From Date</FormLabel><FormDateInput field={field} /><FormMessage /></FormItem>)} />
@@ -2358,29 +2560,50 @@ export default function Home() {
                 </Card>
               </div>
               <div className="lg:col-span-3">
-                <Card className="border-border/80 shadow-sm hover:shadow-md transition-shadow">
-                  <CardHeader className="pb-3 border-b bg-muted/20">
-                    <CardTitle className="flex items-center gap-2.5 text-base font-semibold"><span className="p-1.5 rounded-lg bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-400"><FileText className="h-4 w-4" /></span> Salary Components</CardTitle>
+                <Card className="border-t-4 border-t-indigo-600 border-border/80 shadow-sm hover:shadow-md transition-shadow bg-card">
+                  <CardHeader className="pb-3 border-b bg-indigo-50/40 dark:bg-indigo-950/20">
+                    <CardTitle className="flex items-center gap-2.5 text-base font-semibold text-indigo-950 dark:text-indigo-100">
+                      <span className="p-1.5 rounded-lg bg-indigo-600 text-white shadow-sm shadow-indigo-500/20">
+                        <FileText className="h-4 w-4" />
+                      </span> 
+                      Salary Components
+                    </CardTitle>
                     <CardDescription>Define salary structures before and after the revision.</CardDescription>
                   </CardHeader>
                   <CardContent className="pt-4">
                     <Tabs defaultValue="paid" className="w-full">
-                      <TabsList className="grid w-full grid-cols-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
-                        <TabsTrigger value="paid" className="data-[state=active]:bg-white data-[state=active]:text-slate-900 dark:data-[state=active]:bg-slate-900 dark:data-[state=active]:text-slate-100 font-semibold shadow-sm">Already Paid</TabsTrigger>
-                        <TabsTrigger value="toBePaid" className="data-[state=active]:bg-white data-[state=active]:text-indigo-600 dark:data-[state=active]:bg-slate-900 dark:data-[state=active]:text-indigo-400 font-semibold shadow-sm">To be Paid</TabsTrigger>
+                      <TabsList className="grid w-full grid-cols-2 p-1.5 bg-slate-100 dark:bg-slate-800/90 rounded-xl gap-2 h-auto">
+                        <TabsTrigger 
+                          value="paid" 
+                          className="data-[state=active]:bg-amber-500 data-[state=active]:text-white dark:data-[state=active]:bg-amber-600 dark:data-[state=active]:text-white font-semibold transition-all shadow-sm rounded-lg py-2.5 flex items-center justify-center gap-2 text-slate-600 dark:text-slate-300 hover:text-amber-700 dark:hover:text-amber-300"
+                        >
+                          <History className="h-4 w-4" /> Already Paid (Pre-revised)
+                        </TabsTrigger>
+                        <TabsTrigger 
+                          value="toBePaid" 
+                          className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white dark:data-[state=active]:bg-emerald-600 dark:data-[state=active]:text-white font-semibold transition-all shadow-sm rounded-lg py-2.5 flex items-center justify-center gap-2 text-slate-600 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-300"
+                        >
+                          <TrendingUp className="h-4 w-4" /> To be Paid (Revised Due)
+                        </TabsTrigger>
                       </TabsList>
-                      <TabsContent value="paid" className="mt-4">{renderSalaryFields("paid")}</TabsContent>
-                      <TabsContent value="toBePaid" className="mt-4">{renderSalaryFields("toBePaid")}</TabsContent>
+                      <TabsContent value="paid" className="mt-4 focus-visible:outline-none">{renderSalaryFields("paid")}</TabsContent>
+                      <TabsContent value="toBePaid" className="mt-4 focus-visible:outline-none">{renderSalaryFields("toBePaid")}</TabsContent>
                     </Tabs>
                   </CardContent>
                 </Card>
               </div>
             </div>
 
-            <div className="flex justify-center pt-2">
+            <div className="flex justify-center pt-2 gap-4">
               <Button type="submit" size="lg" className="font-bold text-lg px-10 py-6 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:from-blue-700 hover:via-indigo-700 hover:to-violet-700 text-white shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 hover:scale-[1.01] active:scale-[0.99] transition-all rounded-xl border-0">
-                <Calculator className="mr-2.5 h-5 w-5" /> Calculate Arrears
+                <Calculator className="mr-2.5 h-5 w-5" /> 
+                {(!statement || !statement.periods) ? "Calculate Arrears" : (currentPeriodIndex < statement.periods.length ? "Update Period" : "Append to Statement")}
               </Button>
+              {statement && statement.periods && currentPeriodIndex === statement.periods.length && (
+                <Button type="button" onClick={() => loadPeriodIntoForm(statement.periods!.length - 1)} size="lg" variant="outline" className="font-bold text-lg px-8 py-6 text-slate-600 border-slate-300 hover:bg-slate-100 rounded-xl">
+                  Cancel Append
+                </Button>
+              )}
             </div>
           </form>
         </Form>
@@ -2426,7 +2649,10 @@ export default function Home() {
                       }
                     </CardDescription>
                   </div>
-                  <div className="flex flex-wrap gap-2 no-print">
+                    <div className="flex flex-wrap gap-2 no-print">
+                    <Button onClick={handlePrepareNextPeriod} disabled={isLoading} variant="outline" className="border-purple-200 text-purple-700 hover:bg-purple-50 hover:text-purple-800 shadow-sm font-medium dark:border-purple-900/40 dark:text-purple-400 dark:hover:bg-purple-950/40">
+                      <Plus className="mr-2 h-4 w-4" /> Add Next Period
+                    </Button>
                     <Button onClick={handleSaveOrUpdate} disabled={isLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm font-medium">
                       {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (loadedStatementId ? <Edit className="mr-2 h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />)}
                       {loadedStatementId ? "Update Arrear" : "Save Arrear"}
@@ -2493,26 +2719,26 @@ export default function Home() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {statement.rows.map(row => (
-                          <TableRow key={row.month} className="hover:bg-muted/40 transition-colors">
+                        {statement.rows.map((row, idx) => (
+                          <TableRow key={`${row.month}-${idx}`} className="hover:bg-muted/40 transition-colors">
                             <TableCell className="font-medium border-r month-col">{row.month.replace(/(\s\d{2})\d{2}$/, '$1')}</TableCell>
                             
                             {/* Drawn Cells */}
-                            <TableCell className="text-right">{row.drawn.basic}</TableCell>
-                            <TableCell className="text-right">{row.drawn.da}</TableCell>
-                            {activeCols.hra && <TableCell className="text-right">{row.drawn.hra}</TableCell>}
-                            {activeCols.npa && <TableCell className="text-right">{row.drawn.npa}</TableCell>}
-                            {activeCols.ta && <TableCell className="text-right">{row.drawn.ta}</TableCell>}
-                            {activeCols.other && <TableCell className="text-right">{row.drawn.other}</TableCell>}
+                            <TableCell className="p-0 text-right"><input type="number" value={row.drawn.basic} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'drawn', 'basic', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>
+                            <TableCell className="p-0 text-right"><input type="number" value={row.drawn.da} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'drawn', 'da', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>
+                            {activeCols.hra && <TableCell className="p-0 text-right"><input type="number" value={row.drawn.hra} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'drawn', 'hra', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
+                            {activeCols.npa && <TableCell className="p-0 text-right"><input type="number" value={row.drawn.npa} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'drawn', 'npa', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
+                            {activeCols.ta && <TableCell className="p-0 text-right"><input type="number" value={row.drawn.ta} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'drawn', 'ta', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
+                            {activeCols.other && <TableCell className="p-0 text-right"><input type="number" value={row.drawn.other} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'drawn', 'other', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
                             <TableCell className="text-right font-semibold border-r total-col bg-blue-50/30 dark:bg-blue-950/10 print:bg-transparent">{row.drawn.total}</TableCell>
 
                             {/* Due Cells */}
-                            <TableCell className="text-right">{row.due.basic}</TableCell>
-                            <TableCell className="text-right">{row.due.da}</TableCell>
-                            {activeCols.hra && <TableCell className="text-right">{row.due.hra}</TableCell>}
-                            {activeCols.npa && <TableCell className="text-right">{row.due.npa}</TableCell>}
-                            {activeCols.ta && <TableCell className="text-right">{row.due.ta}</TableCell>}
-                            {activeCols.other && <TableCell className="text-right">{row.due.other}</TableCell>}
+                            <TableCell className="p-0 text-right"><input type="number" value={row.due.basic} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'due', 'basic', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>
+                            <TableCell className="p-0 text-right"><input type="number" value={row.due.da} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'due', 'da', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>
+                            {activeCols.hra && <TableCell className="p-0 text-right"><input type="number" value={row.due.hra} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'due', 'hra', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
+                            {activeCols.npa && <TableCell className="p-0 text-right"><input type="number" value={row.due.npa} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'due', 'npa', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
+                            {activeCols.ta && <TableCell className="p-0 text-right"><input type="number" value={row.due.ta} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'due', 'ta', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
+                            {activeCols.other && <TableCell className="p-0 text-right"><input type="number" value={row.due.other} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'due', 'other', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
                             <TableCell className="text-right font-semibold border-r total-col bg-indigo-50/30 dark:bg-indigo-950/10 print:bg-transparent">{row.due.total}</TableCell>
 
                             <TableCell className="text-right font-bold diff-col text-emerald-700 dark:text-emerald-400 bg-emerald-50/20 dark:bg-emerald-950/10 print:text-black print:bg-transparent">{row.difference}</TableCell>

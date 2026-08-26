@@ -4,6 +4,11 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import { Calendar } from './ui/calendar';
+import { format, parseISO } from 'date-fns';
+import { CalendarDays } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { cpcData } from '@/lib/cpc-data';
 
 interface AIValidationModalProps {
@@ -15,6 +20,8 @@ interface AIValidationModalProps {
 
 export function AIValidationModal({ isOpen, onClose, data, onConfirm }: AIValidationModalProps) {
   const [formData, setFormData] = useState<any>(data || {});
+  const [fromDateOpen, setFromDateOpen] = useState(false);
+  const [refixedDateOpen, setRefixedDateOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -113,13 +120,49 @@ export function AIValidationModal({ isOpen, onClose, data, onConfirm }: AIValida
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label htmlFor="fromDate" className="dark:text-purple-100">Effective Date (From)</Label>
-                <Input 
-                  id="fromDate" 
-                  type="date"
-                  value={formData.fromDate || ''} 
-                  onChange={(e) => handleChange('fromDate', e.target.value)}
-                  className={isInvalid(formData.fromDate) ? 'border-red-500 dark:border-red-400' : ''}
-                />
+                <Popover open={fromDateOpen} onOpenChange={setFromDateOpen}>
+                  <PopoverTrigger asChild>
+                    <Button 
+                      variant="outline" 
+                      className={cn("w-full justify-start text-left font-normal bg-white dark:bg-purple-950/40", 
+                        isInvalid(formData.fromDate) ? 'border-red-500 dark:border-red-400' : 'border-input',
+                        !formData.fromDate && "text-muted-foreground")}
+                    >
+                      <CalendarDays className="mr-2 h-4 w-4" />
+                      {formData.fromDate ? format(new Date(formData.fromDate), "dd-MM-yyyy") : <span>Select Date</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={formData.fromDate ? new Date(formData.fromDate) : undefined}
+                      onSelect={(date) => {
+                        // Keep consistent YYYY-MM-DD for state
+                        if (date) {
+                          handleChange('fromDate', format(date, 'yyyy-MM-dd'));
+                          setFromDateOpen(false);
+                        }
+                      }}
+                      initialFocus
+                      captionLayout="dropdown-buttons"
+                      fromYear={1990}
+                      toYear={2050}
+                    />
+                    <div className="p-2 border-t border-border">
+                      <Button 
+                        variant="ghost" 
+                        className="w-full text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          handleChange('fromDate', '');
+                          setFromDateOpen(false);
+                        }}
+                      >
+                        Clear Date
+                      </Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
               <div className="space-y-1">
                 <Label htmlFor="payFixationRef" className="dark:text-purple-100">Reference No. & Date</Label>
@@ -221,13 +264,48 @@ export function AIValidationModal({ isOpen, onClose, data, onConfirm }: AIValida
               </div>
               <div className="space-y-1">
                 <Label htmlFor="toBePaid.refixedBasicPayDate" className="dark:text-green-100">Re-fixed Date</Label>
-                <Input 
-                  id="toBePaid.refixedBasicPayDate" 
-                  type="date"
-                  value={formData.toBePaid?.refixedBasicPayDate || ''} 
-                  onChange={(e) => handleChange('toBePaid.refixedBasicPayDate', e.target.value)}
-                  className={isInvalid(formData.toBePaid?.refixedBasicPayDate) ? 'border-yellow-500 dark:border-yellow-400 bg-yellow-50 dark:bg-yellow-950/20' : ''}
-                />
+                <Popover open={refixedDateOpen} onOpenChange={setRefixedDateOpen}>
+                  <PopoverTrigger asChild>
+                    <Button 
+                      variant="outline" 
+                      className={cn("w-full justify-start text-left font-normal", 
+                        isInvalid(formData.toBePaid?.refixedBasicPayDate) ? 'border-yellow-500 dark:border-yellow-400 bg-yellow-50 dark:bg-yellow-950/20' : 'bg-white dark:bg-green-950/40 border-input',
+                        !formData.toBePaid?.refixedBasicPayDate && "text-muted-foreground")}
+                    >
+                      <CalendarDays className="mr-2 h-4 w-4" />
+                      {formData.toBePaid?.refixedBasicPayDate ? format(new Date(formData.toBePaid.refixedBasicPayDate), "dd-MM-yyyy") : <span>Select Date</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={formData.toBePaid?.refixedBasicPayDate ? new Date(formData.toBePaid.refixedBasicPayDate) : undefined}
+                      onSelect={(date) => {
+                        if (date) {
+                          handleChange('toBePaid.refixedBasicPayDate', format(date, 'yyyy-MM-dd'));
+                          setRefixedDateOpen(false);
+                        }
+                      }}
+                      initialFocus
+                      captionLayout="dropdown-buttons"
+                      fromYear={1990}
+                      toYear={2050}
+                    />
+                    <div className="p-2 border-t border-border">
+                      <Button 
+                        variant="ghost" 
+                        className="w-full text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          handleChange('toBePaid.refixedBasicPayDate', '');
+                          setRefixedDateOpen(false);
+                        }}
+                      >
+                        Clear Date
+                      </Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
             <p className="text-xs text-green-700/80 dark:text-green-300/80 mt-2 font-medium leading-none">
