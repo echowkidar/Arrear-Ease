@@ -218,7 +218,9 @@ export function AIValidationModal({ isOpen, onClose, data, onConfirm }: AIValida
                   )}
                 />
                 {isInvalidBasicPay(formData.paid?.payLevel, formData.paid?.basicPay) && (
-                  <p className="text-[10px] text-red-500 leading-tight">Mismatch in matrix</p>
+                  <p className="text-[10px] text-red-500 leading-tight">
+                    Mismatch. Try Level: {cpcData['7th'].payLevels.filter((l: any) => l.values.includes(Number(formData.paid?.basicPay))).map((l: any) => l.level).join(', ') || 'None'}
+                  </p>
                 )}
               </div>
               <div className="space-y-1">
@@ -263,7 +265,9 @@ export function AIValidationModal({ isOpen, onClose, data, onConfirm }: AIValida
                   )}
                 />
                 {isInvalidBasicPay(formData.toBePaid?.payLevel, formData.toBePaid?.basicPay) && (
-                  <p className="text-[10px] text-red-500 leading-tight">Mismatch in matrix</p>
+                  <p className="text-[10px] text-red-500 leading-tight">
+                    Mismatch. Try Level: {cpcData['7th'].payLevels.filter((l: any) => l.values.includes(Number(formData.toBePaid?.basicPay))).map((l: any) => l.level).join(', ') || 'None'}
+                  </p>
                 )}
               </div>
               <div className="space-y-1">

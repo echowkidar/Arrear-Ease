@@ -495,7 +495,7 @@ export default function Home() {
   const [allowBasicPayAutoFill, setAllowBasicPayAutoFill] = React.useState(false);
   const [isScanning, setIsScanning] = React.useState(false);
   const [currentPeriodIndex, setCurrentPeriodIndex] = React.useState(0);
-  const [basicPayWarning, setBasicPayWarning] = React.useState<{ show: boolean, basicPay: number, payLevel: string, fieldName?: any } | null>(null);
+  const [basicPayWarning, setBasicPayWarning] = React.useState<{ show: boolean, basicPay: number, payLevel: string, fieldName?: any, suggestedLevels?: string[] } | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const { user, authStatus, loading, logout, openAuthModal } = useAuth();
@@ -1642,11 +1642,33 @@ export default function Home() {
     }
 
     setCurrentPeriodIndex(index);
-    form.reset({
+    const newFormData = {
       ...updatedPeriods[index].formData,
       remark: updatedPeriods[index].formData.remark || "",
       payFixationRef: updatedPeriods[index].formData.payFixationRef || ""
-    });
+    };
+    form.reset(newFormData);
+
+    setTimeout(() => {
+      ['paid', 'toBePaid'].forEach(type => {
+        const typeKey = type as 'paid' | 'toBePaid';
+        const cpc = newFormData[typeKey]?.cpc;
+        const payLevel = newFormData[typeKey]?.payLevel;
+        const basicPay = newFormData[typeKey]?.basicPay;
+        if (cpc === "7th" && payLevel && basicPay) {
+          let levelData = cpcData['7th'].payLevels.find(l => l.level === payLevel);
+          if (!levelData) {
+             levelData = cpcData['7th'].payLevels.find(l => l.level.includes('/') && l.level.split('/').includes(payLevel));
+          }
+          if (levelData) {
+            if (!levelData.values.includes(Number(basicPay))) {
+              form.setError(`${type}.basicPay` as any, { type: "manual", message: "Invalid basic pay for selected level." });
+            }
+          }
+        }
+      });
+    }, 0);
+
     window.scrollTo({ top: 0, behavior: 'smooth' });
     toast({
       title: `Loaded Period ${index + 1}`,
@@ -1807,6 +1829,24 @@ export default function Home() {
     setTimeout(() => {
       if (formDataToReset.paid?.payLevel) form.setValue('paid.payLevel', formDataToReset.paid.payLevel);
       if (formDataToReset.toBePaid?.payLevel) form.setValue('toBePaid.payLevel', formDataToReset.toBePaid.payLevel);
+
+      ['paid', 'toBePaid'].forEach(type => {
+        const typeKey = type as 'paid' | 'toBePaid';
+        const cpc = formDataToReset[typeKey]?.cpc;
+        const payLevel = formDataToReset[typeKey]?.payLevel;
+        const basicPay = formDataToReset[typeKey]?.basicPay;
+        if (cpc === "7th" && payLevel && basicPay) {
+          let levelData = cpcData['7th'].payLevels.find(l => l.level === payLevel);
+          if (!levelData) {
+             levelData = cpcData['7th'].payLevels.find(l => l.level.includes('/') && l.level.split('/').includes(payLevel));
+          }
+          if (levelData) {
+            if (!levelData.values.includes(Number(basicPay))) {
+              form.setError(`${type}.basicPay` as any, { type: "manual", message: "Invalid basic pay for selected level." });
+            }
+          }
+        }
+      });
     }, 0);
 
     setStatement({
@@ -2134,7 +2174,8 @@ export default function Home() {
                         }
                         if (levelData) {
                           if (!levelData.values.includes(basicPay)) {
-                            setBasicPayWarning({ show: true, basicPay, payLevel, fieldName: `${type}.basicPay` });
+                            const suggestedLevels = cpcData['7th'].payLevels.filter(l => l.values.includes(basicPay)).map(l => l.level);
+                            setBasicPayWarning({ show: true, basicPay, payLevel, fieldName: `${type}.basicPay`, suggestedLevels });
                           } else {
                             form.clearErrors(`${type}.basicPay`);
                             form.clearErrors(`${type}.payLevel`);
@@ -2245,7 +2286,8 @@ export default function Home() {
                               }
                               if (levelData) {
                                 if (!levelData.values.includes(basicPay)) {
-                                  setBasicPayWarning({ show: true, basicPay, payLevel, fieldName: `toBePaid.refixedBasicPay` });
+                                  const suggestedLevels = cpcData['7th'].payLevels.filter(l => l.values.includes(basicPay)).map(l => l.level);
+                                  setBasicPayWarning({ show: true, basicPay, payLevel, fieldName: `toBePaid.refixedBasicPay`, suggestedLevels });
                                 } else {
                                   form.clearErrors(`toBePaid.refixedBasicPay`);
                                 }
@@ -2473,6 +2515,11 @@ export default function Home() {
             <p className="text-muted-foreground text-[15px]">
               The basic pay <strong>Rs. {basicPayWarning?.basicPay}</strong> does not exist in <strong>Level {basicPayWarning?.payLevel}</strong> of the 7th CPC Pay Matrix.
             </p>
+            {basicPayWarning?.suggestedLevels && basicPayWarning.suggestedLevels.length > 0 && (
+              <p className="text-[15px] font-medium text-emerald-600 dark:text-emerald-500 bg-emerald-50 dark:bg-emerald-950/30 p-2 rounded-md border border-emerald-100 dark:border-emerald-900/50">
+                This Basic Pay exists in Level: <strong>{basicPayWarning.suggestedLevels.join(', ')}</strong>
+              </p>
+            )}
             <p className="text-sm font-semibold text-amber-600">
               Please check your selected Pay Level and Basic Pay.
             </p>
@@ -3120,6 +3167,24 @@ export default function Home() {
                 </CardContent>
               </Card>
               <div className="page-footer"></div>
+              {(() => {
+                const preparedByName = (statement as any)?.userName || user?.displayName || user?.email || "";
+                if (!preparedByName) return null;
+                return (
+                  <style dangerouslySetInnerHTML={{
+                    __html: `
+                      @page {
+                        @bottom-left {
+                          content: "Prepared by : ${preparedByName.replace(/"/g, '\\"')}";
+                          font-size: 9pt;
+                          color: #333;
+                          font-family: inherit;
+                        }
+                      }
+                    `
+                  }} />
+                );
+              })()}
             </div>
           </div>
         )}
