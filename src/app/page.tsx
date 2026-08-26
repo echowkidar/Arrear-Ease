@@ -8,6 +8,7 @@ import * as z from "zod";
 import Link from "next/link";
 import { format, addMonths, differenceInCalendarMonths, getDaysInMonth, startOfMonth, endOfMonth, startOfDay, endOfDay, max, min, isWithinInterval, differenceInDays, addDays } from "date-fns";
 import { AIValidationModal } from "@/components/ai-validation-modal";
+import { RatesMatrixViewerModal } from "@/components/rates-matrix-viewer-modal";
 import {
   User,
   Building,
@@ -39,6 +40,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Plus,
+  TableProperties,
 } from "lucide-react";
 import { db, isFirebaseConfigured } from "@/lib/firebase";
 import { collection, addDoc, getDocs, getDoc, doc, deleteDoc, Timestamp, writeBatch, setDoc, updateDoc, query, where, serverTimestamp } from "firebase/firestore";
@@ -496,6 +498,7 @@ export default function Home() {
   const [isScanning, setIsScanning] = React.useState(false);
   const [currentPeriodIndex, setCurrentPeriodIndex] = React.useState(0);
   const [basicPayWarning, setBasicPayWarning] = React.useState<{ show: boolean, basicPay: number, payLevel: string, fieldName?: any, suggestedLevels?: string[] } | null>(null);
+  const [isRatesMatrixOpen, setIsRatesMatrixOpen] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const { user, authStatus, loading, logout, openAuthModal } = useAuth();
@@ -2490,6 +2493,10 @@ export default function Home() {
         data={aiScannedData}
         onConfirm={handleAiModalConfirm}
       />
+      <RatesMatrixViewerModal
+        isOpen={isRatesMatrixOpen}
+        onClose={() => setIsRatesMatrixOpen(false)}
+      />
       <Dialog open={showDiffToast.show} onOpenChange={(open) => { if (!open) setShowDiffToast(prev => ({ ...prev, show: false })) }}>
         <DialogContent className="sm:max-w-md text-center">
           <DialogHeader>
@@ -2554,7 +2561,7 @@ export default function Home() {
       )}
 
 
-    <div className="min-h-screen bg-background">
+    <div id="app-main-root" className="min-h-screen bg-background">
       <main className="container mx-auto px-4 py-8 md:py-12">
         <AuthModal />
 
@@ -2649,6 +2656,13 @@ export default function Home() {
             className="border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-300 dark:border-emerald-900/40 dark:text-emerald-400 dark:hover:bg-emerald-950/40 transition-colors"
           >
             <FolderOpen className="mr-2 h-4 w-4" /> Load Saved Arrears
+          </Button>
+          <Button 
+            variant="outline" 
+            onClick={() => setIsRatesMatrixOpen(true)}
+            className="border-indigo-200 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800 hover:border-indigo-300 dark:border-indigo-900/40 dark:text-indigo-400 dark:hover:bg-indigo-950/40 transition-colors shadow-xs"
+          >
+            <TableProperties className="mr-2 h-4 w-4 text-indigo-600 dark:text-indigo-400" /> Rates & Pay Matrix
           </Button>
           <Dialog open={isLoadDialogOpen} onOpenChange={setLoadDialogOpen}>
             <DialogContent className="max-w-5xl lg:max-w-6xl w-[95vw]">
