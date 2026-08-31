@@ -51,7 +51,9 @@ Extract the following information and return it strictly as a JSON object matchi
     "refixedBasicPay": 0,
     "refixedBasicPayDate": "",
     "incrementMonth": "string"
-  }
+  },
+  "fullTextSummary": "string - Complete narrative summary of all sections, clauses, fixation rules, and notes present in the document",
+  "orderClauses": "string - Any specific legal clauses, option under FR rules, internal audit endorsement text, or special conditions mentioned in the order"
 }
 
 IMPORTANT DATE INSTRUCTION:
@@ -72,6 +74,8 @@ Use the image to extract:
 - Date of Next Increment in upgraded level (Section 13) (extract month number for toBePaid.incrementMonth, e.g. "7" if July, "1" if Jan)
 - Re-fixed amount (Section 12(a)) (this is toBePaid.refixedBasicPay, e.g. 27600. If Section 12(a) does NOT exist, return 0)
 - Date of re-fixation (Section 12(a)) (this is toBePaid.refixedBasicPayDate format YYYY-MM-DD. If Section 12(a) does NOT exist, return "")
+- Full Text Summary of the entire proforma: Include all sections (1 to 15), table headers, and remarks.
+- Order Clauses: Include exact text from Internal Audit Endorsement, option availed under FR 22(1)(a)(1), notional increment notes, and administrative conditions.
 
 Return ONLY the raw JSON object, without any markdown formatting, backticks, or extra text.
 `;

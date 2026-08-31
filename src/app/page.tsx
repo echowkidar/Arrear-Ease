@@ -225,6 +225,12 @@ type SavedStatement = {
   totals: StatementTotals;
   employeeInfo: EmployeeInfo;
   periods?: FixationPeriod[];
+  proformaImage?: string;
+  proformaDetails?: {
+    fullTextSummary?: string;
+    orderClauses?: string;
+  };
+  aiAuditResult?: AIAuditResult;
   userId?: string;
   userName?: string;
   userEmail?: string;
@@ -508,6 +514,9 @@ export default function Home() {
   const [isAuditReportOpen, setIsAuditReportOpen] = React.useState(false);
   const [auditResult, setAuditResult] = React.useState<AIAuditResult | null>(null);
   const [isAuditing, setIsAuditing] = React.useState(false);
+  const [scannedImageBase64, setScannedImageBase64] = React.useState<string | null>(null);
+  const [scannedProformaDetails, setScannedProformaDetails] = React.useState<{ fullTextSummary?: string; orderClauses?: string } | null>(null);
+  const [isViewDocumentModalOpen, setIsViewDocumentModalOpen] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const { user, authStatus, loading, logout, openAuthModal } = useAuth();

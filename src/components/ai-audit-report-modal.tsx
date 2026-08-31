@@ -31,9 +31,12 @@ export interface AIAuditResult {
   employeeName: string;
   employeeId?: string;
   designation?: string;
+  department?: string;
   cpc: string;
   totalDifference: number;
   totalMonths: number;
+  periodsCount?: number;
+  proformaAttached?: boolean;
   score: number;
   status: "VERIFIED_ACCURATE" | "WARNINGS_DETECTED" | "DISCREPANCIES_FOUND";
   ruleChecklist: {
@@ -141,6 +144,14 @@ export function AIAuditReportModal({
                 <p className="text-xs text-muted-foreground">
                   Verified as per Government Pay Commission Schedules & Finance Ministry Guidelines
                 </p>
+                {auditResult.proformaAttached && (
+                  <div className="pt-1">
+                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-100/80 dark:bg-emerald-900/40 px-2.5 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-700">
+                      <ShieldCheck className="h-3 w-3 text-emerald-600" />
+                      Cross-Verified with Original Pay Fixation Document
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Verified Details Grid */}
@@ -151,7 +162,9 @@ export function AIAuditReportModal({
                 </div>
                 <div>
                   <span className="text-muted-foreground block text-[10px] uppercase font-bold">Pay Structure</span>
-                  <strong className="text-foreground text-[13px]">{auditResult.cpc} CPC Scale</strong>
+                  <strong className="text-foreground text-[13px]">
+                    {auditResult.cpc} CPC {auditResult.periodsCount && auditResult.periodsCount > 1 ? `(${auditResult.periodsCount} Periods)` : ""}
+                  </strong>
                 </div>
                 <div>
                   <span className="text-muted-foreground block text-[10px] uppercase font-bold">Total Arrear Due</span>
