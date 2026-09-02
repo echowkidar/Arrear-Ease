@@ -3024,18 +3024,30 @@ export default function Home() {
                 </CardHeader>
                 <CardContent className="pt-4">
                   <Tabs defaultValue="paid" className="w-full">
-                    <TabsList className="grid w-full grid-cols-2 p-1.5 bg-slate-100 dark:bg-slate-800/90 rounded-xl gap-2 h-auto">
+                    <TabsList className="grid w-full grid-cols-2 p-1.5 bg-slate-100/90 dark:bg-slate-900/90 border border-slate-200/90 dark:border-slate-800 rounded-2xl gap-3 h-auto shadow-xs">
                       <TabsTrigger 
                         value="paid" 
-                        className="data-[state=active]:bg-amber-500 data-[state=active]:text-white dark:data-[state=active]:bg-amber-600 dark:data-[state=active]:text-white font-semibold transition-all shadow-sm rounded-lg py-2.5 flex items-center justify-center gap-2 text-slate-600 dark:text-slate-300 hover:text-amber-700 dark:hover:text-amber-300"
+                        className="group relative border-2 border-amber-500/70 dark:border-amber-500/60 bg-amber-500/10 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 hover:bg-amber-500/20 hover:border-amber-600 data-[state=active]:bg-gradient-to-r data-[state=active]:from-amber-500 data-[state=active]:to-orange-500 data-[state=active]:border-amber-600 data-[state=active]:text-white dark:data-[state=active]:text-white font-bold transition-all duration-200 shadow-xs data-[state=active]:shadow-md data-[state=active]:shadow-amber-500/30 rounded-xl py-3 px-4 flex items-center justify-center gap-2.5 text-sm sm:text-base cursor-pointer hover:scale-[1.008] active:scale-[0.99]"
                       >
-                        <History className="h-4 w-4" /> Already Paid (Pre-revised)
+                        <span className="p-1.5 rounded-lg bg-amber-500/20 text-amber-700 dark:text-amber-300 group-data-[state=active]:bg-white/20 group-data-[state=active]:text-white transition-colors">
+                          <History className="h-4 w-4" />
+                        </span>
+                        <span className="tracking-tight font-bold">Already Paid</span>
+                        <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full border border-amber-300/80 dark:border-amber-700/60 bg-amber-100/80 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 group-data-[state=active]:border-white/30 group-data-[state=active]:bg-white/20 group-data-[state=active]:text-white transition-colors hidden sm:inline-block">
+                          Pre-revised
+                        </span>
                       </TabsTrigger>
                       <TabsTrigger 
                         value="toBePaid" 
-                        className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white dark:data-[state=active]:bg-emerald-600 dark:data-[state=active]:text-white font-semibold transition-all shadow-sm rounded-lg py-2.5 flex items-center justify-center gap-2 text-slate-600 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-300"
+                        className="group relative border-2 border-emerald-500/70 dark:border-emerald-500/60 bg-emerald-500/10 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 hover:bg-emerald-500/20 hover:border-emerald-600 data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-600 data-[state=active]:to-teal-600 data-[state=active]:border-emerald-600 data-[state=active]:text-white dark:data-[state=active]:text-white font-bold transition-all duration-200 shadow-xs data-[state=active]:shadow-md data-[state=active]:shadow-emerald-500/30 rounded-xl py-3 px-4 flex items-center justify-center gap-2.5 text-sm sm:text-base cursor-pointer hover:scale-[1.008] active:scale-[0.99]"
                       >
-                        <TrendingUp className="h-4 w-4" /> To be Paid (Revised Due)
+                        <span className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 group-data-[state=active]:bg-white/20 group-data-[state=active]:text-white transition-colors">
+                          <TrendingUp className="h-4 w-4" />
+                        </span>
+                        <span className="tracking-tight font-bold">To be Paid</span>
+                        <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full border border-emerald-300/80 dark:border-emerald-700/60 bg-emerald-100/80 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200 group-data-[state=active]:border-white/30 group-data-[state=active]:bg-white/20 group-data-[state=active]:text-white transition-colors hidden sm:inline-block">
+                          Revised Due
+                        </span>
                       </TabsTrigger>
                     </TabsList>
                     <TabsContent value="paid" className="mt-4 focus-visible:outline-none">{renderSalaryFields("paid")}</TabsContent>

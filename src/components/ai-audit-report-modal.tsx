@@ -54,6 +54,90 @@ interface AIAuditReportModalProps {
   isLoading?: boolean;
 }
 
+function FormattedAuditorComments({ content }: { content: string }) {
+  if (!content) return null;
+
+  const lines = content.split("\n");
+
+  const renderFormattedText = (txt: string) => {
+    const parts = txt.split(/(\*\*[^*]+\*\*)/g);
+    return parts.map((part, pIdx) => {
+      if (part.startsWith("**") && part.endsWith("**")) {
+        return (
+          <strong key={pIdx} className="font-bold text-foreground">
+            {part.slice(2, -2)}
+          </strong>
+        );
+      }
+      return part;
+    });
+  };
+
+  return (
+    <div className="space-y-1.5 text-foreground/90 text-[12px] leading-relaxed">
+      {lines.map((line, idx) => {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          return <div key={idx} className="h-1" />;
+        }
+
+        // Divider
+        if (trimmed === "---" || trimmed === "***") {
+          return <hr key={idx} className="border-border/60 my-2" />;
+        }
+
+        // Section Headings (###, ####, or bold numbered titles)
+        if (trimmed.startsWith("### ") || trimmed.startsWith("#### ") || trimmed.startsWith("# ")) {
+          const cleanHeader = trimmed.replace(/^#{1,6}\s*/, "");
+          return (
+            <h5 key={idx} className="font-bold text-[12.5px] text-primary pt-1.5 pb-0.5 border-b border-border/50">
+              {renderFormattedText(cleanHeader)}
+            </h5>
+          );
+        }
+
+        // Bullet point lines (- or *)
+        if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
+          const bulletText = trimmed.slice(2);
+          return (
+            <div key={idx} className="flex items-start gap-2 pl-2">
+              <span className="text-primary font-bold text-xs mt-0.5">•</span>
+              <div className="flex-1">{renderFormattedText(bulletText)}</div>
+            </div>
+          );
+        }
+
+        // Sub-bullets (indented)
+        if (line.startsWith("  -") || line.startsWith("  *") || line.startsWith("    -")) {
+          const cleanSub = line.trim().replace(/^[-*]\s*/, "");
+          return (
+            <div key={idx} className="flex items-start gap-2 pl-6 text-[11.5px] text-muted-foreground">
+              <span className="text-muted-foreground font-bold text-[10px] mt-0.5">◦</span>
+              <div className="flex-1">{renderFormattedText(cleanSub)}</div>
+            </div>
+          );
+        }
+
+        // Numbered sections like 1. 2. 3.
+        if (/^\d+\.\s+/.test(trimmed) || /^\*\*\d+\./.test(trimmed)) {
+          return (
+            <div key={idx} className="font-semibold text-foreground pt-1">
+              {renderFormattedText(trimmed)}
+            </div>
+          );
+        }
+
+        // Standard line / paragraph
+        return (
+          <p key={idx} className="leading-relaxed">
+            {renderFormattedText(trimmed)}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
 export function AIAuditReportModal({
   isOpen,
   onClose,
@@ -62,10 +146,38 @@ export function AIAuditReportModal({
 }: AIAuditReportModalProps) {
   const certificateRef = useRef<HTMLDivElement>(null);
 
+  React.useEffect(() => {
+    if (!isOpen) return;
+
+    const handleBeforePrint = () => {
+      document.body.classList.add("printing-ai-audit-modal");
+    };
+    const handleAfterPrint = () => {
+      document.body.classList.remove("printing-ai-audit-modal");
+    };
+
+    window.addEventListener("beforeprint", handleBeforePrint);
+    window.addEventListener("afterprint", handleAfterPrint);
+
+    return () => {
+      window.removeEventListener("beforeprint", handleBeforePrint);
+      window.removeEventListener("afterprint", handleAfterPrint);
+      document.body.classList.remove("printing-ai-audit-modal");
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const handlePrintCertificate = () => {
-    window.print();
+    document.body.classList.add("printing-ai-audit-modal");
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        window.print();
+        setTimeout(() => {
+          document.body.classList.remove("printing-ai-audit-modal");
+        }, 1500);
+      }, 50);
+    });
   };
 
   return (
@@ -125,7 +237,7 @@ export function AIAuditReportModal({
             {/* Certificate Canvas Area */}
             <div
               ref={certificateRef}
-              className="p-6 sm:p-8 rounded-xl border-2 border-emerald-600/30 bg-gradient-to-b from-emerald-500/5 via-card to-card shadow-sm space-y-6 relative overflow-hidden"
+              className="ai-audit-certificate-container p-6 sm:p-8 rounded-xl border-2 border-emerald-600/30 bg-gradient-to-b from-emerald-500/5 via-card to-card shadow-sm space-y-6 relative overflow-hidden"
             >
               {/* Official Watermark / Stamp */}
               <div className="absolute right-4 top-4 opacity-10 pointer-events-none">
@@ -183,11 +295,11 @@ export function AIAuditReportModal({
                 <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   Itemized Verification Checklist
                 </h4>
-                <div className="space-y-2">
+                <div className="space-y-2 checklist-grid-print">
                   {auditResult.ruleChecklist.map((item, idx) => (
                     <div
                       key={idx}
-                      className="flex items-start gap-3 p-2.5 rounded-lg bg-card border border-border/80 text-xs"
+                      className="flex items-start gap-3 p-2.5 rounded-lg bg-card border border-border/80 text-xs checklist-item-print"
                     >
                       {item.status === "pass" ? (
                         <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
@@ -204,14 +316,12 @@ export function AIAuditReportModal({
               </div>
 
               {/* AI Auditor Summary Comments */}
-              <div className="p-3.5 bg-primary/5 rounded-lg border border-primary/20 text-xs space-y-1">
-                <div className="flex items-center gap-1.5 font-bold text-primary text-[11px] uppercase">
+              <div className="p-4 bg-primary/5 rounded-xl border border-primary/20 text-xs space-y-2 auditor-comments-box">
+                <div className="flex items-center gap-1.5 font-bold text-primary text-[11px] uppercase tracking-wide border-b border-primary/15 pb-1.5">
                   <Sparkles className="h-3.5 w-3.5" />
-                  AI Auditor Assessment
+                  AI Auditor Detailed Assessment & Observations
                 </div>
-                <p className="text-foreground/90 italic leading-relaxed text-[12px]">
-                  "{auditResult.auditorComments}"
-                </p>
+                <FormattedAuditorComments content={auditResult.auditorComments} />
               </div>
 
               {/* Certificate Footer Signature & QR Stamp */}
