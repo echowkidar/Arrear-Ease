@@ -1259,7 +1259,7 @@ export default function Home() {
         }
         const prorationFactor = getProratedFactorForAllowance(sideData.npaFromDate, sideData.npaToDate);
         if (prorationFactor > 0) {
-          npa = fullMonthNpaCalculated * monthProRataFactor;
+          npa = fullMonthNpaCalculated * prorationFactor;
         }
       }
 
@@ -1290,17 +1290,22 @@ export default function Home() {
                 fullMonthHra = hraBase * (sideData.hraFixedRate / 100);
               }
             }
-            hra = fullMonthHra * monthProRataFactor;
+            hra = fullMonthHra * prorationFactor;
           } else {
-            // 7th CPC: HRA is DA-slab based from hraRates table
-            const hraRateDetails = getRateForDate(hraRates, currentDate, { daRate: effectiveDaRate });
-            if (hraRateDetails) {
-              let fullMonthHra = hraBase * (hraRateDetails.rate / 100);
-              if (hraRateDetails.minAmount && hraRateDetails.minAmount > 0) {
-                fullMonthHra = Math.max(fullMonthHra, hraRateDetails.minAmount);
+            // 7th CPC: HRA is DA-slab based from hraRates table, or fixed rate override if active
+            let fullMonthHra = 0;
+            if (sideData.hraFixedRateApplicable && sideData.hraFixedRate && sideData.hraFixedRateFromDate && sideData.hraFixedRateToDate && isWithinInterval(currentDate, { start: sideData.hraFixedRateFromDate, end: sideData.hraFixedRateToDate })) {
+              fullMonthHra = hraBase * (sideData.hraFixedRate / 100);
+            } else {
+              const hraRateDetails = getRateForDate(hraRates, currentDate, { daRate: effectiveDaRate });
+              if (hraRateDetails) {
+                fullMonthHra = hraBase * (hraRateDetails.rate / 100);
+                if (hraRateDetails.minAmount && hraRateDetails.minAmount > 0) {
+                  fullMonthHra = Math.max(fullMonthHra, hraRateDetails.minAmount);
+                }
               }
-              hra = fullMonthHra * monthProRataFactor;
             }
+            hra = fullMonthHra * prorationFactor;
           }
         }
       }
@@ -1310,27 +1315,38 @@ export default function Home() {
       if (sideData.taApplicable) {
         const prorationFactor = getProratedFactorForAllowance(sideData.taFromDate, sideData.taToDate);
         if (prorationFactor > 0) {
-          const taRateDetails = getRateForDate(taRates, currentDate, { basicPay: (side === 'paid' ? newDrawnTracker : newDueTracker), payLevel });
-          if (taRateDetails) {
-            let taBaseAmount = taRateDetails.rate;
-            if (sideData.doubleTaApplicable) {
-              taBaseAmount *= 2;
-              if (sideData.cpc === '7th' && taBaseAmount < 2250) {
-                taBaseAmount = 2250;
+          let taBaseAmount = 0;
+          if (sideData.taFixedRateApplicable && sideData.taFixedRate && sideData.taFixedRateFromDate && sideData.taFixedRateToDate && isWithinInterval(currentDate, { start: sideData.taFixedRateFromDate, end: sideData.taFixedRateToDate })) {
+            taBaseAmount = sideData.taFixedRate;
+          } else {
+            const taRateDetails = getRateForDate(taRates, currentDate, { basicPay: (side === 'paid' ? newDrawnTracker : newDueTracker), payLevel });
+            if (taRateDetails) {
+              taBaseAmount = taRateDetails.rate;
+              if (sideData.doubleTaApplicable) {
+                taBaseAmount *= 2;
+                if (sideData.cpc === '7th' && taBaseAmount < 2250) {
+                  taBaseAmount = 2250;
+                }
               }
             }
+          }
+          if (taBaseAmount > 0) {
             let fullMonthTa = taBaseAmount + (taBaseAmount * (effectiveDaRate / 100));
-            ta = fullMonthTa * monthProRataFactor;
+            ta = fullMonthTa * prorationFactor;
           }
         }
       }
 
       // Calculate Other Allowance
       let other = 0;
-      if (sideData.otherAllowance && sideData.otherAllowance > 0) {
+      let otherAmount = sideData.otherAllowance || 0;
+      if (sideData.otherAllowanceFixedRateApplicable && sideData.otherAllowanceFixedRate && sideData.otherAllowanceFixedRateFromDate && sideData.otherAllowanceFixedRateToDate && isWithinInterval(currentDate, { start: sideData.otherAllowanceFixedRateFromDate, end: sideData.otherAllowanceFixedRateToDate })) {
+        otherAmount = sideData.otherAllowanceFixedRate;
+      }
+      if (otherAmount > 0) {
         const prorationFactor = getProratedFactorForAllowance(sideData.otherAllowanceFromDate, sideData.otherAllowanceToDate);
         if (prorationFactor > 0) {
-          other = sideData.otherAllowance * monthProRataFactor;
+          other = otherAmount * prorationFactor;
         }
       }
 

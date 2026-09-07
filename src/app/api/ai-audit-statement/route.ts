@@ -130,13 +130,49 @@ export async function POST(req: NextRequest) {
       description: "DA percentages conform with Ministry of Finance (Department of Expenditure) notifications for the active period.",
     });
 
-    // Check 4: HRA & NPA Regulatory Rule Check
+    // Check 4: HRA & Non-Practicing Allowance (NPA) Rules
+    let hraStatus: "pass" | "warning" = "pass";
+    let hraDescription = activeCpc === "7th"
+      ? "7th CPC Rule Confirmed: HRA is drawn on Basic Pay only (NPA excluded from HRA base)."
+      : "6th CPC Rule Confirmed: HRA is calculated on Basic Pay + NPA.";
+
+    // Validate mid-month pro-rata HRA if fromDate or toDate is specified
+    const standardHraRates = [0.08, 0.09, 0.10, 0.16, 0.18, 0.20, 0.24, 0.27, 0.30];
+    const monthNamesList = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    periodList.forEach((p: any) => {
+      const f = p.formData || {};
+      ["paid", "toBePaid"].forEach((sideKey) => {
+        const side = f[sideKey];
+        if (side?.hraApplicable && side?.hraFromDate) {
+          const fromDate = new Date(side.hraFromDate);
+          if (!isNaN(fromDate.getTime()) && fromDate.getDate() > 1) {
+            const monthStr = `${monthNamesList[fromDate.getMonth()]} ${String(fromDate.getFullYear()).slice(-2)}`;
+            const targetRow = rows.find((r: any) => r.month === monthStr);
+            if (targetRow) {
+              const comp = sideKey === "paid" ? targetRow.drawn : targetRow.due;
+              if (comp && comp.hra > 0 && comp.basic > 0) {
+                const ratio = comp.hra / comp.basic;
+                const daysInM = new Date(fromDate.getFullYear(), fromDate.getMonth() + 1, 0).getDate();
+                const expectedDays = daysInM - fromDate.getDate() + 1;
+                if (expectedDays < daysInM) {
+                  // If full month unprorated rate was applied despite partial month
+                  const matchesFullMonth = standardHraRates.some((rate) => Math.abs(ratio - rate) < 0.005);
+                  if (matchesFullMonth) {
+                    hraStatus = "warning";
+                    hraDescription = `Discrepancy detected in ${monthStr}: HRA appears calculated for the full month despite start date of ${fromDate.getDate()}-${monthStr}. Statutory pro-rata expected.`;
+                  }
+                }
+              }
+            }
+          }
+        }
+      });
+    });
+
     ruleChecklist.push({
       rule: "HRA & Non-Practicing Allowance (NPA) Rules",
-      status: "pass",
-      description: activeCpc === "7th"
-        ? "7th CPC Rule Confirmed: HRA is drawn on Basic Pay only (NPA excluded from HRA base)."
-        : "6th CPC Rule Confirmed: HRA is calculated on Basic Pay + NPA.",
+      status: hraStatus,
+      description: hraDescription,
     });
 
     // Check 5: Multi-Period & Refixation Consistency
@@ -366,7 +402,9 @@ AI Statement Audit Engine | Arrear Ease
       }
     }
 
-    const overallScore = mathAccurate && basicPayCompliant ? 100 : mathAccurate ? 95 : 80;
+    const hasWarnings = ruleChecklist.some((r) => r.status === "warning");
+    const hasFailures = ruleChecklist.some((r) => r.status === "fail");
+    const overallScore = !hasFailures && !hasWarnings ? 100 : !hasFailures ? 90 : 75;
     const overallStatus = overallScore === 100 ? "VERIFIED_ACCURATE" : overallScore >= 90 ? "WARNINGS_DETECTED" : "DISCREPANCIES_FOUND";
 
     return NextResponse.json({
