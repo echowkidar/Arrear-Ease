@@ -131,6 +131,8 @@ const ProtectedUsersPage = () => {
   const [customCredits, setCustomCredits] = React.useState<number>(10);
   const [planExpiryDays, setPlanExpiryDays] = React.useState<number>(365);
   const [isSavingPlan, setIsSavingPlan] = React.useState(false);
+  const [userToDelete, setUserToDelete] = React.useState<AppUser | null>(null);
+  const [isDeletingUser, setIsDeletingUser] = React.useState(false);
 
   const { toast } = useToast();
   const { user, authStatus } = useAuth();
@@ -307,6 +309,7 @@ const ProtectedUsersPage = () => {
   };
 
   const deleteUserAndStatements = async (uid: string) => {
+    setIsDeletingUser(true);
     setIsLoading(true);
     try {
       const batch = writeBatch(db!);
@@ -326,10 +329,12 @@ const ProtectedUsersPage = () => {
         title: "User deleted",
         description: "User profile and all associated arrear statements removed.",
       });
+      setUserToDelete(null);
     } catch (error) {
       console.error("Error deleting user:", error);
       toast({ variant: "destructive", title: "Failed to delete user" });
     }
+    setIsDeletingUser(false);
     setIsLoading(false);
   };
 
@@ -579,34 +584,16 @@ const ProtectedUsersPage = () => {
                                   <Edit className="h-3.5 w-3.5" />
                                 </Button>
 
-                                <AlertDialog>
-                                  <AlertDialogTrigger asChild>
-                                    <Button
-                                      size="sm"
-                                      variant="destructive"
-                                      className="h-8 w-8 p-0"
-                                      disabled={isLoading || !!editingUser || u.email === "amulivealigarh@gmail.com"}
-                                      title="Delete User"
-                                    >
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    </Button>
-                                  </AlertDialogTrigger>
-                                  <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                      <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                                      <AlertDialogDescription>
-                                        This will permanently delete the user's profile and all their saved arrear
-                                        statements. This action cannot be undone.
-                                      </AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                      <AlertDialogAction onClick={() => deleteUserAndStatements(u.uid)}>
-                                        Delete
-                                      </AlertDialogAction>
-                                    </AlertDialogFooter>
-                                  </AlertDialogContent>
-                                </AlertDialog>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  className="h-8 w-8 p-0"
+                                  disabled={isLoading || isDeletingUser || !!editingUser || u.email === "amulivealigarh@gmail.com"}
+                                  title="Delete User"
+                                  onClick={() => setUserToDelete(u)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
                               </div>
                             </TableCell>
                           </TableRow>
@@ -680,6 +667,49 @@ const ProtectedUsersPage = () => {
           </Card>
         </TabsContent>
       </Tabs>
+      {/* Delete User Confirmation Alert Dialog */}
+      <AlertDialog open={!!userToDelete} onOpenChange={(open) => { if (!open) setUserToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-rose-600 dark:text-rose-400">
+              <Trash2 className="h-5 w-5" /> Delete User Account?
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 pt-2 text-sm text-muted-foreground">
+                <p>
+                  Are you sure you want to permanently delete this user account? This will also remove all their saved arrear statements. This action cannot be undone.
+                </p>
+                {userToDelete && (
+                  <div className="rounded-md border p-3 bg-muted/40 text-foreground font-medium text-xs space-y-1">
+                    <div><span className="text-muted-foreground font-normal">Name:</span> {userToDelete.displayName || "N/A"}</div>
+                    <div><span className="text-muted-foreground font-normal">Email:</span> {userToDelete.email}</div>
+                    {userToDelete.phoneNumber && <div><span className="text-muted-foreground font-normal">Phone:</span> {userToDelete.phoneNumber}</div>}
+                    <div><span className="text-muted-foreground font-normal">Plan:</span> {userToDelete.subscriptionPlan?.toUpperCase() || "FREE"} ({userToDelete.credits ?? 0} Credits)</div>
+                  </div>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingUser} onClick={() => setUserToDelete(null)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-rose-600 hover:bg-rose-700 text-white focus:ring-rose-600"
+              disabled={isDeletingUser}
+              onClick={async (e) => {
+                e.preventDefault();
+                if (userToDelete) {
+                  await deleteUserAndStatements(userToDelete.uid);
+                }
+              }}
+            >
+              {isDeletingUser ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              Yes, Delete User
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   );
 };

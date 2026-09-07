@@ -45,6 +45,8 @@ import {
   Plus,
   TableProperties,
   ShieldCheck,
+  ArrowRightLeft,
+  UserCheck,
 } from "lucide-react";
 import { db, isFirebaseConfigured } from "@/lib/firebase";
 import { collection, addDoc, getDocs, getDoc, doc, deleteDoc, Timestamp, writeBatch, setDoc, updateDoc, query, where, serverTimestamp } from "firebase/firestore";
@@ -95,6 +97,16 @@ import {
   DialogClose,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Form,
   FormControl,
@@ -525,6 +537,37 @@ export default function Home() {
   const { hasCredits, isUnlimited, consumeCredit, credits } = useSubscription();
 
   const isAdmin = user?.email === "amulivealigarh@gmail.com";
+
+  const [registeredUsers, setRegisteredUsers] = React.useState<{ uid: string; displayName: string; email: string }[]>([]);
+  const [assignedOwner, setAssignedOwner] = React.useState<{ uid: string; displayName: string; email: string } | null>(null);
+  const [reassignStmt, setReassignStmt] = React.useState<SavedStatement | null>(null);
+  const [selectedNewOwnerUid, setSelectedNewOwnerUid] = React.useState<string>("admin");
+  const [isReassigning, setIsReassigning] = React.useState(false);
+  const [statementToDelete, setStatementToDelete] = React.useState<SavedStatement | null>(null);
+  const [isDeletingStatement, setIsDeletingStatement] = React.useState(false);
+
+  React.useEffect(() => {
+    if (authStatus === "authenticated" && isAdmin && dbConfigured && db) {
+      const fetchRegisteredUsers = async () => {
+        try {
+          const snap = await getDocs(collection(db!, "users"));
+          const usersList = snap.docs.map((docSnap) => {
+            const data = docSnap.data();
+            return {
+              uid: docSnap.id,
+              displayName: data.displayName || data.name || "User",
+              email: data.email || "",
+            };
+          });
+          usersList.sort((a, b) => (a.displayName || a.email).localeCompare(b.displayName || b.email));
+          setRegisteredUsers(usersList);
+        } catch (err) {
+          console.error("Failed to fetch registered users for admin:", err);
+        }
+      };
+      fetchRegisteredUsers();
+    }
+  }, [authStatus, isAdmin, dbConfigured]);
 
   const activeCols = React.useMemo(() => {
     if (!statement || !statement.rows || statement.rows.length === 0) {
@@ -1560,14 +1603,19 @@ export default function Home() {
 
     const docId = crypto.randomUUID();
     const now = new Date().toISOString();
+
+    const effectiveUserId = (isAdmin && assignedOwner?.uid) ? assignedOwner.uid : user.uid;
+    const effectiveUserName = (isAdmin && assignedOwner?.displayName) ? assignedOwner.displayName : (user.displayName || undefined);
+    const effectiveUserEmail = (isAdmin && assignedOwner?.email) ? assignedOwner.email : (user.email || undefined);
+
     const docToSave: SavedStatement = {
       ...statement,
       id: docId,
       savedAt: now,
       lastAccessedAt: now,
-      userId: user.uid,
-      userName: user.displayName || undefined,
-      userEmail: user.email || undefined,
+      userId: effectiveUserId,
+      userName: effectiveUserName,
+      userEmail: effectiveUserEmail,
     };
 
     const localStatements = getLocalStatements();
@@ -1754,14 +1802,28 @@ export default function Home() {
 
     setStatement(statementToSave);
 
+    const existingUserId = (statementToSave as any).userId || (statement as any)?.userId;
+    const existingUserName = (statementToSave as any).userName || (statement as any)?.userName;
+    const existingUserEmail = (statementToSave as any).userEmail || (statement as any)?.userEmail;
+
+    const effectiveUserId = isAdmin
+      ? (assignedOwner?.uid || existingUserId || user.uid)
+      : user.uid;
+    const effectiveUserName = isAdmin
+      ? (assignedOwner?.displayName || existingUserName || user.displayName || undefined)
+      : (user.displayName || undefined);
+    const effectiveUserEmail = isAdmin
+      ? (assignedOwner?.email || existingUserEmail || user.email || undefined)
+      : (user.email || undefined);
+
     const docToUpdate: Omit<SavedStatement, 'isLocal'> = {
       ...statementToSave,
       id: loadedStatementId,
       savedAt: new Date().toISOString(),
       lastAccessedAt: new Date().toISOString(),
-      userId: user.uid,
-      userName: user.displayName || undefined,
-      userEmail: user.email || undefined,
+      userId: effectiveUserId,
+      userName: effectiveUserName,
+      userEmail: effectiveUserEmail,
     };
 
     const localStatements = getLocalStatements();
@@ -1801,6 +1863,60 @@ export default function Home() {
     }
 
     setIsLoading(false);
+  };
+
+  const handleReassignStatement = async (statementId: string, newOwner: { uid: string; displayName: string; email: string }) => {
+    if (!isAdmin || !db || !dbConfigured) return;
+    setIsReassigning(true);
+    try {
+      const docRef = doc(db!, FIRESTORE_STATEMENTS_COLLECTION, statementId);
+      await updateDoc(docRef, {
+        userId: newOwner.uid,
+        userName: newOwner.displayName || undefined,
+        userEmail: newOwner.email || undefined,
+        lastAccessedAt: serverTimestamp(),
+      });
+
+      setSavedStatements(prev => prev.map(s => s.id === statementId ? {
+        ...s,
+        userId: newOwner.uid,
+        userName: newOwner.displayName,
+        userEmail: newOwner.email,
+      } : s));
+
+      const updatedLocalStatements = getLocalStatements().map(s => s.id === statementId ? {
+        ...s,
+        userId: newOwner.uid,
+        userName: newOwner.displayName,
+        userEmail: newOwner.email,
+      } : s);
+      saveLocalStatements(updatedLocalStatements);
+
+      if (loadedStatementId === statementId) {
+        setAssignedOwner(newOwner);
+        setStatement(prev => prev ? {
+          ...prev,
+          userId: newOwner.uid,
+          userName: newOwner.displayName,
+          userEmail: newOwner.email,
+        } : null);
+      }
+
+      toast({
+        title: "Owner Reassigned",
+        description: `Statement successfully assigned to ${newOwner.displayName} (${newOwner.email}).`,
+      });
+      setReassignStmt(null);
+    } catch (err) {
+      console.error("Failed to reassign statement owner:", err);
+      toast({
+        variant: "destructive",
+        title: "Reassignment Failed",
+        description: "Could not reassign statement. Please try again.",
+      });
+    } finally {
+      setIsReassigning(false);
+    }
   };
 
   const handleCopy = () => {
@@ -1890,8 +2006,21 @@ export default function Home() {
     setStatement({
       ...fullyProcessedRest,
       employeeInfo: fullyProcessedInfo,
-      periods: periodsToLoad
+      periods: periodsToLoad,
+      userId: statementToLoad.userId,
+      userName: statementToLoad.userName,
+      userEmail: statementToLoad.userEmail,
     });
+
+    if (statementToLoad.userId) {
+      setAssignedOwner({
+        uid: statementToLoad.userId,
+        displayName: statementToLoad.userName || "User",
+        email: statementToLoad.userEmail || "",
+      });
+    } else {
+      setAssignedOwner(null);
+    }
     
     setCurrentPeriodIndex(0);
     setLoadedStatementId(statementToLoad.id);
@@ -1918,43 +2047,48 @@ export default function Home() {
   }
 
   const deleteStatement = async (id: string, isLocal: boolean | undefined) => {
+    setIsDeletingStatement(true);
     setIsLoading(true);
+    try {
+      const localStatements = getLocalStatements();
+      saveLocalStatements(localStatements.filter(s => s.id !== id));
+      setSavedStatements(prev => prev.filter(s => s.id !== id));
 
-
-    const localStatements = getLocalStatements();
-    saveLocalStatements(localStatements.filter(s => s.id !== id));
-
-    if (isOnline && dbConfigured && db && !isLocal) {
-      try {
-        await deleteDoc(doc(db, FIRESTORE_STATEMENTS_COLLECTION, id));
+      if (isOnline && dbConfigured && db && !isLocal) {
+        try {
+          await deleteDoc(doc(db!, FIRESTORE_STATEMENTS_COLLECTION, id));
+          toast({
+            title: "Arrear Deleted",
+            description: "The statement has been removed from the database and local storage.",
+          });
+        } catch (error) {
+          console.error("Failed to delete statement from Firestore:", error);
+          toast({
+            variant: "destructive",
+            title: "Delete Failed",
+            description: "Could not delete from database, but removed locally.",
+          });
+        }
+      } else {
         toast({
           title: "Arrear Deleted",
-          description: "The statement has been removed from the database and local storage.",
-        });
-      } catch (error) {
-        console.error("Failed to delete statement from Firestore:", error);
-        toast({
-          variant: "destructive",
-          title: "Delete Failed",
-          description: "Could not delete from database, but removed locally.",
+          description: "The saved arrear statement has been removed from local storage.",
         });
       }
-    } else {
-      toast({
-        title: "Arrear Deleted",
-        description: "The saved arrear statement has been removed from local storage.",
-      });
-    }
 
-    if (loadedStatementId === id) {
-      setLoadedStatementId(null);
-      setStatement(null);
-      form.reset();
-    }
+      if (loadedStatementId === id) {
+        setLoadedStatementId(null);
+        setStatement(null);
+        form.reset();
+      }
 
-    await fetchSavedStatements();
-    setIsLoading(false);
-  }
+      await fetchSavedStatements();
+    } finally {
+      setIsLoading(false);
+      setIsDeletingStatement(false);
+      setStatementToDelete(null);
+    }
+  };
 
   const handleClearForm = () => {
     form.reset({
@@ -1971,6 +2105,7 @@ export default function Home() {
     });
     setStatement(null);
     setLoadedStatementId(null);
+    setAssignedOwner(null);
     toast({ title: "Form Cleared", description: "All fields have been reset." });
   };
 
@@ -2904,13 +3039,35 @@ export default function Home() {
                           <TableCell className="font-semibold text-right">
                             {s.totals?.difference?.toLocaleString('en-IN') || 0}
                           </TableCell>
-                          {isAdmin && <TableCell className="hidden lg:table-cell text-xs">{s.userName || 'N/A'}<br /><span className="text-muted-foreground">{s.userEmail}</span></TableCell>}
+                          {isAdmin && (
+                            <TableCell className="hidden lg:table-cell text-xs">
+                              <div className="flex items-center justify-between gap-1">
+                                <div>
+                                  <span className="font-medium text-foreground">{s.userName || 'N/A'}</span>
+                                  <br />
+                                  <span className="text-muted-foreground">{s.userEmail}</span>
+                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 w-7 p-0 text-sky-600 hover:text-sky-700 hover:bg-sky-50 dark:hover:bg-sky-950/40"
+                                  title="Reassign to another user"
+                                  onClick={() => {
+                                    setReassignStmt(s);
+                                    setSelectedNewOwnerUid(s.userId || "admin");
+                                  }}
+                                >
+                                  <ArrowRightLeft className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          )}
                           <TableCell className="hidden sm:table-cell whitespace-nowrap text-xs text-muted-foreground">{formatDisplayDate(s.savedAt)}</TableCell>
                           <TableCell className="hidden 2xl:table-cell whitespace-nowrap text-xs text-muted-foreground">{formatDisplayDate(s.lastAccessedAt)}</TableCell>
                           <TableCell className="text-right sticky right-0 bg-background group-hover:bg-muted/50 shadow-[-10px_0_15px_-3px_rgba(0,0,0,0.05)] z-10">
                             <div className="flex justify-end gap-2">
-                              <Button size="sm" onClick={() => loadStatement(s)} disabled={isLoading}>Load</Button>
-                              <Button size="sm" variant="destructive" onClick={() => deleteStatement(s.id, s.isLocal)} disabled={isLoading}><Trash2 className="h-4 w-4" /></Button>
+                              <Button size="sm" onClick={() => loadStatement(s)} disabled={isLoading || isDeletingStatement}>Load</Button>
+                              <Button size="sm" variant="destructive" onClick={() => setStatementToDelete(s)} disabled={isLoading || isDeletingStatement} title="Delete statement"><Trash2 className="h-4 w-4" /></Button>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -2924,6 +3081,122 @@ export default function Home() {
               </div>
             </DialogContent>
           </Dialog>
+
+          {/* Admin Reassign Owner Dialog */}
+          <Dialog open={!!reassignStmt} onOpenChange={(open) => { if (!open) setReassignStmt(null); }}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <ArrowRightLeft className="h-5 w-5 text-sky-600" /> Reassign Arrear Owner
+                </DialogTitle>
+                <DialogDescription>
+                  Change which user account this arrear statement belongs to.
+                </DialogDescription>
+              </DialogHeader>
+              {reassignStmt && (
+                <div className="space-y-4 py-2">
+                  <div className="rounded-md border p-3 bg-muted/30 text-xs space-y-1">
+                    <div><span className="font-semibold">Employee:</span> {reassignStmt.employeeInfo.employeeId} {reassignStmt.employeeInfo.employeeName}</div>
+                    <div><span className="font-semibold">Current Owner:</span> {reassignStmt.userName || "N/A"} ({reassignStmt.userEmail || "No Email"})</div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="newOwnerSelect" className="text-xs font-semibold">Select New User / Owner:</Label>
+                    <Select
+                      value={selectedNewOwnerUid}
+                      onValueChange={setSelectedNewOwnerUid}
+                    >
+                      <SelectTrigger id="newOwnerSelect" className="w-full text-xs">
+                        <SelectValue placeholder="Select user..." />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-60">
+                        <SelectItem value="admin" className="text-xs">
+                          Admin (Self - {user?.displayName || "Zafar Ali Khan"})
+                        </SelectItem>
+                        {registeredUsers.filter(u => u.email !== "amulivealigarh@gmail.com").map(u => (
+                          <SelectItem key={u.uid} value={u.uid} className="text-xs">
+                            {u.displayName || "User"} ({u.email})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setReassignStmt(null)} disabled={isReassigning}>
+                  Cancel
+                </Button>
+                <Button
+                  className="bg-sky-600 hover:bg-sky-700 text-white"
+                  disabled={isReassigning}
+                  onClick={() => {
+                    if (!reassignStmt) return;
+                    if (selectedNewOwnerUid === "admin") {
+                      handleReassignStatement(reassignStmt.id, {
+                        uid: user!.uid,
+                        displayName: user!.displayName || "Admin",
+                        email: user!.email || "amulivealigarh@gmail.com",
+                      });
+                    } else {
+                      const target = registeredUsers.find(u => u.uid === selectedNewOwnerUid);
+                      if (target) {
+                        handleReassignStatement(reassignStmt.id, target);
+                      }
+                    }
+                  }}
+                >
+                  {isReassigning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserCheck className="mr-2 h-4 w-4" />}
+                  Confirm Reassign
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Delete Statement Confirmation Alert Dialog */}
+          <AlertDialog open={!!statementToDelete} onOpenChange={(open) => { if (!open) setStatementToDelete(null); }}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center gap-2 text-rose-600 dark:text-rose-400">
+                  <Trash2 className="h-5 w-5" /> Delete Arrear Statement?
+                </AlertDialogTitle>
+                <AlertDialogDescription asChild>
+                  <div className="space-y-3 pt-2 text-sm text-muted-foreground">
+                    <p>
+                      Are you sure you want to permanently delete this saved arrear statement? This action cannot be undone.
+                    </p>
+                    {statementToDelete && (
+                      <div className="rounded-md border p-3 bg-muted/40 text-foreground font-medium text-xs space-y-1">
+                        <div><span className="text-muted-foreground font-normal">Employee ID:</span> {statementToDelete.employeeInfo?.employeeId || "N/A"}</div>
+                        <div><span className="text-muted-foreground font-normal">Name:</span> {statementToDelete.employeeInfo?.employeeName || "N/A"}</div>
+                        <div><span className="text-muted-foreground font-normal">Period:</span> {statementToDelete.employeeInfo?.fromDate ? format(new Date(statementToDelete.employeeInfo.fromDate), "dd-MM-yyyy") : "-"} to {statementToDelete.employeeInfo?.toDate ? format(new Date(statementToDelete.employeeInfo.toDate), "dd-MM-yyyy") : "-"}</div>
+                        <div><span className="text-muted-foreground font-normal">Net Difference:</span> Rs. {statementToDelete.totals?.difference?.toLocaleString('en-IN') || 0}</div>
+                        {statementToDelete.userEmail && <div><span className="text-muted-foreground font-normal">Saved By:</span> {statementToDelete.userName || "User"} ({statementToDelete.userEmail})</div>}
+                      </div>
+                    )}
+                  </div>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={isDeletingStatement} onClick={() => setStatementToDelete(null)}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-rose-600 hover:bg-rose-700 text-white focus:ring-rose-600"
+                  disabled={isDeletingStatement}
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    if (statementToDelete) {
+                      await deleteStatement(statementToDelete.id, statementToDelete.isLocal);
+                    }
+                  }}
+                >
+                  {isDeletingStatement ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                  Yes, Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           {authStatus === 'authenticated' && isAdmin && (
             <>
               <Button 
@@ -2955,12 +3228,44 @@ export default function Home() {
               <Card id="employee-details-card" className="border-t-4 border-t-blue-500 border-border/80 shadow-sm hover:shadow-md transition-shadow bg-card flex flex-col justify-between">
                 <div>
                   <CardHeader className="pb-3 border-b bg-blue-50/40 dark:bg-blue-950/20">
-                    <CardTitle className="flex items-center gap-2.5 text-base font-semibold text-blue-950 dark:text-blue-100">
-                      <span className="p-1.5 rounded-lg bg-blue-600 text-white shadow-sm shadow-blue-500/20">
-                        <User className="h-4 w-4" />
-                      </span> 
-                      Employee Details
-                    </CardTitle>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <CardTitle className="flex items-center gap-2.5 text-base font-semibold text-blue-950 dark:text-blue-100">
+                        <span className="p-1.5 rounded-lg bg-blue-600 text-white shadow-sm shadow-blue-500/20">
+                          <User className="h-4 w-4" />
+                        </span> 
+                        Employee Details
+                      </CardTitle>
+                      {authStatus === 'authenticated' && isAdmin && (
+                        <div className="flex items-center gap-1.5 bg-background/90 border border-blue-200 dark:border-blue-900/60 rounded-md px-2.5 py-1 text-xs shadow-2xs">
+                          <span className="font-semibold text-muted-foreground whitespace-nowrap">Assigned User:</span>
+                          <Select
+                            value={assignedOwner?.uid || "admin"}
+                            onValueChange={(val) => {
+                              if (val === "admin") {
+                                setAssignedOwner(null);
+                              } else {
+                                const u = registeredUsers.find((r) => r.uid === val);
+                                if (u) setAssignedOwner(u);
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="h-7 border-0 bg-transparent text-xs font-medium focus:ring-0 p-0 text-blue-700 dark:text-blue-300 w-auto min-w-[140px] max-w-[220px]">
+                              <SelectValue placeholder="Select Owner" />
+                            </SelectTrigger>
+                            <SelectContent className="max-h-60 max-w-[320px]">
+                              <SelectItem value="admin" className="text-xs">
+                                Admin (Self - {user?.displayName || "Zafar Ali Khan"})
+                              </SelectItem>
+                              {registeredUsers.filter((u) => u.email !== "amulivealigarh@gmail.com").map((u) => (
+                                <SelectItem key={u.uid} value={u.uid} className="text-xs">
+                                  {u.displayName || "User"} ({u.email})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                    </div>
                   </CardHeader>
                   <CardContent className="space-y-4 pt-4">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
