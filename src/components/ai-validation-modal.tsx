@@ -22,6 +22,7 @@ export function AIValidationModal({ isOpen, onClose, data, onConfirm }: AIValida
   const [formData, setFormData] = useState<any>(data || {});
   const [fromDateOpen, setFromDateOpen] = useState(false);
   const [refixedDateOpen, setRefixedDateOpen] = useState(false);
+  const [paidRefixedDateOpen, setPaidRefixedDateOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -232,7 +233,66 @@ export function AIValidationModal({ isOpen, onClose, data, onConfirm }: AIValida
                   className={isInvalid(formData.paid?.incrementMonth) ? 'border-red-500 dark:border-red-400' : ''}
                 />
               </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="paid.refixedBasicPay" className="dark:text-orange-100">Re-fixed Basic Pay</Label>
+                <Input 
+                  id="paid.refixedBasicPay" 
+                  type="number"
+                  value={formData.paid?.refixedBasicPay || ''} 
+                  onChange={(e) => handleChange('paid.refixedBasicPay', parseFloat(e.target.value) || 0)}
+                  className={isInvalid(formData.paid?.refixedBasicPay) ? 'border-yellow-500 dark:border-yellow-400 bg-yellow-50 dark:bg-yellow-950/20' : ''}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="paid.refixedBasicPayDate" className="dark:text-orange-100">Re-fixed Date</Label>
+                <Popover open={paidRefixedDateOpen} onOpenChange={setPaidRefixedDateOpen}>
+                  <PopoverTrigger asChild>
+                    <Button 
+                      variant="outline" 
+                      className={cn("w-full justify-start text-left font-normal", 
+                        isInvalid(formData.paid?.refixedBasicPayDate) ? 'border-yellow-500 dark:border-yellow-400 bg-yellow-50 dark:bg-yellow-950/20' : 'bg-white dark:bg-orange-950/40 border-input',
+                        !formData.paid?.refixedBasicPayDate && "text-muted-foreground")}
+                    >
+                      <CalendarDays className="mr-2 h-4 w-4" />
+                      {formData.paid?.refixedBasicPayDate ? format(new Date(formData.paid.refixedBasicPayDate), "dd-MM-yyyy") : <span>Select Date</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={formData.paid?.refixedBasicPayDate ? new Date(formData.paid.refixedBasicPayDate) : undefined}
+                      onSelect={(date) => {
+                        if (date) {
+                          handleChange('paid.refixedBasicPayDate', format(date, 'yyyy-MM-dd'));
+                          setPaidRefixedDateOpen(false);
+                        }
+                      }}
+                      initialFocus
+                      captionLayout="dropdown-buttons"
+                      fromYear={1990}
+                      toYear={2050}
+                    />
+                    <div className="p-2 border-t border-border">
+                      <Button 
+                        variant="ghost" 
+                        className="w-full text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          handleChange('paid.refixedBasicPayDate', '');
+                          setPaidRefixedDateOpen(false);
+                        }}
+                      >
+                        Clear Date
+                      </Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
             </div>
+            <p className="text-xs text-orange-700/80 dark:text-orange-300/80 mt-2 font-medium leading-none">
+              * Leave Re-fixed Basic Pay and Date empty if no re-fixation exists on existing pay
+            </p>
           </div>
 
           {/* To Be Paid */}

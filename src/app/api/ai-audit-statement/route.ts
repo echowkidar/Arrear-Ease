@@ -178,7 +178,8 @@ export async function POST(req: NextRequest) {
     // Check 5: Multi-Period & Refixation Consistency
     let hasRefixation = false;
     periodList.forEach((p: any) => {
-      if (p.formData?.toBePaid?.refixedBasicPay && p.formData?.toBePaid?.refixedBasicPay > 0) {
+      if ((p.formData?.toBePaid?.refixedBasicPay && p.formData?.toBePaid?.refixedBasicPay > 0) ||
+          (p.formData?.paid?.refixedBasicPay && p.formData?.paid?.refixedBasicPay > 0)) {
         hasRefixation = true;
       }
     });

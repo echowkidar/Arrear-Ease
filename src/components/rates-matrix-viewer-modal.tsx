@@ -875,7 +875,7 @@ export function RatesMatrixViewerModal({
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-4 pt-1 text-xs text-muted-foreground">
-                  Annual Increment was <strong>3%</strong> calculated on (Pay in Pay Band + Grade Pay), rounded off to next multiple of 10.
+                  Annual Increment was <strong>3%</strong> calculated on (Pay in Pay Band + Grade Pay), rounded off to next multiple of 10 (paise ignored per MoF OM 29.01.2009).
                 </CardContent>
               </Card>
 

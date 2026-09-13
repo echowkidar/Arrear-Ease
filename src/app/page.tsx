@@ -202,6 +202,14 @@ const formSchema = z.object({
 }, {
   message: "Refixation date is required if refixed basic pay is provided.",
   path: ["toBePaid", "refixedBasicPayDate"],
+}).refine(data => {
+  if (data.paid.refixedBasicPay && data.paid.refixedBasicPay > 0 && !data.paid.refixedBasicPayDate) {
+    return false;
+  }
+  return true;
+}, {
+  message: "Refixation date is required if refixed basic pay is provided.",
+  path: ["paid", "refixedBasicPayDate"],
 });
 
 type ArrearFormData = z.infer<typeof formSchema>;
@@ -863,6 +871,7 @@ export default function Home() {
         otherAllowance: '' as any,
         otherAllowanceName: "",
         otherAllowanceFixedRateApplicable: false,
+        refixedBasicPay: '' as any,
       },
       toBePaid: {
         cpc: "7th" as any,
@@ -1192,8 +1201,12 @@ export default function Home() {
           }
 
           if (newBasic === null) {
-            // 6th CPC (and fallback): Annual increment @ 3% of Basic Pay, rounded off UP to the next multiple of 10
-            newBasic = Math.ceil((trackerBasic * 1.03) / 10) * 10;
+            // 6th CPC (and fallback): Annual increment @ 3% of Basic Pay (Pay in Pay Band + Grade Pay).
+            // Per Rule 9 & Rule 13 of CCS (RP) Rules, 2008 and Ministry of Finance OM No. 1/1/2008-IC dated 29.01.2009:
+            // "paise should be ignored, but any amount of a rupee or more should be rounded off to next multiple of 10."
+            const incrementAmount = Math.floor(trackerBasic * 0.03); // Discard/ignore paise
+            const roundedIncrement = Math.ceil(incrementAmount / 10) * 10; // Round off to next multiple of 10
+            newBasic = trackerBasic + roundedIncrement;
           }
 
           if (newBasic !== null) {
@@ -1218,6 +1231,27 @@ export default function Home() {
 
     ({ newTrackerValue: newDrawnTracker, basicForMonth: drawnBasicForMonth } = handleIncrement('paid', drawnBasicTracker));
     ({ newTrackerValue: newDueTracker, basicForMonth: dueBasicForMonth } = handleIncrement('toBePaid', dueBasicTracker));
+
+    if (data.paid.refixedBasicPay && data.paid.refixedBasicPay > 0 && data.paid.refixedBasicPayDate) {
+      const refixDate = data.paid.refixedBasicPayDate;
+      if (currentDate >= startOfMonth(refixDate)) {
+        if (isWithinInterval(refixDate, { start: monthStart, end: monthEnd })) {
+          const refixDay = refixDate.getDate();
+          const basicBeforeRefix = drawnBasicForMonth;
+
+          if (refixDay > 1) {
+            const daysBefore = refixDay - 1;
+            const daysAfter = daysInMonth - daysBefore;
+            drawnBasicForMonth = ((basicBeforeRefix * daysBefore) + (data.paid.refixedBasicPay * daysAfter)) / daysInMonth;
+          } else {
+            drawnBasicForMonth = data.paid.refixedBasicPay;
+          }
+          newDrawnTracker = data.paid.refixedBasicPay;
+        } else if (currentDate > refixDate) {
+          drawnBasicForMonth = newDrawnTracker;
+        }
+      }
+    }
 
     if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPay > 0 && data.toBePaid.refixedBasicPayDate) {
       const refixDate = data.toBePaid.refixedBasicPayDate;
@@ -1294,10 +1328,18 @@ export default function Home() {
       if (sideData.npaApplicable) {
         if (is6thCpc) {
           fullMonthNpaCalculated = fullMonthBasic * (sixthCpcConfig.npa6thRate / 100);
+          // 6th CPC Ceiling: Basic Pay + NPA shall not exceed ₹85,000 per month
+          if (fullMonthBasic + fullMonthNpaCalculated > 85000) {
+            fullMonthNpaCalculated = Math.max(0, 85000 - fullMonthBasic);
+          }
         } else {
           const npaRateDetails = getRateForDate(npaRates, currentDate);
           if (npaRateDetails) {
             fullMonthNpaCalculated = fullMonthBasic * (npaRateDetails.rate / 100);
+          }
+          // 7th CPC Ceiling: Basic Pay + NPA shall not exceed ₹2,37,500 per month (MoF OM dated 07.07.2017)
+          if (fullMonthBasic + fullMonthNpaCalculated > 237500) {
+            fullMonthNpaCalculated = Math.max(0, 237500 - fullMonthBasic);
           }
         }
         const prorationFactor = getProratedFactorForAllowance(sideData.npaFromDate, sideData.npaToDate);
@@ -1683,12 +1725,16 @@ export default function Home() {
         basicPay: '' as any,
         payLevel: undefined,
         incrementMonth: undefined,
+        refixedBasicPay: '' as any,
+        refixedBasicPayDate: undefined,
       },
       toBePaid: {
         ...currentData.toBePaid,
         basicPay: '' as any,
         payLevel: undefined,
         incrementMonth: undefined,
+        refixedBasicPay: '' as any,
+        refixedBasicPayDate: undefined,
       }
     });
     
@@ -2100,7 +2146,7 @@ export default function Home() {
       toDate: undefined,
       payFixationRef: "",
       remark: "",
-      paid: { cpc: "7th" as any, basicPay: '' as any, payLevel: undefined, incrementMonth: undefined, daApplicable: true, hraApplicable: true, npaApplicable: false, taApplicable: false, doubleTaApplicable: false, otherAllowance: '' as any, otherAllowanceName: "" },
+      paid: { cpc: "7th" as any, basicPay: '' as any, payLevel: undefined, incrementMonth: undefined, daApplicable: true, hraApplicable: true, npaApplicable: false, taApplicable: false, doubleTaApplicable: false, otherAllowance: '' as any, otherAllowanceName: "", refixedBasicPay: '' as any },
       toBePaid: { cpc: "7th" as any, basicPay: '' as any, payLevel: undefined, incrementMonth: undefined, daApplicable: true, hraApplicable: true, npaApplicable: false, taApplicable: false, doubleTaApplicable: false, otherAllowance: '' as any, otherAllowanceName: "", refixedBasicPay: '' as any },
     });
     setStatement(null);
@@ -2187,6 +2233,8 @@ export default function Home() {
       if (confirmedData.paid.cpc) form.setValue("paid.cpc", confirmedData.paid.cpc);
       if (confirmedData.paid.basicPay) form.setValue("paid.basicPay", confirmedData.paid.basicPay);
       if (confirmedData.paid.payLevel) form.setValue("paid.payLevel", confirmedData.paid.payLevel);
+      if (confirmedData.paid.refixedBasicPay) form.setValue("paid.refixedBasicPay", confirmedData.paid.refixedBasicPay);
+      if (confirmedData.paid.refixedBasicPayDate) form.setValue("paid.refixedBasicPayDate", new Date(confirmedData.paid.refixedBasicPayDate));
       if (confirmedData.paid.incrementMonth) form.setValue("paid.incrementMonth", confirmedData.paid.incrementMonth);
     }
     
@@ -2495,59 +2543,57 @@ export default function Home() {
                 </div>
               )}
             </div>
-            {type === 'toBePaid' && (
-              <div className="space-y-4 rounded-md border p-4 bg-muted/20">
-                <h4 className="font-medium">Pay Refixation (Optional)</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <FormField control={form.control} name="toBePaid.refixedBasicPay" render={({ field, fieldState }) => (
-                    <FormItem>
-                      <FormLabel>Refixed Basic Pay</FormLabel>
-                      <FormControl>
-                        <Input 
-                          type="number" 
-                          placeholder="New basic pay" 
-                          {...field} 
-                          value={field.value ?? ''} 
-                          className={fieldState.error ? "border-red-500 focus-visible:ring-red-500" : ""}
-                          onBlur={(e) => {
-                            field.onBlur();
-                            const basicPay = Number(e.target.value);
-                            if (!basicPay || isNaN(basicPay)) {
-                              form.clearErrors(`toBePaid.refixedBasicPay`);
-                              return;
+            <div className="space-y-4 rounded-md border p-4 bg-muted/20">
+              <h4 className="font-medium">Pay Refixation (Optional)</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <FormField control={form.control} name={`${type}.refixedBasicPay`} render={({ field, fieldState }) => (
+                  <FormItem>
+                    <FormLabel>Refixed Basic Pay</FormLabel>
+                    <FormControl>
+                      <Input 
+                        type="number" 
+                        placeholder="New basic pay" 
+                        {...field} 
+                        value={field.value ?? ''} 
+                        className={fieldState.error ? "border-red-500 focus-visible:ring-red-500" : ""}
+                        onBlur={(e) => {
+                          field.onBlur();
+                          const basicPay = Number(e.target.value);
+                          if (!basicPay || isNaN(basicPay)) {
+                            form.clearErrors(`${type}.refixedBasicPay`);
+                            return;
+                          }
+                          const cpc = form.getValues(`${type}.cpc`);
+                          const payLevel = form.getValues(`${type}.payLevel`);
+                          if (cpc === "7th" && payLevel) {
+                            let levelData = cpcData['7th'].payLevels.find(l => l.level === payLevel);
+                            if (!levelData) {
+                               levelData = cpcData['7th'].payLevels.find(l => l.level.includes('/') && l.level.split('/').includes(payLevel));
                             }
-                            const cpc = form.getValues(`toBePaid.cpc`);
-                            const payLevel = form.getValues(`toBePaid.payLevel`);
-                            if (cpc === "7th" && payLevel) {
-                              let levelData = cpcData['7th'].payLevels.find(l => l.level === payLevel);
-                              if (!levelData) {
-                                 levelData = cpcData['7th'].payLevels.find(l => l.level.includes('/') && l.level.split('/').includes(payLevel));
-                              }
-                              if (levelData) {
-                                if (!levelData.values.includes(basicPay)) {
-                                  const suggestedLevels = cpcData['7th'].payLevels.filter(l => l.values.includes(basicPay)).map(l => l.level);
-                                  setBasicPayWarning({ show: true, basicPay, payLevel, fieldName: `toBePaid.refixedBasicPay`, suggestedLevels });
-                                } else {
-                                  form.clearErrors(`toBePaid.refixedBasicPay`);
-                                }
+                            if (levelData) {
+                              if (!levelData.values.includes(basicPay)) {
+                                const suggestedLevels = cpcData['7th'].payLevels.filter(l => l.values.includes(basicPay)).map(l => l.level);
+                                setBasicPayWarning({ show: true, basicPay, payLevel, fieldName: `${type}.refixedBasicPay`, suggestedLevels });
+                              } else {
+                                form.clearErrors(`${type}.refixedBasicPay`);
                               }
                             }
-                          }}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="toBePaid.refixedBasicPayDate" render={({ field }) => (
-                    <FormItem className="flex flex-col">
-                      <FormLabel>Refixation Date</FormLabel>
-                      <FormDateInput field={field} label="Effective Date" />
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                </div>
+                          }
+                        }}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name={`${type}.refixedBasicPayDate`} render={({ field }) => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel>Refixation Date</FormLabel>
+                    <FormDateInput field={field} label="Effective Date" />
+                    <FormMessage />
+                  </FormItem>
+                )} />
               </div>
-            )}
+            </div>
           </div>
           <div className="space-y-4">
             <div className="space-y-4 rounded-md border p-4">
@@ -2817,7 +2863,7 @@ export default function Home() {
             <Button onClick={() => {
               if (basicPayWarning?.fieldName) {
                 form.setError(basicPayWarning.fieldName, { type: "manual", message: "Invalid basic pay for selected level." });
-                if (basicPayWarning.fieldName !== 'toBePaid.refixedBasicPay') {
+                if (!basicPayWarning.fieldName.endsWith('refixedBasicPay')) {
                   const payLevelFieldName = basicPayWarning.fieldName.replace('basicPay', 'payLevel') as any;
                   form.setError(payLevelFieldName, { type: "manual", message: "Invalid level for basic pay." });
                 }
