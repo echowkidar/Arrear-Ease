@@ -235,12 +235,16 @@
   }
 
   .printable-area .signature-section {
-    page-break-inside: avoid;
-    break-inside: avoid;
-    page-break-before: avoid;
-    break-before: avoid;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
     margin-top: 1.5rem;
     color: #000000 !important;
+  }
+
+  .printable-area .signature-section table,
+  .printable-area .signature-section .signature-block {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 
   .printable-area .signature-section * {

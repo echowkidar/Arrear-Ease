@@ -3671,7 +3671,11 @@ export default function Home() {
                     {/* Financial Year Breakup */}
                     {statement.rows.length > 0 && (
                       <div className="mb-6 w-full print:w-full text-xs">
-                        <div className="font-bold pb-2 mb-2 w-max pr-4">Financial Year Breakup (Difference)</div>
+                        <div className="font-bold pb-2 mb-2 w-max pr-4">
+                          {statement.totals.difference < 0 
+                            ? "Financial Year Breakup (Recovery / Difference)" 
+                            : "Financial Year Breakup (Difference)"}
+                        </div>
                         {(() => {
                           const breakdown: Record<string, number> = {};
                           statement.rows.forEach(row => {
@@ -3704,11 +3708,11 @@ export default function Home() {
                                 {chunkedRows.map((row, idx) => (
                                   <TableRow key={idx} className="border-b border-black hover:bg-transparent">
                                     <TableCell className="border-r border-black text-center py-1 h-8">{row[0] ? `FY ${row[0][0]}` : ''}</TableCell>
-                                    <TableCell className="border-r border-black text-right py-1 h-8 pr-4 font-semibold">{row[0] ? row[0][1] : ''}</TableCell>
+                                    <TableCell className="border-r border-black text-right py-1 h-8 pr-4 font-semibold">{row[0] ? Number(row[0][1]).toLocaleString('en-IN') : ''}</TableCell>
                                     <TableCell className="border-r border-black text-center py-1 h-8">{row[1] ? `FY ${row[1][0]}` : ''}</TableCell>
-                                    <TableCell className="border-r border-black text-right py-1 h-8 pr-4 font-semibold">{row[1] ? row[1][1] : ''}</TableCell>
+                                    <TableCell className="border-r border-black text-right py-1 h-8 pr-4 font-semibold">{row[1] ? Number(row[1][1]).toLocaleString('en-IN') : ''}</TableCell>
                                     <TableCell className="border-r border-black text-center py-1 h-8">{row[2] ? `FY ${row[2][0]}` : ''}</TableCell>
-                                    <TableCell className="text-right py-1 h-8 pr-4 font-semibold">{row[2] ? row[2][1] : ''}</TableCell>
+                                    <TableCell className="text-right py-1 h-8 pr-4 font-semibold">{row[2] ? Number(row[2][1]).toLocaleString('en-IN') : ''}</TableCell>
                                   </TableRow>
                                 ))}
                               </TableBody>
@@ -3718,27 +3722,56 @@ export default function Home() {
                       </div>
                     )}
 
-                    {statement.totals.difference > 0 &&
-                      <div className="mb-4 print:mb-2 font-medium">
-                        Passed for pay of rupees {numberToWords(statement.totals.difference)}.
+                    <div className="signature-block">
+                      <div className="mb-4 print:mb-2 font-medium text-sm print:text-xs">
+                        {(() => {
+                          const empName = statement.employeeInfo?.employeeName || "Employee";
+                          const empId = statement.employeeInfo?.employeeId ? ` (ID: ${statement.employeeInfo.employeeId})` : '';
+                          const desig = statement.employeeInfo?.designation ? `, ${statement.employeeInfo.designation}` : '';
+                          const deptRaw = statement.employeeInfo?.department?.trim();
+                          const dept = deptRaw 
+                            ? (/^dept(\.?|\s+of)/i.test(deptRaw) || /^department(\.?|\s+of)/i.test(deptRaw) ? `, ${deptRaw}` : `, Department of ${deptRaw}`)
+                            : '';
+                          const empFullInfo = `${empName}${empId}${desig}${dept}`;
+
+                          if (statement.totals.difference > 0) {
+                            return (
+                              <>
+                                Passed for payment of Rs. {statement.totals.difference.toLocaleString('en-IN')}/- (Rupees {numberToWords(statement.totals.difference)}) in respect of {empFullInfo}.
+                              </>
+                            );
+                          } else if (statement.totals.difference < 0) {
+                            return (
+                              <>
+                                Passed for recovery of Rs. {Math.abs(statement.totals.difference).toLocaleString('en-IN')}/- (Rupees {numberToWords(Math.abs(statement.totals.difference))}) from {empFullInfo}.
+                              </>
+                            );
+                          } else {
+                            return (
+                              <>
+                                Passed for Nil Arrear in respect of {empFullInfo}.
+                              </>
+                            );
+                          }
+                        })()}
                       </div>
-                    }
-                    <div className="flex justify-between items-start mt-4">
-                      <div className="pt-6 print:pt-4 flex flex-col">
-                        <span>Date:</span>
-                        <span>{format(new Date(), "dd/MM/yyyy")}</span>
-                      </div>
-                      <div className="flex flex-col w-full max-w-2xl mx-auto gap-12 print:gap-16">
-                        <div className="grid grid-cols-3 gap-8 text-center">
-                          <div className="pt-6 print:pt-4">Dealing Assistant</div>
-                          <div className="pt-6 print:pt-4">Section Officer</div>
-                          <div className="pt-6 print:pt-4">Assistant Finance Officer (Salary)</div>
+                      <div className="flex justify-between items-start mt-4">
+                        <div className="pt-6 print:pt-4 flex flex-col">
+                          <span>Date:</span>
+                          <span>{format(new Date(), "dd/MM/yyyy")}</span>
                         </div>
-                        {statement.totals.difference > 50000 && (
-                          <div className="text-center">
-                            Joint Finance Officer (Salary)
+                        <div className="flex flex-col w-full max-w-2xl mx-auto gap-12 print:gap-16">
+                          <div className="grid grid-cols-3 gap-8 text-center">
+                            <div className="pt-6 print:pt-4">Dealing Assistant</div>
+                            <div className="pt-6 print:pt-4">Section Officer</div>
+                            <div className="pt-6 print:pt-4">Assistant Finance Officer (Salary)</div>
                           </div>
-                        )}
+                          {Math.abs(statement.totals.difference) > 50000 && (
+                            <div className="text-center">
+                              Joint Finance Officer (Salary)
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
