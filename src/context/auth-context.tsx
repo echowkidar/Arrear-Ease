@@ -91,6 +91,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         switch (error.code) {
             case 'auth/user-not-found':
             case 'auth/wrong-password':
+            case 'auth/invalid-credential':  // New Firebase SDK v9+ error code
+            case 'auth/invalid-email':
                 setAuthError('Invalid email or password. Please try again.');
                 break;
             case 'auth/email-already-in-use':
@@ -98,6 +100,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 break;
             case 'auth/weak-password':
                 setAuthError('The password is too weak. Please use a stronger password.');
+                break;
+            case 'auth/too-many-requests':
+                setAuthError('Too many failed attempts. Please wait a moment and try again.');
                 break;
             default:
                 setAuthError('An unexpected error occurred. Please try again.');
