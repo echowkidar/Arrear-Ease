@@ -47,6 +47,7 @@ export const cpcData = {
       { level: "AL-12", gradePay: 8000, payBand: "15600-39100", values: [] },
       { level: "13", gradePay: 8700, payBand: "37400-67000", values: [] },
       { level: "13-A", gradePay: 8900, payBand: "37400-67000", values: [] },
+      { level: "AL-13-A", gradePay: 9000, payBand: "37400-67000", values: [] },
       { level: "14/AL-14", gradePay: 10000, payBand: "37400-67000", values: [] },
       { level: "15VC", gradePay: null, payBand: "75000", values: [] }
     ],
