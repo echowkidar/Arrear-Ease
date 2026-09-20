@@ -61,7 +61,7 @@ const LEVEL_METADATA: Record<string, { payBand: string; gradePay: number | strin
   "AL-12": { payBand: "PB-3 (15600-39100)", gradePay: 8000, minPay: 79800, maxPay: 211500, stages: 34, description: "Associate Professor (Stage 3)" },
   "13": { payBand: "PB-4 (37400-67000)", gradePay: 8700, minPay: 123100, maxPay: 215900, stages: 20, description: "Selection Grade / Director" },
   "13-A": { payBand: "PB-4 (37400-67000)", gradePay: 8900, minPay: 131100, maxPay: 216600, stages: 18, description: "Senior Administrative Grade (SAG)" },
-  "AL-13-A": { payBand: "PB-4 (37400-67000)", gradePay: 9000, minPay: 131400, maxPay: 217100, stages: 18, description: "Academic Level 13-A - Professor" },
+  "AL-13-A": { payBand: "PB-4 (37400-67000)", gradePay: 9000, minPay: 131400, maxPay: 217100, stages: 18, description: "Academic Level 13-A - Associate Professor" },
   "14/AL-14": { payBand: "PB-4 (37400-67000)", gradePay: 10000, minPay: 144200, maxPay: 218200, stages: 15, description: "Joint Secretary / Senior Professor" },
   "15VC": { payBand: "Apex (75000-80000)", gradePay: "Fixed", minPay: 210000, maxPay: 210000, stages: 1, description: "Vice Chancellor / Apex Scale" },
 };
