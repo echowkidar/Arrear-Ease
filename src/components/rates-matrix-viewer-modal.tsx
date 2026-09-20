@@ -85,6 +85,7 @@ const SIXTH_CPC_STRUCTURE = [
   { level: "AL-12", gradePay: 8000, payBand: "PB-3 (15600-39100)", entryPay7th: 79800, level7th: "Level AL-12" },
   { level: "13", gradePay: 8700, payBand: "PB-4 (37400-67000)", entryPay7th: 123100, level7th: "Level 13" },
   { level: "13-A", gradePay: 8900, payBand: "PB-4 (37400-67000)", entryPay7th: 131100, level7th: "Level 13-A" },
+  { level: "AL-13-A", gradePay: 9000, payBand: "PB-4 (37400-67000)", entryPay7th: 131400, level7th: "Level AL-13-A" },
   { level: "14/AL-14", gradePay: 10000, payBand: "PB-4 (37400-67000)", entryPay7th: 144200, level7th: "Level 14/AL-14" },
   { level: "15VC", gradePay: 0, payBand: "Apex (75000-80000)", entryPay7th: 210000, level7th: "Level 15VC" },
 ];
