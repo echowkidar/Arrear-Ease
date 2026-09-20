@@ -3454,7 +3454,7 @@ export default function Home() {
                 <CardHeader className="flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-muted/20 border-b print:bg-transparent print:p-0 print:pb-4 print:text-center print:items-center print:w-full">
                   <div className="w-full text-left print:text-center print:mx-auto">
                     <CardTitle className="font-headline text-3xl print:text-center print:text-2xl print:font-bold text-primary print:text-black">
-                      Arrear Statement
+                      {statement.totals.difference < 0 ? "Recovery Statement" : "Arrear Statement"}
                     </CardTitle>
                     <CardDescription className="print:text-center print:text-black print:text-sm mt-1">
                       <span className="text-lg md:text-xl font-bold text-foreground print:text-black print:!text-[13pt] tracking-tight inline-block mb-0.5">
