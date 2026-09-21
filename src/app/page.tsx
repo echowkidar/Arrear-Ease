@@ -188,6 +188,7 @@ const formSchema = z.object({
   fromDate: z.date({ required_error: "From date is required." }),
   toDate: z.date({ required_error: "To date is required." }),
   payFixationRef: z.string().optional(),
+  salaryRegisterNo: z.string().optional(),
   remark: z.string().optional(),
   paid: salaryComponentSchema,
   toBePaid: salaryComponentSchema,
@@ -853,6 +854,7 @@ export default function Home() {
       fromDate: undefined,
       toDate: undefined,
       payFixationRef: "",
+      salaryRegisterNo: "",
       remark: "",
       paid: {
         cpc: "7th" as any,
@@ -912,6 +914,7 @@ export default function Home() {
             form.setValue("employeeName", data.name || "");
             form.setValue("designation", data.designation || "");
             form.setValue("department", data.department || "");
+            form.setValue("salaryRegisterNo", data.salary_register_no ? data.salary_register_no.slice(3) : "");
             toast({
               title: "Employee Found",
               description: "Details auto-filled successfully.",
@@ -2145,6 +2148,7 @@ export default function Home() {
       fromDate: undefined,
       toDate: undefined,
       payFixationRef: "",
+      salaryRegisterNo: "",
       remark: "",
       paid: { cpc: "7th" as any, basicPay: '' as any, payLevel: undefined, incrementMonth: undefined, daApplicable: true, hraApplicable: true, npaApplicable: false, taApplicable: false, doubleTaApplicable: false, otherAllowance: '' as any, otherAllowanceName: "", refixedBasicPay: '' as any },
       toBePaid: { cpc: "7th" as any, basicPay: '' as any, payLevel: undefined, incrementMonth: undefined, daApplicable: true, hraApplicable: true, npaApplicable: false, taApplicable: false, doubleTaApplicable: false, otherAllowance: '' as any, otherAllowanceName: "", refixedBasicPay: '' as any },
@@ -3321,6 +3325,7 @@ export default function Home() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <FormField control={form.control} name="designation" render={({ field }) => (<FormItem> <FormLabel>Designation</FormLabel> <FormControl><Input placeholder="Designation" {...field} /></FormControl> <FormMessage /> </FormItem>)} />
                       <FormField control={form.control} name="department" render={({ field }) => (<FormItem> <FormLabel>Department</FormLabel> <FormControl><Input placeholder="Department" {...field} /></FormControl> <FormMessage /> </FormItem>)} />
+                      <FormField control={form.control} name="salaryRegisterNo" render={({ field }) => (<FormItem> <FormLabel>Salary Register No.</FormLabel> <FormControl><Input placeholder="e.g., 88IIIU" {...field} /></FormControl> <FormMessage /> </FormItem>)} />
                     </div>
                   </CardContent>
                 </div>
@@ -3461,7 +3466,7 @@ export default function Home() {
                         {statement.employeeInfo.employeeName} ({statement.employeeInfo.employeeId})
                       </span>
                       <br />
-                      {statement.employeeInfo.designation}, {statement.employeeInfo.department} <br />
+                      {statement.employeeInfo.designation}, {statement.employeeInfo.department}{statement.employeeInfo.salaryRegisterNo ? ` (${statement.employeeInfo.salaryRegisterNo})` : ''} <br />
                       {statement.periods && statement.periods.length > 0 ? (
                         statement.periods.map((p, idx) => (
                           <div key={p.id} className="mt-1.5 leading-snug">

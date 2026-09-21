@@ -20,7 +20,8 @@ export async function GET(
       SELECT 
         e.name, 
         e.designation, 
-        d.dept_name as department
+        d.dept_name as department,
+        e.salary_register_no
       FROM employees e 
       LEFT JOIN department_names d ON e.department_id = d.id 
       WHERE e.epid = $1
