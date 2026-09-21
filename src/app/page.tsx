@@ -1577,6 +1577,7 @@ export default function Home() {
           employeeName: data.employeeName,
           designation: data.designation,
           department: data.department,
+          salaryRegisterNo: data.salaryRegisterNo,
           payFixationRef: data.payFixationRef,
           remark: data.remark,
           toDate: currentPeriods[currentPeriods.length - 1].formData.toDate
@@ -1823,6 +1824,7 @@ export default function Home() {
       employeeName: formData.employeeName,
       designation: formData.designation,
       department: formData.department,
+      salaryRegisterNo: formData.salaryRegisterNo,
       payFixationRef: formData.payFixationRef,
       remark: formData.remark,
     };
@@ -1837,6 +1839,7 @@ export default function Home() {
           employeeName: formData.employeeName,
           designation: formData.designation,
           department: formData.department,
+          salaryRegisterNo: formData.salaryRegisterNo,
           payFixationRef: formData.payFixationRef,
           remark: formData.remark,
         }
