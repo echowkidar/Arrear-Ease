@@ -900,7 +900,7 @@ export default function Home() {
   const { dirtyFields } = form.formState;
   const isCalcFieldDirty = React.useMemo(() => {
     const dirtyKeys = Object.keys(dirtyFields);
-    return dirtyKeys.some(key => !['employeeId', 'employeeName', 'designation', 'department', 'payFixationRef', 'remark'].includes(key));
+    return dirtyKeys.some(key => !['employeeId', 'employeeName', 'designation', 'department', 'payFixationRef', 'salaryRegisterNo', 'remark'].includes(key));
   }, [dirtyFields]);
 
   const watchedEmployeeId = form.watch("employeeId");
@@ -1444,31 +1444,45 @@ export default function Home() {
     const drawnComponents = calculateAllowancesForSide('paid');
     const dueComponents = calculateAllowancesForSide('toBePaid');
 
-    const drawnTotal = Object.values(drawnComponents).reduce((sum, val) => sum + val, 0);
-    const dueTotal = Object.values(dueComponents).reduce((sum, val) => sum + val, 0);
+    const drawnBasic = Math.round(drawnComponents.basic);
+    const drawnDa = Math.round(drawnComponents.da);
+    const drawnHra = Math.round(drawnComponents.hra);
+    const drawnNpa = Math.round(drawnComponents.npa);
+    const drawnTa = Math.round(drawnComponents.ta);
+    const drawnOther = Math.round(drawnComponents.other);
+    const drawnTotal = drawnBasic + drawnDa + drawnHra + drawnNpa + drawnTa + drawnOther;
+
+    const dueBasic = Math.round(dueComponents.basic);
+    const dueDa = Math.round(dueComponents.da);
+    const dueHra = Math.round(dueComponents.hra);
+    const dueNpa = Math.round(dueComponents.npa);
+    const dueTa = Math.round(dueComponents.ta);
+    const dueOther = Math.round(dueComponents.other);
+    const dueTotal = dueBasic + dueDa + dueHra + dueNpa + dueTa + dueOther;
+
     const difference = dueTotal - drawnTotal;
 
     const row: StatementRow = {
       month: format(currentDate, "MMM yy"),
       drawn: {
-        basic: Math.round(drawnComponents.basic),
-        da: Math.round(drawnComponents.da),
-        hra: Math.round(drawnComponents.hra),
-        npa: Math.round(drawnComponents.npa),
-        ta: Math.round(drawnComponents.ta),
-        other: Math.round(drawnComponents.other),
-        total: Math.round(drawnTotal)
+        basic: drawnBasic,
+        da: drawnDa,
+        hra: drawnHra,
+        npa: drawnNpa,
+        ta: drawnTa,
+        other: drawnOther,
+        total: drawnTotal
       },
       due: {
-        basic: Math.round(dueComponents.basic),
-        da: Math.round(dueComponents.da),
-        hra: Math.round(dueComponents.hra),
-        npa: Math.round(dueComponents.npa),
-        ta: Math.round(dueComponents.ta),
-        other: Math.round(dueComponents.other),
-        total: Math.round(dueTotal)
+        basic: dueBasic,
+        da: dueDa,
+        hra: dueHra,
+        npa: dueNpa,
+        ta: dueTa,
+        other: dueOther,
+        total: dueTotal
       },
-      difference: Math.round(difference),
+      difference: difference,
     };
 
     return { row, newTrackers: { drawnBasic: newDrawnTracker, dueBasic: newDueTracker } };
