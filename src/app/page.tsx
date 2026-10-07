@@ -119,7 +119,7 @@ import {
 } from "@/components/ui/form";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
-import { cpcData } from "@/lib/cpc-data";
+import { cpcData, fifthCpcCcaSlabs, fifthCpcTraSlabs, calculate5thCpcIncrement } from "@/lib/cpc-data";
 import { Rate, useRates } from "@/context/rates-context";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -129,7 +129,7 @@ import { AuthModal } from "@/components/auth-modals";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 const salaryComponentSchema = z.object({
-  cpc: z.enum(["6th", "7th"], { required_error: "CPC selection is required." }),
+  cpc: z.enum(["5th", "6th", "7th"], { required_error: "CPC selection is required." }),
   basicPay: z.coerce.number({ required_error: "Basic Pay is required." }).min(0, "Cannot be negative"),
   payLevel: z.string({ required_error: "Pay Level is required." }),
   incrementMonth: z.string({ required_error: "Increment month is required." }),
@@ -215,10 +215,22 @@ const formSchema = z.object({
 
 type ArrearFormData = z.infer<typeof formSchema>;
 
+type StatementComponent = {
+  basic: number;
+  da: number;
+  hra: number;
+  npa: number;
+  ta: number;
+  other: number;
+  total: number;
+  dp?: number;
+  basicDisplay?: string;
+};
+
 type StatementRow = {
   month: string;
-  drawn: { basic: number; da: number; hra: number; npa: number; ta: number; other: number; total: number; };
-  due: { basic: number; da: number; hra: number; npa: number; ta: number; other: number; total: number; };
+  drawn: StatementComponent;
+  due: StatementComponent;
   difference: number;
 };
 
@@ -262,6 +274,21 @@ const INCREMENT_MONTHS = [
   { value: "7", label: "July" },
 ];
 
+const ALL_INCREMENT_MONTHS = [
+  { value: "1", label: "January" },
+  { value: "2", label: "February" },
+  { value: "3", label: "March" },
+  { value: "4", label: "April" },
+  { value: "5", label: "May" },
+  { value: "6", label: "June" },
+  { value: "7", label: "July" },
+  { value: "8", label: "August" },
+  { value: "9", label: "September" },
+  { value: "10", label: "October" },
+  { value: "11", label: "November" },
+  { value: "12", label: "December" },
+];
+
 const FIRESTORE_STATEMENTS_COLLECTION = "savedStatements";
 const LOCALSTORAGE_STATEMENTS_KEY = "arrearEase_savedStatements";
 
@@ -287,7 +314,7 @@ const sanitizeForFirebase = (obj: any): any => {
   return newObj;
 };
 
-const FormDateInput = ({ field, label }: { field: any, label?: string }) => {
+const FormDateInput = ({ field, label, onDateSelect }: { field: any, label?: string, onDateSelect?: (date: Date | undefined) => void }) => {
   const [open, setOpen] = React.useState(false);
   const { name } = useFormField();
   const form = useFormContext();
@@ -295,6 +322,7 @@ const FormDateInput = ({ field, label }: { field: any, label?: string }) => {
     e.stopPropagation();
     e.preventDefault();
     form.setValue(name, undefined, { shouldDirty: true, shouldValidate: true });
+    if (onDateSelect) onDateSelect(undefined);
     setOpen(false);
   };
 
@@ -320,6 +348,7 @@ const FormDateInput = ({ field, label }: { field: any, label?: string }) => {
           selected={field.value}
           onSelect={(date) => {
             field.onChange(date);
+            if (onDateSelect) onDateSelect(date);
             if (date) setOpen(false);
           }}
           defaultMonth={field.value ? new Date(field.value) : undefined}
@@ -334,6 +363,7 @@ const FormDateInput = ({ field, label }: { field: any, label?: string }) => {
             onClick={(e) => {
               e.preventDefault();
               form.setValue(name, undefined, { shouldDirty: true, shouldValidate: true });
+              if (onDateSelect) onDateSelect(undefined);
               setOpen(false);
             }}
           >
@@ -456,8 +486,10 @@ const AllowanceField = ({ type, name, label }: { type: 'paid' | 'toBePaid', name
 };
 
 const payLevelIndexMap = new Map<string, number>();
-cpcData["6th"].payLevels.forEach((level, index) => payLevelIndexMap.set(level.level, index));
-cpcData["7th"].payLevels.forEach((level, index) => payLevelIndexMap.set(level.level, index + cpcData["6th"].payLevels.length));
+cpcData["5th"].payLevels.forEach((level, index) => payLevelIndexMap.set(level.level, index));
+const offset5th = cpcData["5th"].payLevels.length;
+cpcData["6th"].payLevels.forEach((level, index) => payLevelIndexMap.set(level.level, index + offset5th));
+cpcData["7th"].payLevels.forEach((level, index) => payLevelIndexMap.set(level.level, index + offset5th + cpcData["6th"].payLevels.length));
 
 // Note: Debug useEffect removed — was incorrectly placed outside a React component.
 
@@ -542,7 +574,7 @@ export default function Home() {
 
   const { user, authStatus, loading, logout, openAuthModal } = useAuth();
   const { toast } = useToast();
-  const { daRates, hraRates, npaRates, taRates, da6thRates, sixthCpcConfig } = useRates();
+  const { daRates, hraRates, npaRates, taRates, da6thRates, sixthCpcConfig, da5thRates, fifthCpcConfig, setFifthCpcConfig } = useRates();
   const { hasCredits, isUnlimited, consumeCredit, credits } = useSubscription();
 
   const isAdmin = user?.email === "amulivealigarh@gmail.com";
@@ -594,10 +626,27 @@ export default function Home() {
     return 3 + (activeCols.hra ? 1 : 0) + (activeCols.npa ? 1 : 0) + (activeCols.ta ? 1 : 0) + (activeCols.other ? 1 : 0);
   }, [activeCols]);
 
+  const isDrawnDpIncluded = React.useMemo(() => {
+    if (!statement?.rows) return false;
+    return statement.rows.some(
+      r => Boolean(r.drawn?.basicDisplay && r.drawn.basicDisplay.includes('+')) ||
+           Boolean(r.drawn?.dp && r.drawn.dp > 0 && fifthCpcConfig.mergeDpInBasic)
+    );
+  }, [statement, fifthCpcConfig.mergeDpInBasic]);
+
+  const isDueDpIncluded = React.useMemo(() => {
+    if (!statement?.rows) return false;
+    return statement.rows.some(
+      r => Boolean(r.due?.basicDisplay && r.due.basicDisplay.includes('+')) ||
+           Boolean(r.due?.dp && r.due.dp > 0 && fifthCpcConfig.mergeDpInBasic)
+    );
+  }, [statement, fifthCpcConfig.mergeDpInBasic]);
+
   const colWidths = React.useMemo(() => {
+    const hasMergedDp = isDrawnDpIncluded || isDueDpIncluded;
     const weights = {
       month: 6.8,
-      basic: 6.7,
+      basic: hasMergedDp ? 8.2 : 6.7,
       da: 6.2,
       hra: activeCols.hra ? 6.2 : 0,
       npa: activeCols.npa ? 4.8 : 0,
@@ -623,7 +672,7 @@ export default function Home() {
       total: pct(weights.total),
       diff: pct(weights.diff),
     };
-  }, [activeCols]);
+  }, [activeCols, statement]);
 
   React.useEffect(() => {
     const updateOnlineStatus = () => setIsOnline(navigator.onLine);
@@ -978,13 +1027,21 @@ export default function Home() {
     fetchBasicPayHistory();
   }, [watchedEmployeeId, watchedFromDate, form, toast, allowBasicPayAutoFill]);
 
-  const getPayLevels = (cpc: '6th' | '7th' | undefined) => {
+  const getPayLevels = (cpc: '5th' | '6th' | '7th' | undefined) => {
     if (!cpc) return [];
-    return cpcData[cpc].payLevels.map((pl: any) => ({ value: pl.level, label: cpc === '6th' ? `GP ${pl.gradePay} (${pl.payBand})` : `Level ${pl.level}` }));
+    return cpcData[cpc].payLevels.map((pl: any) => ({
+      value: pl.level,
+      label: cpc === '5th' ? `${pl.scale} (${pl.payBand})` : cpc === '6th' ? `GP ${pl.gradePay} (${pl.payBand})` : `Level ${pl.level}`
+    }));
   };
 
   const getPayLevelDisplay = (cpc?: string, level?: string) => {
     if (!level) return '';
+    if (cpc === '5th') {
+      const pl = cpcData['5th']?.payLevels?.find((p: any) => String(p.level) === String(level));
+      if (pl) return `${pl.scale}`;
+      return `Scale ${level}`;
+    }
     if (cpc === '6th') {
       const pl = cpcData['6th']?.payLevels?.find((p: any) => String(p.level) === String(level));
       if (pl) return `GP ${pl.gradePay} (${pl.payBand})`;
@@ -1163,15 +1220,29 @@ export default function Home() {
         }
       }
 
-      if (sideData.incrementMonth) {
-        const incrementMonthValue = parseInt(sideData.incrementMonth, 10);
+      if (sideData.incrementMonth || sideData.incrementDate) {
+        const incrementMonthValue = sideData.incrementMonth
+          ? parseInt(sideData.incrementMonth, 10)
+          : (sideData.incrementDate ? sideData.incrementDate.getMonth() + 1 : 0);
         let incrementTriggerDate: Date | null = null;
 
         if (!sideData.incrementDate && currentMonth === incrementMonthValue && currentDate >= new Date(currentYear, incrementMonthValue - 1, 1)) {
           incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
         }
-        else if (sideData.incrementDate && currentMonth === sideData.incrementDate.getMonth() + 1 && currentYear >= sideData.incrementDate.getFullYear()) {
-          incrementTriggerDate = new Date(currentYear, sideData.incrementDate.getMonth(), sideData.incrementDate.getDate());
+        else if (sideData.incrementDate) {
+          const incMonth = sideData.incrementDate.getMonth() + 1;
+          const incDay = sideData.incrementDate.getDate();
+
+          // Determine starting year for anniversary increment:
+          // If the selected year is beyond arrearToDate (e.g. default calendar year),
+          // treat as an annual recurring anniversary starting in arrearFromDate's year.
+          const incStartYear = (sideData.incrementDate.getFullYear() > arrearToDate.getFullYear())
+            ? arrearFromDate.getFullYear()
+            : sideData.incrementDate.getFullYear();
+
+          if (currentMonth === incMonth && currentYear >= incStartYear) {
+            incrementTriggerDate = new Date(currentYear, incMonth - 1, incDay);
+          }
         }
 
         if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd }) && startOfDay(incrementTriggerDate) >= startOfDay(arrearFromDate)) {
@@ -1200,6 +1271,11 @@ export default function Home() {
                   }
                 }
               }
+            }
+          } else if (sideData.cpc === '5th' && sideData.payLevel) {
+            const levelData = cpcData['5th'].payLevels.find(l => l.level === sideData.payLevel);
+            if (levelData && levelData.scale) {
+              newBasic = calculate5thCpcIncrement(trackerBasic, levelData.scale);
             }
           }
 
@@ -1305,31 +1381,48 @@ export default function Home() {
         return daysToCalc > 0 ? daysToCalc / daysInCalcMonth : 0;
       };
 
+      const is5thCpc = sideData.cpc === '5th';
       const is6thCpc = sideData.cpc === '6th';
 
-      const getEffectiveDaRate = (): number => {
-        // Fixed rate override (applies to both 6th and 7th CPC)
+      const getEffectiveDaRate = (): { rate: number; dpMerged: boolean } => {
+        // Fixed rate override (applies to 5th, 6th and 7th CPC)
         if (sideData.daFixedRateApplicable && sideData.daFixedRate && sideData.daFixedRateFromDate && sideData.daFixedRateToDate) {
           if (isWithinInterval(currentDate, { start: sideData.daFixedRateFromDate, end: sideData.daFixedRateToDate })) {
-            return sideData.daFixedRate;
+            return { rate: sideData.daFixedRate, dpMerged: false };
           }
         }
-        // 6th CPC: use da6thRates table; 7th CPC: use daRates table
+        // 5th CPC: use da5thRates table (tracks DP merger w.e.f 01.04.2004)
+        if (is5thCpc) {
+          const daRateDetails = getRateForDate(da5thRates, currentDate);
+          return {
+            rate: daRateDetails ? daRateDetails.rate : 0,
+            dpMerged: Boolean((daRateDetails as any)?.dpMerged),
+          };
+        }
+        // 6th CPC: use da6thRates table
         if (is6thCpc) {
           const daRateDetails = getRateForDate(da6thRates, currentDate);
-          return daRateDetails ? daRateDetails.rate : 0;
+          return { rate: daRateDetails ? daRateDetails.rate : 0, dpMerged: false };
         }
+        // 7th CPC: use daRates table
         const daRateDetails = getRateForDate(daRates, currentDate);
-        return daRateDetails ? daRateDetails.rate : 0;
+        return { rate: daRateDetails ? daRateDetails.rate : 0, dpMerged: false };
       };
 
-      const effectiveDaRate = getEffectiveDaRate();
+      const { rate: effectiveDaRate, dpMerged: isDpMerged } = getEffectiveDaRate();
 
       // Calculate NPA
       let npa = 0;
       let fullMonthNpaCalculated = 0;
       if (sideData.npaApplicable) {
-        if (is6thCpc) {
+        if (is5thCpc) {
+          // 5th CPC: NPA is 25% of Basic Pay (w.e.f. 01.01.1996)
+          // Ceiling: Basic Pay + NPA shall not exceed ₹29,500 per month
+          fullMonthNpaCalculated = fullMonthBasic * (fifthCpcConfig.npa5thRate / 100);
+          if (fullMonthBasic + fullMonthNpaCalculated > 29500) {
+            fullMonthNpaCalculated = Math.max(0, 29500 - fullMonthBasic);
+          }
+        } else if (is6thCpc) {
           fullMonthNpaCalculated = fullMonthBasic * (sixthCpcConfig.npa6thRate / 100);
           // 6th CPC Ceiling: Basic Pay + NPA shall not exceed ₹85,000 per month
           if (fullMonthBasic + fullMonthNpaCalculated > 85000) {
@@ -1351,12 +1444,49 @@ export default function Home() {
         }
       }
 
-      // Calculate DA
+      // Calculate DA & DP
       let da = 0;
+      let reportedBasic = proratedBasic;
+      let dpAmount = 0;
+      let basicDisplay = `${Math.round(proratedBasic)}`;
+
       if (sideData.daApplicable) {
-        // DA base = Basic Pay + NPA (same for both 6th and 7th CPC)
+        // DA base = Basic Pay + NPA (for all CPCs, NPA counts for DA)
         const baseForDA = proratedBasic + npa;
-        da = baseForDA * (effectiveDaRate / 100);
+        if (is5thCpc && isDpMerged) {
+          // 5th CPC DP Merger w.e.f. 01.04.2004 (MoF OM No. 105/1/2004-IC dated 01.03.2004):
+          // 50% of Basic Pay is treated as Dearness Pay (DP).
+          const dpOnBasic = proratedBasic * 0.50;
+          dpAmount = Math.round(dpOnBasic);
+          const totalDp = baseForDA * 0.50;
+          const daOnBaseAndDp = (baseForDA + totalDp) * (effectiveDaRate / 100);
+
+          if (fifthCpcConfig.mergeDpInBasic) {
+            // Option 1 (Standard Accounts Practice / User Request):
+            // Merge 50% DP into the Basic Pay column for display & summation
+            reportedBasic = proratedBasic + dpOnBasic;
+            const pureBasic = Math.round(proratedBasic);
+            const dpPart = Math.round(dpOnBasic);
+            // Display as "5000+2500" with plus sign per user requirement
+            basicDisplay = `${pureBasic}+${dpPart}`;
+
+            // DA column reflects the remaining DA% (11%, 14%, 17%, 21%) calculated on (Base + DP)
+            // If NPA exists, DP on NPA is included in DA
+            const dpOnNpa = npa * 0.50;
+            da = daOnBaseAndDp + dpOnNpa;
+          } else {
+            // Option 2 (Unmerged display):
+            // Keep pure basic in Basic column, and include DP + DA in DA column
+            reportedBasic = proratedBasic;
+            basicDisplay = `${Math.round(proratedBasic)}`;
+            da = totalDp + daOnBaseAndDp;
+          }
+        } else {
+          da = baseForDA * (effectiveDaRate / 100);
+          basicDisplay = `${Math.round(proratedBasic)}`;
+        }
+      } else {
+        basicDisplay = `${Math.round(proratedBasic)}`;
       }
 
       // Calculate HRA
@@ -1364,15 +1494,20 @@ export default function Home() {
       if (sideData.hraApplicable) {
         const prorationFactor = getProratedFactorForAllowance(sideData.hraFromDate, sideData.hraToDate);
         if (prorationFactor > 0) {
-          // 6th CPC: HRA is on (Basic Pay + NPA). 7th CPC: HRA is on Basic Pay only.
-          const hraBase = is6thCpc
-            ? fullMonthBasic + (sideData.npaApplicable ? fullMonthNpaCalculated : 0)
-            : fullMonthBasic;
-
-          if (is6thCpc) {
-            // 6th CPC: HRA = hra6thRate% of (Basic Pay + NPA) — fixed rate, not DA-slab based
+          if (is5thCpc) {
+            // 5th CPC: HRA = 15% of Basic Pay (w.e.f. 01.08.1997)
+            const hraBase = fullMonthBasic;
+            let fullMonthHra = hraBase * (fifthCpcConfig.hra5thRate / 100);
+            if (sideData.hraFixedRateApplicable && sideData.hraFixedRate && sideData.hraFixedRateFromDate && sideData.hraFixedRateToDate) {
+              if (isWithinInterval(currentDate, { start: sideData.hraFixedRateFromDate, end: sideData.hraFixedRateToDate })) {
+                fullMonthHra = hraBase * (sideData.hraFixedRate / 100);
+              }
+            }
+            hra = fullMonthHra * prorationFactor;
+          } else if (is6thCpc) {
+            // 6th CPC: HRA is on (Basic Pay + NPA)
+            const hraBase = fullMonthBasic + (sideData.npaApplicable ? fullMonthNpaCalculated : 0);
             let fullMonthHra = hraBase * (sixthCpcConfig.hra6thRate / 100);
-            // Override with fixed rate if applicable
             if (sideData.hraFixedRateApplicable && sideData.hraFixedRate && sideData.hraFixedRateFromDate && sideData.hraFixedRateToDate) {
               if (isWithinInterval(currentDate, { start: sideData.hraFixedRateFromDate, end: sideData.hraFixedRateToDate })) {
                 fullMonthHra = hraBase * (sideData.hraFixedRate / 100);
@@ -1381,6 +1516,7 @@ export default function Home() {
             hra = fullMonthHra * prorationFactor;
           } else {
             // 7th CPC: HRA is DA-slab based from hraRates table, or fixed rate override if active
+            const hraBase = fullMonthBasic;
             let fullMonthHra = 0;
             if (sideData.hraFixedRateApplicable && sideData.hraFixedRate && sideData.hraFixedRateFromDate && sideData.hraFixedRateToDate && isWithinInterval(currentDate, { start: sideData.hraFixedRateFromDate, end: sideData.hraFixedRateToDate })) {
               fullMonthHra = hraBase * (sideData.hraFixedRate / 100);
@@ -1398,38 +1534,75 @@ export default function Home() {
         }
       }
 
-      // Calculate TA
+      // Calculate TA / TRA
       let ta = 0;
       if (sideData.taApplicable) {
         const prorationFactor = getProratedFactorForAllowance(sideData.taFromDate, sideData.taToDate);
         if (prorationFactor > 0) {
-          let taBaseAmount = 0;
-          if (sideData.taFixedRateApplicable && sideData.taFixedRate && sideData.taFixedRateFromDate && sideData.taFixedRateToDate && isWithinInterval(currentDate, { start: sideData.taFixedRateFromDate, end: sideData.taFixedRateToDate })) {
-            taBaseAmount = sideData.taFixedRate;
+          if (is5thCpc) {
+            // 5th CPC Transport Allowance (T.R.A.):
+            // Upto 5500-9000: Rs 75 | 6500-10500 to 7500-12000: Rs 200 | 8000-13500 & Above: Rs 400
+            let traBaseAmount = 0;
+            if (sideData.taFixedRateApplicable && sideData.taFixedRate && sideData.taFixedRateFromDate && sideData.taFixedRateToDate && isWithinInterval(currentDate, { start: sideData.taFixedRateFromDate, end: sideData.taFixedRateToDate })) {
+              traBaseAmount = sideData.taFixedRate;
+            } else {
+              const levelNum = parseInt(String(payLevel).replace('S-', ''), 10);
+              if (!isNaN(levelNum)) {
+                if (levelNum <= 10) traBaseAmount = 75;
+                else if (levelNum <= 13) traBaseAmount = 200;
+                else traBaseAmount = 400;
+              } else {
+                const curBasic = side === 'paid' ? newDrawnTracker : newDueTracker;
+                if (curBasic < 6500) traBaseAmount = 75;
+                else if (curBasic < 8000) traBaseAmount = 200;
+                else traBaseAmount = 400;
+              }
+            }
+            if (sideData.doubleTaApplicable) {
+              traBaseAmount *= 2;
+            }
+            // In 5th CPC, TRA was flat fixed and did not have DA added on it
+            ta = traBaseAmount * prorationFactor;
           } else {
-            const taRateDetails = getRateForDate(taRates, currentDate, { basicPay: (side === 'paid' ? newDrawnTracker : newDueTracker), payLevel });
-            if (taRateDetails) {
-              taBaseAmount = taRateDetails.rate;
-              if (sideData.doubleTaApplicable) {
-                taBaseAmount *= 2;
-                if (sideData.cpc === '7th' && taBaseAmount < 2250) {
-                  taBaseAmount = 2250;
+            // 6th / 7th CPC (TA + DA on TA)
+            let taBaseAmount = 0;
+            if (sideData.taFixedRateApplicable && sideData.taFixedRate && sideData.taFixedRateFromDate && sideData.taFixedRateToDate && isWithinInterval(currentDate, { start: sideData.taFixedRateFromDate, end: sideData.taFixedRateToDate })) {
+              taBaseAmount = sideData.taFixedRate;
+            } else {
+              const taRateDetails = getRateForDate(taRates, currentDate, { basicPay: (side === 'paid' ? newDrawnTracker : newDueTracker), payLevel });
+              if (taRateDetails) {
+                taBaseAmount = taRateDetails.rate;
+                if (sideData.doubleTaApplicable) {
+                  taBaseAmount *= 2;
+                  if (sideData.cpc === '7th' && taBaseAmount < 2250) {
+                    taBaseAmount = 2250;
+                  }
                 }
               }
             }
-          }
-          if (taBaseAmount > 0) {
-            let fullMonthTa = taBaseAmount + (taBaseAmount * (effectiveDaRate / 100));
-            ta = fullMonthTa * prorationFactor;
+            if (taBaseAmount > 0) {
+              let fullMonthTa = taBaseAmount + (taBaseAmount * (effectiveDaRate / 100));
+              ta = fullMonthTa * prorationFactor;
+            }
           }
         }
       }
 
-      // Calculate Other Allowance
+      // Calculate Other Allowance (including 5th CPC CCA if enabled)
       let other = 0;
       let otherAmount = sideData.otherAllowance || 0;
       if (sideData.otherAllowanceFixedRateApplicable && sideData.otherAllowanceFixedRate && sideData.otherAllowanceFixedRateFromDate && sideData.otherAllowanceFixedRateToDate && isWithinInterval(currentDate, { start: sideData.otherAllowanceFixedRateFromDate, end: sideData.otherAllowanceFixedRateToDate })) {
         otherAmount = sideData.otherAllowanceFixedRate;
+      }
+      if (is5thCpc && fifthCpcConfig.ccaApplicable) {
+        // 5th CPC CCA Slabs:
+        // Upto 2999: Rs 25 | 3000 to 4499: Rs 35 | 4500 to 5999: Rs 65 | 6000 & Above: Rs 120
+        let ccaAmount = 0;
+        if (fullMonthBasic < 3000) ccaAmount = 25;
+        else if (fullMonthBasic < 4500) ccaAmount = 35;
+        else if (fullMonthBasic < 6000) ccaAmount = 65;
+        else ccaAmount = 120;
+        otherAmount += ccaAmount;
       }
       if (otherAmount > 0) {
         const prorationFactor = getProratedFactorForAllowance(sideData.otherAllowanceFromDate, sideData.otherAllowanceToDate);
@@ -1438,7 +1611,7 @@ export default function Home() {
         }
       }
 
-      return { basic: proratedBasic, da, hra, npa, ta, other };
+      return { basic: reportedBasic, da, hra, npa, ta, other, dp: dpAmount, basicDisplay };
     };
 
     const drawnComponents = calculateAllowancesForSide('paid');
@@ -1471,7 +1644,9 @@ export default function Home() {
         npa: drawnNpa,
         ta: drawnTa,
         other: drawnOther,
-        total: drawnTotal
+        total: drawnTotal,
+        dp: drawnComponents.dp,
+        basicDisplay: drawnComponents.basicDisplay,
       },
       due: {
         basic: dueBasic,
@@ -1480,7 +1655,9 @@ export default function Home() {
         npa: dueNpa,
         ta: dueTa,
         other: dueOther,
-        total: dueTotal
+        total: dueTotal,
+        dp: dueComponents.dp,
+        basicDisplay: dueComponents.basicDisplay,
       },
       difference: difference,
     };
@@ -1496,33 +1673,30 @@ export default function Home() {
     }
 
     try {
-      let currentPeriods = statement ? (statement.periods || [{ 
+      let currentPeriods = statement ? [...(statement.periods || [{ 
         id: crypto.randomUUID(), 
         formData: statement.employeeInfo as ArrearFormData, 
         rows: statement.rows, 
         totals: statement.totals 
-      }]) : [];
+      }])] : [];
 
-      if (statement) {
-        // Overlap checks
-        if (currentPeriodIndex > 0) {
-          const prevPeriod = currentPeriods[currentPeriodIndex - 1];
-          if (data.fromDate <= new Date(prevPeriod.formData.toDate)) {
+      if (statement && currentPeriods.length > 0) {
+        // Interval collision check: Verify data.fromDate and data.toDate do not overlap with any other period
+        // (excluding the current period if we are editing/recalculating an existing one)
+        const newStart = new Date(data.fromDate).getTime();
+        const newEnd = new Date(data.toDate).getTime();
+
+        for (let i = 0; i < currentPeriods.length; i++) {
+          if (i === currentPeriodIndex) continue; // Skip itself when editing
+          const pStart = new Date(currentPeriods[i].formData.fromDate).getTime();
+          const pEnd = new Date(currentPeriods[i].formData.toDate).getTime();
+
+          // Standard interval overlap condition: [newStart, newEnd] intersects [pStart, pEnd]
+          if (newStart <= pEnd && newEnd >= pStart) {
             toast({
               variant: "destructive",
               title: "Overlapping Dates",
-              description: `Start date must be after Period ${currentPeriodIndex}'s end date.`,
-            });
-            return;
-          }
-        }
-        if (currentPeriodIndex < currentPeriods.length - 1) {
-          const nextPeriod = currentPeriods[currentPeriodIndex + 1];
-          if (data.toDate >= new Date(nextPeriod.formData.fromDate)) {
-            toast({
-              variant: "destructive",
-              title: "Overlapping Dates",
-              description: `End date must be before Period ${currentPeriodIndex + 2}'s start date.`,
+              description: `Selected date range (${format(new Date(data.fromDate), "dd/MM/yyyy")} to ${format(new Date(data.toDate), "dd/MM/yyyy")}) overlaps with Period ${i + 1} (${format(new Date(currentPeriods[i].formData.fromDate), "dd/MM/yyyy")} to ${format(new Date(currentPeriods[i].formData.toDate), "dd/MM/yyyy")}).`,
             });
             return;
           }
@@ -1565,8 +1739,12 @@ export default function Home() {
       totals.due.total = rows.reduce((acc, row) => acc + row.due.total, 0);
       totals.difference = rows.reduce((acc, row) => acc + row.difference, 0);
 
+      const existingPeriodId = (currentPeriodIndex < currentPeriods.length && currentPeriods[currentPeriodIndex]?.id)
+        ? currentPeriods[currentPeriodIndex].id
+        : crypto.randomUUID();
+
       const newPeriod: FixationPeriod = {
-        id: crypto.randomUUID(),
+        id: existingPeriodId,
         formData: data,
         rows,
         totals
@@ -1577,6 +1755,15 @@ export default function Home() {
           currentPeriods[currentPeriodIndex] = newPeriod;
         } else {
           currentPeriods.push(newPeriod);
+        }
+
+        // Chronologically sort all periods by fromDate
+        currentPeriods.sort((a, b) => new Date(a.formData.fromDate).getTime() - new Date(b.formData.fromDate).getTime());
+
+        // Update currentPeriodIndex to point to the newly updated/added period in the sorted array
+        const sortedIndex = currentPeriods.findIndex(p => p.id === newPeriod.id);
+        if (sortedIndex !== -1) {
+          setCurrentPeriodIndex(sortedIndex);
         }
 
         const combinedRows = currentPeriods.flatMap(p => p.rows);
@@ -1594,6 +1781,7 @@ export default function Home() {
           salaryRegisterNo: data.salaryRegisterNo,
           payFixationRef: data.payFixationRef,
           remark: data.remark,
+          fromDate: currentPeriods[0].formData.fromDate,
           toDate: currentPeriods[currentPeriods.length - 1].formData.toDate
         };
 
@@ -1743,6 +1931,7 @@ export default function Home() {
         basicPay: '' as any,
         payLevel: undefined,
         incrementMonth: undefined,
+        incrementDate: undefined,
         refixedBasicPay: '' as any,
         refixedBasicPayDate: undefined,
       },
@@ -1751,13 +1940,14 @@ export default function Home() {
         basicPay: '' as any,
         payLevel: undefined,
         incrementMonth: undefined,
+        incrementDate: undefined,
         refixedBasicPay: '' as any,
         refixedBasicPayDate: undefined,
       }
     });
     
     toast({
-      title: "Ready for Next Period",
+      title: "Add New Period",
       description: `Please enter the details for Period ${nextIndex + 1} and click Calculate.`,
     });
     
@@ -1823,6 +2013,37 @@ export default function Home() {
     toast({
       title: `Loaded Period ${index + 1}`,
       description: "You can now view or edit this period's configuration.",
+    });
+  };
+
+  const handleDeletePeriod = (indexToDelete: number) => {
+    if (!statement || !statement.periods || statement.periods.length <= 1) return;
+    const remainingPeriods = statement.periods.filter((_, idx) => idx !== indexToDelete);
+    remainingPeriods.sort((a, b) => new Date(a.formData.fromDate).getTime() - new Date(b.formData.fromDate).getTime());
+    const combinedRows = remainingPeriods.flatMap(p => p.rows);
+    const combinedTotals = {
+      drawn: { total: remainingPeriods.reduce((acc, p) => acc + p.totals.drawn.total, 0) },
+      due: { total: remainingPeriods.reduce((acc, p) => acc + p.totals.due.total, 0) },
+      difference: remainingPeriods.reduce((acc, p) => acc + p.totals.difference, 0)
+    };
+    const updatedEmployeeInfo = {
+      ...statement.employeeInfo,
+      fromDate: remainingPeriods[0].formData.fromDate,
+      toDate: remainingPeriods[remainingPeriods.length - 1].formData.toDate,
+    };
+    const newIdx = Math.min(indexToDelete, remainingPeriods.length - 1);
+    setStatement({
+      ...statement,
+      rows: combinedRows,
+      totals: combinedTotals,
+      employeeInfo: updatedEmployeeInfo,
+      periods: remainingPeriods
+    });
+    setCurrentPeriodIndex(newIdx);
+    form.reset(remainingPeriods[newIdx].formData);
+    toast({
+      title: "Period Deleted",
+      description: `Period ${indexToDelete + 1} was removed from the arrear statement.`,
     });
   };
 
@@ -2357,7 +2578,71 @@ export default function Home() {
 
     const updatedRows = [...statement.rows];
     const row = { ...updatedRows[rowIndex] };
-    row[type] = { ...row[type], [field]: value };
+    if (field === 'basic') {
+      row[type] = { ...row[type], [field]: value, basicDisplay: String(value) };
+    } else {
+      row[type] = { ...row[type], [field]: value };
+    }
+
+    // Recalculate row totals
+    row[type].total = row[type].basic + row[type].da + row[type].hra + row[type].ta + row[type].npa + row[type].other;
+    row.difference = row.due.total - row.drawn.total;
+
+    updatedRows[rowIndex] = row;
+
+    // Recalculate statement totals
+    const newTotals = {
+      drawn: { basic: 0, da: 0, hra: 0, ta: 0, npa: 0, other: 0, total: 0 },
+      due: { basic: 0, da: 0, hra: 0, ta: 0, npa: 0, other: 0, total: 0 },
+      difference: 0
+    };
+
+    updatedRows.forEach(r => {
+      ['drawn', 'due'].forEach(t => {
+        const cat = t as 'drawn' | 'due';
+        newTotals[cat].basic += r[cat].basic;
+        newTotals[cat].da += r[cat].da;
+        newTotals[cat].hra += r[cat].hra;
+        newTotals[cat].ta += r[cat].ta;
+        newTotals[cat].npa += r[cat].npa;
+        newTotals[cat].other += r[cat].other;
+        newTotals[cat].total += r[cat].total;
+      });
+      newTotals.difference += r.difference;
+    });
+
+    setStatement({ ...statement, rows: updatedRows, totals: newTotals });
+  };
+
+  const handleBasicEdit = (
+    rowIndex: number,
+    type: 'drawn' | 'due',
+    valueStr: string
+  ) => {
+    if (!statement) return;
+
+    const updatedRows = [...statement.rows];
+    const row = { ...updatedRows[rowIndex] };
+
+    let numericValue = 0;
+    let dpVal = row[type].dp;
+
+    if (valueStr.includes('+')) {
+      const parts = valueStr.split('+').map(p => parseFloat(p.trim()) || 0);
+      numericValue = Math.round(parts.reduce((a, b) => a + b, 0));
+      if (parts.length > 1) {
+        dpVal = Math.round(parts[1]);
+      }
+    } else {
+      numericValue = Math.round(parseFloat(valueStr) || 0);
+    }
+
+    row[type] = {
+      ...row[type],
+      basic: numericValue,
+      basicDisplay: valueStr,
+      dp: dpVal,
+    };
 
     // Recalculate row totals
     row[type].total = row[type].basic + row[type].da + row[type].hra + row[type].ta + row[type].npa + row[type].other;
@@ -2432,10 +2717,16 @@ export default function Home() {
                   }} value={field.value}>
                     <FormControl><SelectTrigger><SelectValue placeholder="Select CPC" /></SelectTrigger></FormControl>
                     <SelectContent>
-                      <SelectItem value="6th">6th CPC</SelectItem>
-                      <SelectItem value="7th">7th CPC</SelectItem>
+                      <SelectItem value="5th">5th CPC (Upto 31.12.2005)</SelectItem>
+                      <SelectItem value="6th">6th CPC (01.01.2006 - 31.12.2015)</SelectItem>
+                      <SelectItem value="7th">7th CPC (w.e.f. 01.01.2016)</SelectItem>
                     </SelectContent>
                   </Select>
+                  {field.value === "5th" && (
+                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium mt-1">
+                      5th CPC provision: Applicable upto 31.12.2005 (1.1.2006 se 6th CPC)
+                    </p>
+                  )}
                   <FormMessage />
                 </FormItem>
               )} />
@@ -2496,30 +2787,104 @@ export default function Home() {
                 <FormMessage />
               </FormItem>
             )} />
-            <div className="space-y-4 rounded-md border p-4 bg-muted/20">
-              <h4 className="font-medium">Annual Increment</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <FormField control={form.control} name={`${type}.incrementMonth`} render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Increment Month</FormLabel>
-                    <Select onValueChange={(value) => {
-                      field.onChange(value);
-                      form.setValue(`${type}.incrementDate`, undefined);
-                    }} value={field.value}>
-                      <FormControl><SelectTrigger><SelectValue placeholder="Select a month" /></SelectTrigger></FormControl>
-                      <SelectContent>{INCREMENT_MONTHS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name={`${type}.incrementDate`} render={({ field }) => (
-                  <FormItem className="flex flex-col">
-                    <FormLabel>Date of next Increment (Optional)</FormLabel>
-                    <FormDateInput field={field} label="Prorate Date" />
-                    <FormMessage />
-                  </FormItem>
-                )} />
+            {cpc === '5th' && (
+              <div className="p-3 rounded-md border border-blue-200 dark:border-blue-900/60 bg-blue-50/40 dark:bg-blue-950/20 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <div className="font-semibold text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
+                    <span>w.e.f. 01.04.2004: 50% Dearness Pay (DP) Merger</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    {fifthCpcConfig.mergeDpInBasic
+                      ? "01.04.2004 se Basic Pay column me basic pay + 50% DP (jaise 5000+2500) show hoga aur DA column me 11%/14%/17%/21% show hoga."
+                      : "Basic Pay column me pure Basic show hoga aur 50% DP ko DA column me joda jayega."}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-[11px] font-medium text-slate-700 dark:text-slate-300">Basic me merge:</span>
+                  <Switch
+                    checked={fifthCpcConfig.mergeDpInBasic}
+                    onCheckedChange={(checked) => setFifthCpcConfig(prev => ({ ...prev, mergeDpInBasic: checked }))}
+                  />
+                </div>
               </div>
+            )}
+            <div className="space-y-4 rounded-md border p-4 bg-muted/20">
+              <div className="flex items-center justify-between">
+                <h4 className="font-medium">Annual Increment</h4>
+                {cpc === '5th' && (
+                  <span className="text-[11px] font-medium px-2 py-0.5 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
+                    5th CPC: Individual Anniversary Date
+                  </span>
+                )}
+              </div>
+              {cpc === '5th' ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <FormField control={form.control} name={`${type}.incrementDate`} render={({ field }) => (
+                      <FormItem className="flex flex-col">
+                        <FormLabel>Date of Increment (DD/MM/YYYY)</FormLabel>
+                        <FormDateInput 
+                          field={field} 
+                          label="Select Date (e.g. 15/03/1997)" 
+                          onDateSelect={(date) => {
+                            if (date) {
+                              form.setValue(`${type}.incrementMonth`, String(date.getMonth() + 1), { shouldValidate: true, shouldDirty: true });
+                            }
+                          }}
+                        />
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          5th CPC mein anniversary date (e.g. 15/03/1997) par increment lagta hai. Mid-month date par proration auto-calculate hoga.
+                        </p>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name={`${type}.incrementMonth`} render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Increment Month</FormLabel>
+                        <Select onValueChange={(value) => {
+                          field.onChange(value);
+                          const curDate = form.getValues(`${type}.incrementDate`);
+                          if (curDate) {
+                            const newDate = new Date(curDate);
+                            newDate.setMonth(parseInt(value, 10) - 1);
+                            form.setValue(`${type}.incrementDate`, newDate);
+                          }
+                        }} value={field.value}>
+                          <FormControl><SelectTrigger><SelectValue placeholder="Select a month" /></SelectTrigger></FormControl>
+                          <SelectContent>{ALL_INCREMENT_MONTHS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent>
+                        </Select>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          Date select karte hi month auto-fill ho jata hai.
+                        </p>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FormField control={form.control} name={`${type}.incrementMonth`} render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Increment Month</FormLabel>
+                      <Select onValueChange={(value) => {
+                        field.onChange(value);
+                        form.setValue(`${type}.incrementDate`, undefined);
+                      }} value={field.value}>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Select a month" /></SelectTrigger></FormControl>
+                        <SelectContent>{INCREMENT_MONTHS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name={`${type}.incrementDate`} render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>Date of next Increment (Optional)</FormLabel>
+                      <FormDateInput field={field} label="Prorate Date" />
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+              )}
             </div>
             <div className="space-y-4 rounded-md border p-4 bg-muted/20">
               <FormField
@@ -2989,7 +3354,7 @@ export default function Home() {
           </div>
           <h1 className="font-headline text-4xl md:text-5xl font-bold bg-gradient-to-r from-blue-700 via-indigo-700 to-indigo-900 dark:from-blue-400 dark:via-indigo-400 dark:to-violet-400 bg-clip-text text-transparent tracking-tight">Arrear Ease</h1>
           <p className="text-muted-foreground mt-2 text-lg font-medium">A Simple Tool for Complex Salary Arrear Calculations</p>
-          <p className="text-muted-foreground/80 mt-1 text-sm">For Central Govt and State Govt employees (6th, 7th & 8th Central Pay Commission)</p>
+          <p className="text-muted-foreground/80 mt-1 text-sm">For Central Govt and State Govt employees (5th, 6th & 7th Central Pay Commission)</p>
           <div className="mt-2">
             <span className="inline-block px-3 py-0.5 text-xs font-semibold bg-primary/10 text-primary rounded-full border border-primary/20">Dedicated to AMU by Zafar Ali Khan</span>
           </div>
@@ -3381,6 +3746,18 @@ export default function Home() {
                           >
                             <ArrowRight className="h-4 w-4" />
                           </Button>
+                          {statement.periods.length > 1 && currentPeriodIndex < statement.periods.length && (
+                            <Button 
+                              type="button"
+                              variant="ghost" 
+                              size="sm"
+                              className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 h-8 px-2"
+                              onClick={() => handleDeletePeriod(currentPeriodIndex)}
+                              title={`Delete Period ${currentPeriodIndex + 1}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -3574,7 +3951,7 @@ export default function Home() {
                     </Button>
 
                     <Button onClick={handlePrepareNextPeriod} disabled={isLoading} variant="outline" className="border-purple-200 text-purple-700 hover:bg-purple-50 hover:text-purple-800 shadow-sm font-medium dark:border-purple-900/40 dark:text-purple-400 dark:hover:bg-purple-950/40">
-                      <Plus className="mr-2 h-4 w-4" /> Add Next Period
+                      <Plus className="mr-2 h-4 w-4" /> Add Period
                     </Button>
                     <Button onClick={handleSaveOrUpdate} disabled={isLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm font-medium">
                       {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (loadedStatementId ? <Edit className="mr-2 h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />)}
@@ -3623,7 +4000,9 @@ export default function Home() {
                         </TableRow>
                         <TableRow>
                           {/* Drawn Subheaders */}
-                          <TableHead className="text-right bg-blue-50/40 dark:bg-blue-950/20 text-xs font-semibold print:bg-transparent">Basic</TableHead>
+                          <TableHead className="text-right bg-blue-50/40 dark:bg-blue-950/20 text-xs font-semibold print:bg-transparent">
+                            {isDrawnDpIncluded ? "Basic + DP" : "Basic"}
+                          </TableHead>
                           <TableHead className="text-right bg-blue-50/40 dark:bg-blue-950/20 text-xs font-semibold print:bg-transparent">DA</TableHead>
                           {activeCols.hra && <TableHead className="text-right bg-blue-50/40 dark:bg-blue-950/20 text-xs font-semibold print:bg-transparent">HRA</TableHead>}
                           {activeCols.npa && <TableHead className="text-right bg-blue-50/40 dark:bg-blue-950/20 text-xs font-semibold print:bg-transparent">NPA</TableHead>}
@@ -3632,7 +4011,9 @@ export default function Home() {
                           <TableHead className="text-right font-bold border-r total-col bg-blue-100/50 dark:bg-blue-900/30 text-blue-950 dark:text-blue-100 print:bg-transparent print:text-black">Total</TableHead>
 
                           {/* Due Subheaders */}
-                          <TableHead className="text-right bg-indigo-50/40 dark:bg-indigo-950/20 text-xs font-semibold print:bg-transparent">Basic</TableHead>
+                          <TableHead className="text-right bg-indigo-50/40 dark:bg-indigo-950/20 text-xs font-semibold print:bg-transparent">
+                            {isDueDpIncluded ? "Basic + DP" : "Basic"}
+                          </TableHead>
                           <TableHead className="text-right bg-indigo-50/40 dark:bg-indigo-950/20 text-xs font-semibold print:bg-transparent">DA</TableHead>
                           {activeCols.hra && <TableHead className="text-right bg-indigo-50/40 dark:bg-indigo-950/20 text-xs font-semibold print:bg-transparent">HRA</TableHead>}
                           {activeCols.npa && <TableHead className="text-right bg-indigo-50/40 dark:bg-indigo-950/20 text-xs font-semibold print:bg-transparent">NPA</TableHead>}
@@ -3647,7 +4028,15 @@ export default function Home() {
                             <TableCell className="font-medium border-r month-col">{row.month.replace(/(\s\d{2})\d{2}$/, '$1')}</TableCell>
                             
                             {/* Drawn Cells */}
-                            <TableCell className="p-0 text-right"><input type="number" value={row.drawn.basic} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'drawn', 'basic', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 print:px-0 print:py-0 print:bg-transparent hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>
+                            <TableCell className="p-0 text-right">
+                              <input 
+                                type="text" 
+                                value={row.drawn.basicDisplay ?? String(row.drawn.basic)} 
+                                onChange={(e) => handleBasicEdit(statement.rows.indexOf(row), 'drawn', e.target.value)} 
+                                title={row.drawn.dp ? `Basic Pay: ₹${row.drawn.basic - row.drawn.dp} + DP: ₹${row.drawn.dp} = ₹${row.drawn.basic}` : undefined}
+                                className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-1.5 sm:px-2 print:px-0 print:py-0 print:bg-transparent tabular-nums font-medium" 
+                              />
+                            </TableCell>
                             <TableCell className="p-0 text-right"><input type="number" value={row.drawn.da} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'drawn', 'da', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 print:px-0 print:py-0 print:bg-transparent hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>
                             {activeCols.hra && <TableCell className="p-0 text-right"><input type="number" value={row.drawn.hra} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'drawn', 'hra', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 print:px-0 print:py-0 print:bg-transparent hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
                             {activeCols.npa && <TableCell className="p-0 text-right"><input type="number" value={row.drawn.npa} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'drawn', 'npa', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 print:px-0 print:py-0 print:bg-transparent hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
@@ -3656,7 +4045,15 @@ export default function Home() {
                             <TableCell className="text-right font-semibold border-r total-col bg-blue-50/30 dark:bg-blue-950/10 print:bg-transparent">{row.drawn.total}</TableCell>
 
                             {/* Due Cells */}
-                            <TableCell className="p-0 text-right"><input type="number" value={row.due.basic} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'due', 'basic', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 print:px-0 print:py-0 print:bg-transparent hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>
+                            <TableCell className="p-0 text-right">
+                              <input 
+                                type="text" 
+                                value={row.due.basicDisplay ?? String(row.due.basic)} 
+                                onChange={(e) => handleBasicEdit(statement.rows.indexOf(row), 'due', e.target.value)} 
+                                title={row.due.dp ? `Basic Pay: ₹${row.due.basic - row.due.dp} + DP: ₹${row.due.dp} = ₹${row.due.basic}` : undefined}
+                                className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-1.5 sm:px-2 print:px-0 print:py-0 print:bg-transparent tabular-nums font-medium" 
+                              />
+                            </TableCell>
                             <TableCell className="p-0 text-right"><input type="number" value={row.due.da} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'due', 'da', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 print:px-0 print:py-0 print:bg-transparent hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>
                             {activeCols.hra && <TableCell className="p-0 text-right"><input type="number" value={row.due.hra} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'due', 'hra', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 print:px-0 print:py-0 print:bg-transparent hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}
                             {activeCols.npa && <TableCell className="p-0 text-right"><input type="number" value={row.due.npa} onChange={(e) => handleRowEdit(statement.rows.indexOf(row), 'due', 'npa', parseInt(e.target.value) || 0)} className="w-full text-right bg-transparent outline-none focus:bg-white dark:focus:bg-slate-900 h-full py-2 px-4 print:px-0 print:py-0 print:bg-transparent hide-arrows tabular-nums" style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }} /></TableCell>}

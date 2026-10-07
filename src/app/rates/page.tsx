@@ -61,16 +61,18 @@ import {
   DialogDescription,
   DialogFooter
 } from "@/components/ui/dialog";
-import { Rate, SixthCpcConfig, useRates } from "@/context/rates-context";
+import { Rate, SixthCpcConfig, FifthCpcConfig, useRates } from "@/context/rates-context";
 import { useToast } from "@/hooks/use-toast";
 import { cpcData } from "@/lib/cpc-data";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/context/auth-context";
 import { useRouter } from "next/navigation";
 
 export const dynamic = 'force-dynamic';
 
 const allPayLevels = [
+    ...cpcData['5th'].payLevels.map(pl => ({ key: `5th-${pl.level}`, value: pl.level, label: `5th CPC: ${pl.scale}` })),
     ...cpcData['6th'].payLevels.map(pl => ({ key: `6th-${pl.level}`, value: pl.level, label: `6th CPC: GP ${pl.gradePay} (${pl.payBand})`})),
     ...cpcData['7th'].payLevels.map(pl => ({ key: `7th-${pl.level}`, value: pl.level, label: `7th CPC: Level ${pl.level}`}))
 ];
@@ -407,6 +409,108 @@ const SixthCpcFixedRates = ({
     );
 };
 
+// ─── 5th CPC Fixed Rates Card ────────────────────────────────────────────────
+const FifthCpcFixedRates = ({
+    config,
+    setConfig,
+}: {
+    config: FifthCpcConfig;
+    setConfig: React.Dispatch<React.SetStateAction<FifthCpcConfig>>;
+}) => {
+    const { toast } = useToast();
+    const [local, setLocal] = React.useState<FifthCpcConfig>(config);
+
+    React.useEffect(() => { setLocal(config); }, [config]);
+
+    const isModified =
+        local.hra5thRate !== config.hra5thRate ||
+        local.npa5thRate !== config.npa5thRate ||
+        local.ccaApplicable !== config.ccaApplicable;
+
+    const handleSave = () => {
+        setConfig(local);
+        toast({ title: "5th CPC Rates Saved", description: "HRA, NPA and CCA fixed rates updated." });
+    };
+
+    return (
+        <Card className="border-2 border-blue-500/30 bg-blue-50/10 dark:bg-blue-950/10">
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                    <Lock className="h-5 w-5 text-blue-600" />
+                    5th CPC — Fixed Allowance Rates & Settings
+                </CardTitle>
+                <CardDescription>
+                    HRA is <strong>15% of Basic Pay</strong> (w.e.f. 01.08.1997). NPA is <strong>25% of Basic Pay</strong> (w.e.f. 01.01.1996 to 31.03.2006).
+                    Applicable up to 31.12.2005 (1.1.2006 se 6th CPC).
+                </CardDescription>
+            </CardHeader>
+            <CardContent>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div className="space-y-2">
+                        <label className="text-sm font-medium">HRA Rate (%) <span className="text-muted-foreground text-xs">— on Basic Pay</span></label>
+                        <div className="flex items-center gap-2">
+                            <Input
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={local.hra5thRate}
+                                onChange={e => setLocal(prev => ({ ...prev, hra5thRate: parseFloat(e.target.value) || 0 }))}
+                                className="max-w-[140px]"
+                            />
+                            <span className="text-muted-foreground font-medium">%</span>
+                        </div>
+                    </div>
+                    <div className="space-y-2">
+                        <label className="text-sm font-medium">NPA Rate (%) <span className="text-muted-foreground text-xs">— on Basic Pay</span></label>
+                        <div className="flex items-center gap-2">
+                            <Input
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={local.npa5thRate}
+                                onChange={e => setLocal(prev => ({ ...prev, npa5thRate: parseFloat(e.target.value) || 0 }))}
+                                className="max-w-[140px]"
+                            />
+                            <span className="text-muted-foreground font-medium">%</span>
+                        </div>
+                    </div>
+                    <div className="space-y-2">
+                        <label className="text-sm font-medium">City Compensatory Allowance (CCA)</label>
+                        <div className="flex items-center gap-3 pt-2">
+                            <Switch
+                                checked={local.ccaApplicable}
+                                onCheckedChange={checked => setLocal(prev => ({ ...prev, ccaApplicable: checked }))}
+                            />
+                            <span className="text-xs text-muted-foreground">
+                                {local.ccaApplicable ? "Enabled (₹25/₹35/₹65/₹120)" : "Disabled"}
+                            </span>
+                        </div>
+                    </div>
+                    <div className="space-y-2">
+                        <label className="text-sm font-medium">Merge 50% DP in Basic Pay Column <span className="text-muted-foreground text-xs">— w.e.f. 01.04.2004</span></label>
+                        <div className="flex items-center gap-3 pt-2">
+                            <Switch
+                                checked={local.mergeDpInBasic}
+                                onCheckedChange={checked => setLocal(prev => ({ ...prev, mergeDpInBasic: checked }))}
+                            />
+                            <span className="text-xs text-muted-foreground">
+                                {local.mergeDpInBasic ? "Merged in Basic Pay" : "Shown in DA"}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </CardContent>
+            {isModified && (
+                <CardFooter className="flex justify-end border-t pt-6">
+                    <Button onClick={handleSave}>
+                        <Save className="mr-2 h-4 w-4" /> Save Changes
+                    </Button>
+                </CardFooter>
+            )}
+        </Card>
+    );
+};
+
 // ─── Merchant UPI & Payment Configuration Card ──────────────────────────────
 const LOCALSTORAGE_PAYMENT_CONFIG_KEY = "arrearEase_payment_config";
 
@@ -545,6 +649,8 @@ const ProtectedRatesPage = () => {
         taRates, setTaRates,
         da6thRates, setDa6thRates,
         sixthCpcConfig, setSixthCpcConfig,
+        da5thRates, setDa5thRates,
+        fifthCpcConfig, setFifthCpcConfig,
     } = useRates();
 
     return (
@@ -616,7 +722,7 @@ const ProtectedRatesPage = () => {
                 </div>
             </div>
 
-            <div className="space-y-8">
+            <div className="space-y-8 mb-12">
                 <SixthCpcFixedRates config={sixthCpcConfig} setConfig={setSixthCpcConfig} />
                 <RateTable
                     title="DA Rate Master (6th CPC)"
@@ -625,9 +731,30 @@ const ProtectedRatesPage = () => {
                     setGlobalRates={setDa6thRates}
                 />
             </div>
+
+            {/* ── 5th CPC Section ── */}
+            <div className="mb-4">
+                <div className="flex items-center gap-3">
+                    <div className="h-px flex-1 bg-border" />
+                    <span className="text-sm font-semibold text-blue-600 px-3 py-1 rounded-full border border-blue-500/30 bg-blue-50/20 dark:bg-blue-950/20">
+                        5th Pay Commission (Upto 31.12.2005)
+                    </span>
+                    <div className="h-px flex-1 bg-border" />
+                </div>
+            </div>
+
+            <div className="space-y-8">
+                <FifthCpcFixedRates config={fifthCpcConfig} setConfig={setFifthCpcConfig} />
+                <RateTable
+                    title="DA Rate Master (5th CPC)"
+                    description="DA rates applicable from 01.01.1996 to 31.12.2005 as per 5th Pay Commission schedule."
+                    initialRates={da5thRates}
+                    setGlobalRates={setDa5thRates}
+                />
+            </div>
         </main>
     );
-}
+};
 
 export default function RatesPage() {
     const { authStatus, loading, user } = useAuth();

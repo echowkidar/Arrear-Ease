@@ -7,7 +7,7 @@ import { db, isFirebaseConfigured } from '@/lib/firebase';
 import { doc, getDoc, setDoc, Timestamp } from "firebase/firestore"; 
 import { useToast } from '@/hooks/use-toast';
 import isEqual from 'lodash.isequal';
-import { default6thCpcDaRates } from '@/lib/cpc-data';
+import { default6thCpcDaRates, default5thCpcDaRates } from '@/lib/cpc-data';
 
 const rateSchema = z.object({
   id: z.string(),
@@ -34,6 +34,14 @@ export type SixthCpcConfig = {
   npa6thRate: number;   // NPA % on Basic — default 25
 };
 
+// 5th CPC fixed config type
+export type FifthCpcConfig = {
+  hra5thRate: number;     // HRA % on Basic Pay — default 15 (w.e.f. 01.08.1997)
+  npa5thRate: number;     // NPA % on Basic Pay — default 25
+  ccaApplicable: boolean; // CCA applicable or not
+  mergeDpInBasic: boolean; // Merge 50% DP in Basic Pay column w.e.f. 01.04.2004 (default: true)
+};
+
 type AllRates = {
     daRates: Rate[];
     hraRates: Rate[];
@@ -42,6 +50,9 @@ type AllRates = {
     // 6th CPC specific
     da6thRates: Rate[];
     sixthCpcConfig: SixthCpcConfig;
+    // 5th CPC specific
+    da5thRates: Rate[];
+    fifthCpcConfig: FifthCpcConfig;
 }
 
 interface RatesContextType extends AllRates {
@@ -52,6 +63,9 @@ interface RatesContextType extends AllRates {
   // 6th CPC setters
   setDa6thRates: React.Dispatch<React.SetStateAction<Rate[]>>;
   setSixthCpcConfig: React.Dispatch<React.SetStateAction<SixthCpcConfig>>;
+  // 5th CPC setters
+  setDa5thRates: React.Dispatch<React.SetStateAction<Rate[]>>;
+  setFifthCpcConfig: React.Dispatch<React.SetStateAction<FifthCpcConfig>>;
 }
 
 const DEFAULT_6TH_CONFIG: SixthCpcConfig = {
@@ -59,13 +73,37 @@ const DEFAULT_6TH_CONFIG: SixthCpcConfig = {
   npa6thRate: 25,
 };
 
-// Build default 6th CPC DA rates with UUIDs for the Rate[] type
+const DEFAULT_5TH_CONFIG: FifthCpcConfig = {
+  hra5thRate: 15,    // 15% of Basic Pay w.e.f. 01.08.1997
+  npa5thRate: 25,    // 25% of Basic Pay w.e.f. 01.01.1996 to 31.03.2006
+  ccaApplicable: false,
+  mergeDpInBasic: true, // Default to true: 01.04.2004 se basic pay column me DP merge hokar show hogi
+};
+
+// Build default 6th CPC DA rates with stable IDs for the Rate[] type
 const buildDefault6thDaRates = (): Rate[] =>
-  default6thCpcDaRates.map(r => ({
-    id: crypto.randomUUID(),
+  default6thCpcDaRates.map((r, i) => ({
+    id: `default-6th-${i}`,
     fromDate: r.fromDate,
     toDate: undefined,
     rate: r.rate,
+    basicFrom: '',
+    basicTo: '',
+    daRateFrom: '',
+    daRateTo: '',
+    payLevelFrom: '',
+    payLevelTo: '',
+    minAmount: '',
+  }));
+
+// Build default 5th CPC DA rates with stable IDs for the Rate[] type
+const buildDefault5thDaRates = (): Rate[] =>
+  default5thCpcDaRates.map((r, i) => ({
+    id: `default-5th-${i}`,
+    fromDate: r.fromDate,
+    toDate: undefined,
+    rate: r.rate,
+    dpMerged: (r as any).dpMerged || false,
     basicFrom: '',
     basicTo: '',
     daRateFrom: '',
@@ -108,6 +146,16 @@ const parseAllRateTypes = (data: any): AllRates => ({
         hra6thRate: data.sixthCpcConfig?.hra6thRate ?? DEFAULT_6TH_CONFIG.hra6thRate,
         npa6thRate: data.sixthCpcConfig?.npa6thRate ?? DEFAULT_6TH_CONFIG.npa6thRate,
     },
+    // 5th CPC — fall back to defaults if not present in stored data
+    da5thRates: data.da5thRates && Array.isArray(data.da5thRates) && data.da5thRates.length > 0
+        ? parseTimestamps(data.da5thRates)
+        : buildDefault5thDaRates(),
+    fifthCpcConfig: {
+        hra5thRate: data.fifthCpcConfig?.hra5thRate ?? DEFAULT_5TH_CONFIG.hra5thRate,
+        npa5thRate: data.fifthCpcConfig?.npa5thRate ?? DEFAULT_5TH_CONFIG.npa5thRate,
+        ccaApplicable: data.fifthCpcConfig?.ccaApplicable ?? DEFAULT_5TH_CONFIG.ccaApplicable,
+        mergeDpInBasic: data.fifthCpcConfig?.mergeDpInBasic ?? DEFAULT_5TH_CONFIG.mergeDpInBasic,
+    },
 });
 
 export const RatesProvider = ({ children }: { children: ReactNode }) => {
@@ -118,6 +166,9 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
   // 6th CPC states
   const [da6thRates, setDa6thRates] = useState<Rate[]>([]);
   const [sixthCpcConfig, setSixthCpcConfig] = useState<SixthCpcConfig>(DEFAULT_6TH_CONFIG);
+  // 5th CPC states
+  const [da5thRates, setDa5thRates] = useState<Rate[]>([]);
+  const [fifthCpcConfig, setFifthCpcConfig] = useState<FifthCpcConfig>(DEFAULT_5TH_CONFIG);
 
   const [isLoaded, setIsLoaded] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
@@ -155,6 +206,8 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
       setTaRates(rates.taRates);
       setDa6thRates(rates.da6thRates);
       setSixthCpcConfig(rates.sixthCpcConfig);
+      setDa5thRates(rates.da5thRates);
+      setFifthCpcConfig(rates.fifthCpcConfig);
   };
   
   const loadRates = useCallback(async () => {
@@ -181,13 +234,18 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
                     }
                     return clean;
                 };
-                await setDoc(ratesDocRef, sanitize(localRatesData));
+                try {
+                    await setDoc(ratesDocRef, sanitize(localRatesData));
+                    toast({ title: "Rates Synced", description: "Your locally saved rates have been uploaded to the database."});
+                } catch {
+                    // Silently ignore cloud sync if not admin
+                }
                 setAllRates(localRatesData);
-                toast({ title: "Rates Synced", description: "Your locally saved rates have been uploaded to the database."});
             } else {
                 // Neither Firestore nor local has data — use defaults
                 const defaults = parseAllRateTypes({});
                 setAllRates(defaults);
+                localStorage.setItem(LOCALSTORAGE_RATES_KEY, JSON.stringify(defaults));
             }
         } catch(error) {
             console.error("Could not load or sync rates from Firestore, falling back to local:", error);
@@ -211,7 +269,7 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
   const saveRates = useCallback(async () => {
     if (!isLoaded) return;
     
-    const dataToSave = { daRates, hraRates, npaRates, taRates, da6thRates, sixthCpcConfig };
+    const dataToSave = { daRates, hraRates, npaRates, taRates, da6thRates, sixthCpcConfig, da5thRates, fifthCpcConfig };
     
     try {
       localStorage.setItem(LOCALSTORAGE_RATES_KEY, JSON.stringify(dataToSave));
@@ -234,7 +292,11 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
                 return clean;
             };
             await setDoc(ratesDocRef, sanitize(dataToSave), { merge: true });
-        } catch (error) {
+        } catch (error: any) {
+            // Permission denied is normal for non-admin visitors — rates stay safely in localStorage
+            if (error?.code === 'permission-denied' || error?.message?.includes('permission') || error?.message?.includes('Missing or insufficient permissions')) {
+                return;
+            }
             console.error("Could not save rates to Firestore:", error);
             toast({
                 variant: 'destructive',
@@ -243,7 +305,7 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
             });
         }
     }
-  }, [isLoaded, daRates, hraRates, npaRates, taRates, da6thRates, sixthCpcConfig, dbConfigured, toast, isOnline]);
+  }, [isLoaded, daRates, hraRates, npaRates, taRates, da6thRates, sixthCpcConfig, da5thRates, fifthCpcConfig, dbConfigured, toast, isOnline]);
   
   useEffect(() => {
     if (!isLoaded) {
@@ -252,14 +314,14 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
     
     const handler = setTimeout(() => {
       const localRates = getLocalRates();
-      const currentRates = { daRates, hraRates, npaRates, taRates, da6thRates, sixthCpcConfig };
+      const currentRates = { daRates, hraRates, npaRates, taRates, da6thRates, sixthCpcConfig, da5thRates, fifthCpcConfig };
       if (!isEqual(localRates, currentRates)) {
           saveRates();
       }
     }, 1500);
 
     return () => clearTimeout(handler);
-  }, [daRates, hraRates, npaRates, taRates, da6thRates, sixthCpcConfig, saveRates, isLoaded]);
+  }, [daRates, hraRates, npaRates, taRates, da6thRates, sixthCpcConfig, da5thRates, fifthCpcConfig, saveRates, isLoaded]);
 
   return (
     <RatesContext.Provider value={{
@@ -269,6 +331,8 @@ export const RatesProvider = ({ children }: { children: ReactNode }) => {
       taRates, setTaRates,
       da6thRates, setDa6thRates,
       sixthCpcConfig, setSixthCpcConfig,
+      da5thRates, setDa5thRates,
+      fifthCpcConfig, setFifthCpcConfig,
     }}>
       {children}
     </RatesContext.Provider>

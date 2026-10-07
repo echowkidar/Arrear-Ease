@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { cpcData, default6thCpcDaRates } from "@/lib/cpc-data";
+import { cpcData, default6thCpcDaRates, default5thCpcDaRates, fifthCpcPayScales, fifthCpcCcaSlabs, fifthCpcTraSlabs } from "@/lib/cpc-data";
 import { useRates } from "@/context/rates-context";
 import { useAuth } from "@/context/auth-context";
 import {
@@ -101,7 +101,7 @@ export function RatesMatrixViewerModal({
   const [selectedLevelFilter, setSelectedLevelFilter] = useState("all");
   const [matrixViewMode, setMatrixViewMode] = useState<"table" | "cards">("table");
 
-  const { daRates, hraRates, npaRates, taRates, da6thRates, sixthCpcConfig } = useRates();
+  const { daRates, hraRates, npaRates, taRates, da6thRates, sixthCpcConfig, da5thRates, fifthCpcConfig } = useRates();
   const { user } = useAuth();
 
   const maxStages = 40;
@@ -154,6 +154,15 @@ export function RatesMatrixViewerModal({
       return dateB - dateA; // Descending
     });
   }, [da6thRates]);
+
+  const sorted5thDaRates = useMemo(() => {
+    const list = da5thRates && da5thRates.length > 0 ? da5thRates : default5thCpcDaRates;
+    return [...list].sort((a, b) => {
+      const dateA = a.fromDate ? new Date(a.fromDate).getTime() : 0;
+      const dateB = b.fromDate ? new Date(b.fromDate).getTime() : 0;
+      return dateB - dateA; // Descending
+    });
+  }, [da5thRates]);
 
   // Print Lifecycle Listeners for modal printing
   React.useEffect(() => {
@@ -406,6 +415,8 @@ export function RatesMatrixViewerModal({
                   ? "7th CPC Dearness Allowance (DA) Master Schedule (Descending Order)"
                   : activeTab === "6th-da"
                   ? "6th CPC Dearness Allowance (DA) Schedule (Descending Order)"
+                  : activeTab === "5th-cpc"
+                  ? "5th CPC Pay Scales, DA Schedule & Allowances (01.01.1996 to 31.12.2005)"
                   : "Allowance Rates (HRA, TA, NPA)"}
               </span>
               <span>
@@ -542,6 +553,64 @@ export function RatesMatrixViewerModal({
             </div>
           )}
 
+          {/* Section 4.5: 5th CPC Master Schedule Print Layout */}
+          {activeTab === "5th-cpc" && (
+            <div className="space-y-4">
+              <h3 className="font-bold text-sm text-black border-b border-black pb-1 mb-2">5th CPC Dearness Allowance (DA) Schedule (01.01.1996 – 31.12.2005)</h3>
+              <table className="w-full text-xs text-center border-collapse border border-black mb-4">
+                <thead className="bg-gray-100">
+                  <tr className="border-b border-black">
+                    <th className="border-r border-black p-1 text-left">Sr.</th>
+                    <th className="border-r border-black p-1 text-left">Effective Date</th>
+                    <th className="border-r border-black p-1 text-center">DA Rate</th>
+                    <th className="border-r border-black p-1 text-left">DP Merger Status</th>
+                    <th className="p-1 text-right">Remarks</th>
+                  </tr>
+                </thead>
+                <tbody className="font-mono text-xs">
+                  {sorted5thDaRates.map((r, idx) => {
+                    const isDp = Boolean((r as any).dpMerged);
+                    const rateVal = Number(r.rate);
+                    const fromStr = r.fromDate ? format(new Date(r.fromDate), "dd-MM-yyyy") : "—";
+                    return (
+                      <tr key={idx} className="border-b border-black">
+                        <td className="border-r border-black p-1 text-left">{idx + 1}</td>
+                        <td className="border-r border-black p-1 text-left font-semibold">{fromStr}</td>
+                        <td className="border-r border-black p-1 text-center font-bold">{isDp ? `50 + ${rateVal}%` : `${rateVal}%`}</td>
+                        <td className="border-r border-black p-1 text-left">{isDp ? "50% DP Merged (w.e.f. 01.04.2004)" : "Pre-Merger"}</td>
+                        <td className="p-1 text-right">5th CPC</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+
+              <h3 className="font-bold text-sm text-black border-b border-black pb-1 mb-2">5th CPC Pay Scales & Incremental Structure (S-1 to S-21)</h3>
+              <table className="w-full text-xs text-center border-collapse border border-black">
+                <thead className="bg-gray-100">
+                  <tr className="border-b border-black">
+                    <th className="border-r border-black p-1 text-left">Scale</th>
+                    <th className="border-r border-black p-1 text-left">Pay Scale Structure (₹)</th>
+                    <th className="border-r border-black p-1 text-right">Min Pay (₹)</th>
+                    <th className="border-r border-black p-1 text-right">Max Pay (₹)</th>
+                    <th className="p-1 text-left">Designation / Group</th>
+                  </tr>
+                </thead>
+                <tbody className="font-mono text-xs">
+                  {fifthCpcPayScales.map((ps, idx) => (
+                    <tr key={idx} className="border-b border-black">
+                      <td className="border-r border-black p-1 text-left font-bold">S-{idx + 1}</td>
+                      <td className="border-r border-black p-1 text-left font-sans">{ps.scale}</td>
+                      <td className="border-r border-black p-1 text-right">₹{ps.minPay.toLocaleString("en-IN")}</td>
+                      <td className="border-r border-black p-1 text-right">₹{ps.maxPay.toLocaleString("en-IN")}</td>
+                      <td className="p-1 text-left font-sans">{ps.description}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
           {/* Section 5: Allowances (HRA, TA, NPA) */}
           {activeTab === "allowances" && (
             <div className="space-y-6">
@@ -653,7 +722,7 @@ export function RatesMatrixViewerModal({
         >
           {/* Tabs Navigation */}
           <div className="px-4 sm:px-6 pt-3 pb-2 border-b bg-muted/10">
-            <TabsList className="grid grid-cols-2 sm:grid-cols-5 w-full h-auto p-1 bg-muted/60">
+            <TabsList className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 w-full h-auto p-1 bg-muted/60">
               <TabsTrigger value="7th-matrix" className="text-xs sm:text-sm py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
                 <TableProperties className="h-3.5 w-3.5 mr-1.5 text-blue-600 dark:text-blue-400" />
                 7th CPC Matrix
@@ -661,6 +730,10 @@ export function RatesMatrixViewerModal({
               <TabsTrigger value="6th-structure" className="text-xs sm:text-sm py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
                 <Layers className="h-3.5 w-3.5 mr-1.5 text-amber-600 dark:text-amber-400" />
                 6th CPC Structure
+              </TabsTrigger>
+              <TabsTrigger value="5th-cpc" className="text-xs sm:text-sm py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                <History className="h-3.5 w-3.5 mr-1.5 text-indigo-600 dark:text-indigo-400" />
+                5th CPC Master
               </TabsTrigger>
               <TabsTrigger value="7th-da" className="text-xs sm:text-sm py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
                 <TrendingUp className="h-3.5 w-3.5 mr-1.5 text-emerald-600 dark:text-emerald-400" />
@@ -670,7 +743,7 @@ export function RatesMatrixViewerModal({
                 <History className="h-3.5 w-3.5 mr-1.5 text-purple-600 dark:text-purple-400" />
                 6th CPC DA Rates
               </TabsTrigger>
-              <TabsTrigger value="allowances" className="text-xs sm:text-sm py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm col-span-2 sm:col-span-1">
+              <TabsTrigger value="allowances" className="text-xs sm:text-sm py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
                 <Building2 className="h-3.5 w-3.5 mr-1.5 text-rose-600 dark:text-rose-400" />
                 HRA, TA & NPA
               </TabsTrigger>
@@ -1265,6 +1338,237 @@ export function RatesMatrixViewerModal({
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Tab 6: 5th CPC Reference View */}
+          <TabsContent
+            value="5th-cpc"
+            className="flex-1 flex flex-col overflow-hidden m-0 p-4 sm:p-6 data-[state=inactive]:hidden"
+          >
+            <div className="flex-1 overflow-y-auto space-y-6 pr-1">
+              {/* Header Card */}
+              <Card className="border-blue-500/30 bg-blue-50/10 dark:bg-blue-950/10">
+                <CardHeader className="p-4 sm:p-6 pb-2">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                    <div>
+                      <CardTitle className="text-base sm:text-lg flex items-center gap-2 text-blue-700 dark:text-blue-400">
+                        <History className="h-5 w-5" />
+                        5th Central Pay Commission Master Schedule
+                      </CardTitle>
+                      <CardDescription className="text-xs">
+                        Official 5th CPC Pay Scales, DA Schedule & Allowance Framework (Applicable 01.01.1996 upto 31.12.2005).
+                      </CardDescription>
+                    </div>
+                    <Badge variant="outline" className="border-blue-500/40 text-blue-700 dark:text-blue-300 bg-blue-500/10">
+                      01.01.1996 – 31.12.2005
+                    </Badge>
+                  </div>
+                </CardHeader>
+              </Card>
+
+              {/* 5th CPC DA Rates Table */}
+              <Card>
+                <CardHeader className="p-4 sm:p-6 pb-2">
+                  <CardTitle className="text-sm sm:text-base flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-emerald-600" />
+                    5th CPC Dearness Allowance (DA) Rates Schedule (Descending)
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    DA rates w.e.f 01.01.1996. Note: From 01.04.2004 onwards, 50% DA was converted to Dearness Pay (DP) and DA was paid on (Basic + DP).
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="p-4 sm:p-6 pt-2">
+                  <div className="rounded-md border overflow-x-auto max-h-[360px] overflow-y-auto">
+                    <Table>
+                      <TableHeader className="bg-muted/80 sticky top-0">
+                        <TableRow>
+                          <TableHead className="w-[80px]">Sr. No.</TableHead>
+                          <TableHead>Effective Date</TableHead>
+                          <TableHead>Official DA Rate</TableHead>
+                          <TableHead>Dearness Pay (DP) Status</TableHead>
+                          <TableHead className="text-right">Effective Dearness on Basic</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {sorted5thDaRates.map((r, idx) => {
+                          const isDp = Boolean((r as any).dpMerged);
+                          const rateVal = Number(r.rate);
+                          const effectiveTotal = isDp ? (50 + rateVal * 1.5).toFixed(1) + "%" : `${rateVal}%`;
+                          return (
+                            <TableRow key={(r as any).id || idx} className="hover:bg-muted/40 font-mono text-xs">
+                              <TableCell className="font-sans text-muted-foreground">{idx + 1}</TableCell>
+                              <TableCell className="font-semibold text-foreground">
+                                {r.fromDate ? format(new Date(r.fromDate), "dd MMM yyyy") : "—"}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="secondary" className="font-mono text-xs font-bold">
+                                  {isDp ? `50 + ${rateVal}%` : `${rateVal}%`}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="font-sans">
+                                {isDp ? (
+                                  <span className="text-blue-600 dark:text-blue-400 font-semibold text-xs">
+                                    50% DP Merged w.e.f. 01.04.2004
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground text-xs">Standard Pre-Merger DA</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right font-bold font-mono text-xs">
+                                {effectiveTotal}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* 5th CPC Pay Scales Reference Table */}
+              <Card>
+                <CardHeader className="p-4 sm:p-6 pb-2">
+                  <CardTitle className="text-sm sm:text-base flex items-center gap-2">
+                    <TableProperties className="h-4 w-4 text-primary" />
+                    5th CPC Standard Pay Scales (S-1 to S-21)
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Pay scales with incremental stages and typical designations under 5th Central Pay Commission.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="p-4 sm:p-6 pt-2">
+                  <div className="rounded-md border overflow-x-auto max-h-[420px] overflow-y-auto">
+                    <Table>
+                      <TableHeader className="bg-muted/80 sticky top-0">
+                        <TableRow>
+                          <TableHead className="w-[90px]">Scale Code</TableHead>
+                          <TableHead>Pay Scale Structure (₹)</TableHead>
+                          <TableHead className="text-right">Min Pay (₹)</TableHead>
+                          <TableHead className="text-right">Max Pay (₹)</TableHead>
+                          <TableHead>Designation / Group</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {fifthCpcPayScales.map((ps, idx) => (
+                          <TableRow key={idx} className="hover:bg-muted/40 font-mono text-xs">
+                            <TableCell className="font-bold text-foreground">
+                              <Badge variant="outline">{`S-${idx + 1}`}</Badge>
+                            </TableCell>
+                            <TableCell className="font-bold text-blue-700 dark:text-blue-300">
+                              {ps.scale}
+                            </TableCell>
+                            <TableCell className="text-right font-semibold">
+                              ₹{ps.minPay.toLocaleString("en-IN")}
+                            </TableCell>
+                            <TableCell className="text-right font-semibold">
+                              ₹{ps.maxPay.toLocaleString("en-IN")}
+                            </TableCell>
+                            <TableCell className="font-sans text-muted-foreground">
+                              {ps.description}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Allowances Summary Cards (CCA, TRA, HRA, NPA) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* CCA */}
+                <Card>
+                  <CardHeader className="p-4 pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Building2 className="h-4 w-4 text-amber-600" />
+                      City Compensatory Allowance (C.C.A.) Slabs
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-4 pt-2">
+                    <Table>
+                      <TableHeader className="bg-muted/60">
+                        <TableRow>
+                          <TableHead>Basic Pay Slab (₹)</TableHead>
+                          <TableHead className="text-right">C.C.A. Rate (₹/month)</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody className="text-xs font-mono">
+                        {fifthCpcCcaSlabs.map((s, idx) => (
+                          <TableRow key={idx}>
+                            <TableCell>{s.basicTo >= 999999 ? `₹${s.basicFrom.toLocaleString('en-IN')} & Above` : `₹${s.basicFrom.toLocaleString('en-IN')} to ₹${s.basicTo.toLocaleString('en-IN')}`}</TableCell>
+                            <TableCell className="text-right font-bold">₹{s.rate}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+
+                {/* TRA */}
+                <Card>
+                  <CardHeader className="p-4 pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Car className="h-4 w-4 text-cyan-600" />
+                      Transport Allowance (T.R.A.) Slabs
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-4 pt-2">
+                    <Table>
+                      <TableHeader className="bg-muted/60">
+                        <TableRow>
+                          <TableHead>Pay Scale Slab</TableHead>
+                          <TableHead className="text-right">T.R.A. Rate (₹/month)</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody className="text-xs font-mono">
+                        <TableRow>
+                          <TableCell className="font-sans">Upto ₹5500 – ₹9000 (S-1 to S-10)</TableCell>
+                          <TableCell className="text-right font-bold">₹75</TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell className="font-sans">₹6500–₹10500 to ₹7500–₹12000 (S-11 to S-13)</TableCell>
+                          <TableCell className="text-right font-bold">₹200</TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell className="font-sans">₹8000–₹13500 & Above (S-14 & above)</TableCell>
+                          <TableCell className="text-right font-bold">₹400</TableCell>
+                        </TableRow>
+                      </TableBody>
+                    </Table>
+                    <p className="text-[11px] text-muted-foreground mt-2">
+                      * Blind / Orthopaedically handicapped employees receive <strong>Double T.R.A.</strong>
+                    </p>
+                  </CardContent>
+                </Card>
+
+                {/* HRA & NPA Card */}
+                <Card className="md:col-span-2">
+                  <CardHeader className="p-4 pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <HeartPulse className="h-4 w-4 text-rose-600" />
+                      House Rent Allowance (HRA) & Non-Practicing Allowance (NPA)
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-4 pt-2 text-xs space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="p-3 rounded-lg border bg-muted/20">
+                        <h4 className="font-bold text-foreground mb-1">House Rent Allowance (HRA)</h4>
+                        <p className="text-muted-foreground">
+                          <strong>15% of Basic Pay</strong> w.e.f. 01.08.1997. Calculated on Basic Pay.
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-lg border bg-muted/20">
+                        <h4 className="font-bold text-foreground mb-1">Non-Practicing Allowance (NPA)</h4>
+                        <p className="text-muted-foreground">
+                          <strong>25% of Basic Pay</strong> w.e.f. 01.01.1996 to 31.03.2006. (Ceiling: Basic + NPA &le; ₹29,500/month).
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
           </TabsContent>
         </Tabs>
 
