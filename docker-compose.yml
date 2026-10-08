@@ -14,6 +14,7 @@ services:
         NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID}
         NEXT_PUBLIC_FIREBASE_APP_ID: ${NEXT_PUBLIC_FIREBASE_APP_ID}
     image: arrear-ease:latest
+    pull_policy: build
     restart: unless-stopped
     environment:
       NODE_ENV: production
