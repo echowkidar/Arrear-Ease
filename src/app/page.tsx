@@ -675,6 +675,29 @@ export default function Home() {
     };
   }, [activeCols, statement]);
 
+  // Pay Fixation Reference check:
+  // If user only wrote one reference (or all periods share the same reference), print it only once in the header.
+  // If different references exist for different periods, print each reference on its respective period line.
+  const { commonPayFixationRef, hasMultipleDistinctRefs } = React.useMemo(() => {
+    if (!statement) return { commonPayFixationRef: null, hasMultipleDistinctRefs: false };
+    const refs: string[] = [];
+    if (statement.periods && statement.periods.length > 0) {
+      statement.periods.forEach(p => {
+        const r = p.formData.payFixationRef?.trim();
+        if (r && !refs.includes(r)) {
+          refs.push(r);
+        }
+      });
+    }
+    const empRef = statement.employeeInfo.payFixationRef?.trim();
+    if (empRef && !refs.includes(empRef)) {
+      refs.push(empRef);
+    }
+    const hasMultiple = refs.length > 1;
+    const commonRef = refs.length === 1 ? refs[0] : (!hasMultiple && refs.length > 0 ? refs[0] : null);
+    return { commonPayFixationRef: commonRef, hasMultipleDistinctRefs: hasMultiple };
+  }, [statement]);
+
   React.useEffect(() => {
     const updateOnlineStatus = () => setIsOnline(navigator.onLine);
     window.addEventListener('online', updateOnlineStatus);
@@ -4006,67 +4029,113 @@ export default function Home() {
                         {statement.employeeInfo.employeeName} ({statement.employeeInfo.employeeId})
                       </span>
                       <br />
-                      {statement.employeeInfo.designation}, {statement.employeeInfo.department}{statement.employeeInfo.salaryRegisterNo ? ` (${statement.employeeInfo.salaryRegisterNo})` : ''} <br />
+                      <span className="text-muted-foreground print:text-black text-xs sm:text-sm">
+                        {statement.employeeInfo.designation}, {statement.employeeInfo.department}
+                        {statement.employeeInfo.salaryRegisterNo ? ` (${statement.employeeInfo.salaryRegisterNo})` : ''}
+                      </span>
+                      {commonPayFixationRef && (
+                        <div className="text-xs sm:text-sm print:text-xs font-semibold text-foreground print:text-black mt-0.5">
+                          {/^ref(\.|:|\s)/i.test(commonPayFixationRef) ? (
+                            commonPayFixationRef
+                          ) : (
+                            <><strong>Ref:</strong> {commonPayFixationRef}</>
+                          )}
+                        </div>
+                      )}
                       {statement.periods && statement.periods.length > 0 ? (
-                        statement.periods.map((p, idx) => (
-                          <div key={p.id} className="mt-1.5 leading-snug">
-                            {statement.periods!.length > 1 && <span className="inline-block bg-primary/10 text-primary print:bg-transparent print:border print:border-black print:text-black font-semibold text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded mr-2 mb-1">Period {idx + 1}</span>}
-                            {(p.formData.paid?.basicPay != null || p.formData.toBePaid?.basicPay != null) && (
-                              <span className="inline-block">
-                                {p.formData.paid?.basicPay != null && (
-                                  <span>
-                                    <strong>Pre-revised Pay:</strong> {p.formData.paid.payLevel ? `${getPayLevelDisplay(p.formData.paid.cpc, p.formData.paid.payLevel)} ` : ''}(Basic: Rs. {p.formData.paid.basicPay.toLocaleString('en-IN')})
+                        <div className="mt-1.5 space-y-0.5 print:space-y-0.5">
+                          {statement.periods.map((p, idx) => (
+                            <div 
+                              key={p.id} 
+                              className="text-[11px] sm:text-xs print:text-[8pt] print:leading-tight text-muted-foreground print:text-black flex flex-wrap items-center justify-start print:justify-center gap-x-1.5 gap-y-0.5"
+                            >
+                              {statement.periods!.length > 1 && (
+                                <span className="inline-block bg-primary/10 text-primary print:bg-transparent print:border print:border-black print:text-black font-semibold text-[8.5px] print:text-[7pt] uppercase tracking-wider px-1.5 py-0 rounded shrink-0">
+                                  Period {idx + 1}
+                                </span>
+                              )}
+                              {(p.formData.paid?.basicPay != null || p.formData.toBePaid?.basicPay != null) && (
+                                <>
+                                  {p.formData.paid?.basicPay != null && (
+                                    <span className="shrink-0">
+                                      <strong>Pre-revised Pay:</strong> {p.formData.paid.payLevel ? `${getPayLevelDisplay(p.formData.paid.cpc, p.formData.paid.payLevel)} ` : ''}(Basic: Rs. {Number(p.formData.paid.basicPay).toLocaleString('en-IN')})
+                                    </span>
+                                  )}
+                                  {p.formData.paid?.basicPay != null && p.formData.toBePaid?.basicPay != null && (
+                                    <span className="font-normal text-muted-foreground/60 print:text-black shrink-0">|</span>
+                                  )}
+                                  {p.formData.toBePaid?.basicPay != null && (
+                                    <span className="shrink-0">
+                                      <strong>Revised Pay:</strong> {p.formData.toBePaid.payLevel ? `${getPayLevelDisplay(p.formData.toBePaid.cpc, p.formData.toBePaid.payLevel)} ` : ''}(Basic: Rs. {Number(p.formData.toBePaid.basicPay).toLocaleString('en-IN')})
+                                    </span>
+                                  )}
+                                </>
+                              )}
+                              {hasMultipleDistinctRefs && p.formData.payFixationRef && (
+                                <>
+                                  <span className="font-normal text-muted-foreground/60 print:text-black shrink-0">|</span>
+                                  <span className="shrink-0">
+                                    {/^ref(\.|:|\s)/i.test(p.formData.payFixationRef) ? (
+                                      p.formData.payFixationRef
+                                    ) : (
+                                      <><strong>Ref:</strong> {p.formData.payFixationRef}</>
+                                    )}
                                   </span>
-                                )}
-                                {p.formData.paid?.basicPay != null && p.formData.toBePaid?.basicPay != null && (
-                                  <span className="mx-2 font-normal text-muted-foreground print:text-black">|</span>
-                                )}
-                                {p.formData.toBePaid?.basicPay != null && (
-                                  <span>
-                                    <strong>Revised Pay:</strong> {p.formData.toBePaid.payLevel ? `${getPayLevelDisplay(p.formData.toBePaid.cpc, p.formData.toBePaid.payLevel)} ` : ''}(Basic: Rs. {p.formData.toBePaid.basicPay.toLocaleString('en-IN')})
-                                  </span>
-                                )}
-                              </span>
-                            )}
-                            <div className="text-muted-foreground print:text-black text-xs sm:text-sm mt-0.5">
-                              {p.formData.payFixationRef && (
-                                <span className="mr-3"><strong>Ref:</strong> {p.formData.payFixationRef}</span>
+                                </>
                               )}
                               {p.formData.fromDate && p.formData.toDate && (
-                                <span><strong>Period:</strong> {format(new Date(p.formData.fromDate), "dd/MM/yyyy")} to {format(new Date(p.formData.toDate), "dd/MM/yyyy")}</span>
+                                <>
+                                  <span className="font-normal text-muted-foreground/60 print:text-black shrink-0">|</span>
+                                  <span className="shrink-0">
+                                    <strong>Period:</strong> {format(new Date(p.formData.fromDate), "dd/MM/yyyy")} to {format(new Date(p.formData.toDate), "dd/MM/yyyy")}
+                                  </span>
+                                </>
                               )}
                             </div>
-                          </div>
-                        ))
+                          ))}
+                        </div>
                       ) : (
-                        <>
+                        <div className="mt-1 text-[11px] sm:text-xs print:text-[8pt] print:leading-tight text-muted-foreground print:text-black flex flex-wrap items-center justify-start print:justify-center gap-x-1.5 gap-y-0.5">
                           {(statement.employeeInfo.paid?.basicPay != null || statement.employeeInfo.toBePaid?.basicPay != null) && (
                             <>
-                              <span>
-                                {statement.employeeInfo.paid?.basicPay != null && (
-                                  <span>
-                                    <strong>Pre-revised Pay:</strong> {statement.employeeInfo.paid.payLevel ? `${getPayLevelDisplay(statement.employeeInfo.paid.cpc, statement.employeeInfo.paid.payLevel)} ` : ''}(Basic: Rs. {statement.employeeInfo.paid.basicPay.toLocaleString('en-IN')})
-                                  </span>
-                                )}
-                                {statement.employeeInfo.paid?.basicPay != null && statement.employeeInfo.toBePaid?.basicPay != null && (
-                                  <span className="mx-2 font-normal">|</span>
-                                )}
-                                {statement.employeeInfo.toBePaid?.basicPay != null && (
-                                  <span>
-                                    <strong>Revised Pay:</strong> {statement.employeeInfo.toBePaid.payLevel ? `${getPayLevelDisplay(statement.employeeInfo.toBePaid.cpc, statement.employeeInfo.toBePaid.payLevel)} ` : ''}(Basic: Rs. {statement.employeeInfo.toBePaid.basicPay.toLocaleString('en-IN')})
-                                  </span>
-                                )}
-                              </span>
-                              <br />
+                              {statement.employeeInfo.paid?.basicPay != null && (
+                                <span className="shrink-0">
+                                  <strong>Pre-revised Pay:</strong> {statement.employeeInfo.paid.payLevel ? `${getPayLevelDisplay(statement.employeeInfo.paid.cpc, statement.employeeInfo.paid.payLevel)} ` : ''}(Basic: Rs. {Number(statement.employeeInfo.paid.basicPay).toLocaleString('en-IN')})
+                                </span>
+                              )}
+                              {statement.employeeInfo.paid?.basicPay != null && statement.employeeInfo.toBePaid?.basicPay != null && (
+                                <span className="font-normal text-muted-foreground/60 print:text-black shrink-0">|</span>
+                              )}
+                              {statement.employeeInfo.toBePaid?.basicPay != null && (
+                                <span className="shrink-0">
+                                  <strong>Revised Pay:</strong> {statement.employeeInfo.toBePaid.payLevel ? `${getPayLevelDisplay(statement.employeeInfo.toBePaid.cpc, statement.employeeInfo.toBePaid.payLevel)} ` : ''}(Basic: Rs. {Number(statement.employeeInfo.toBePaid.basicPay).toLocaleString('en-IN')})
+                                </span>
+                              )}
                             </>
                           )}
-                          {statement.employeeInfo.payFixationRef && (
-                            <>Ref: {statement.employeeInfo.payFixationRef} <br /></>
+                          {!commonPayFixationRef && statement.employeeInfo.payFixationRef && (
+                            <>
+                              <span className="font-normal text-muted-foreground/60 print:text-black shrink-0">|</span>
+                              <span className="shrink-0">
+                                {/^ref(\.|:|\s)/i.test(statement.employeeInfo.payFixationRef) ? (
+                                  statement.employeeInfo.payFixationRef
+                                ) : (
+                                  <><strong>Ref:</strong> {statement.employeeInfo.payFixationRef}</>
+                                )}
+                              </span>
+                            </>
                           )}
-                          {statement.employeeInfo.fromDate && statement.employeeInfo.toDate &&
-                            `Period: ${format(new Date(statement.employeeInfo.fromDate), "dd/MM/yyyy")} to ${format(new Date(statement.employeeInfo.toDate), "dd/MM/yyyy")}`
-                          }
-                        </>
+                          {statement.employeeInfo.fromDate && statement.employeeInfo.toDate && (
+                            <>
+                              {(statement.employeeInfo.paid?.basicPay != null || statement.employeeInfo.toBePaid?.basicPay != null) && (
+                                <span className="font-normal text-muted-foreground/60 print:text-black shrink-0">|</span>
+                              )}
+                              <span className="shrink-0">
+                                <strong>Period:</strong> {format(new Date(statement.employeeInfo.fromDate), "dd/MM/yyyy")} to {format(new Date(statement.employeeInfo.toDate), "dd/MM/yyyy")}
+                              </span>
+                            </>
+                          )}
+                        </div>
                       )}
                     </CardDescription>
                   </div>
