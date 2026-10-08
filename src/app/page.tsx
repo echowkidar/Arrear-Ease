@@ -4051,14 +4051,14 @@ export default function Home() {
                             >
                               {statement.periods!.length > 1 && (
                                 <span className="inline-block bg-primary/10 text-primary print:bg-transparent print:border print:border-black print:text-black font-semibold text-[8.5px] print:text-[7pt] uppercase tracking-wider px-1.5 py-0 rounded shrink-0">
-                                  Period {idx + 1}
+                                  P-{idx + 1}
                                 </span>
                               )}
                               {(p.formData.paid?.basicPay != null || p.formData.toBePaid?.basicPay != null) && (
                                 <>
                                   {p.formData.paid?.basicPay != null && (
                                     <span className="shrink-0">
-                                      <strong>Pre-revised Pay:</strong> {p.formData.paid.payLevel ? `${getPayLevelDisplay(p.formData.paid.cpc, p.formData.paid.payLevel)} ` : ''}(Basic: Rs. {Number(p.formData.paid.basicPay).toLocaleString('en-IN')})
+                                      <strong>Pre-revised:</strong> {p.formData.paid.payLevel ? `${getPayLevelDisplay(p.formData.paid.cpc, p.formData.paid.payLevel)} ` : ''}(Basic: Rs. {Number(p.formData.paid.basicPay).toLocaleString('en-IN')})
                                     </span>
                                   )}
                                   {p.formData.paid?.basicPay != null && p.formData.toBePaid?.basicPay != null && (
@@ -4066,7 +4066,7 @@ export default function Home() {
                                   )}
                                   {p.formData.toBePaid?.basicPay != null && (
                                     <span className="shrink-0">
-                                      <strong>Revised Pay:</strong> {p.formData.toBePaid.payLevel ? `${getPayLevelDisplay(p.formData.toBePaid.cpc, p.formData.toBePaid.payLevel)} ` : ''}(Basic: Rs. {Number(p.formData.toBePaid.basicPay).toLocaleString('en-IN')})
+                                      <strong>Revised:</strong> {p.formData.toBePaid.payLevel ? `${getPayLevelDisplay(p.formData.toBePaid.cpc, p.formData.toBePaid.payLevel)} ` : ''}(Basic: Rs. {Number(p.formData.toBePaid.basicPay).toLocaleString('en-IN')})
                                     </span>
                                   )}
                                 </>
@@ -4100,7 +4100,7 @@ export default function Home() {
                             <>
                               {statement.employeeInfo.paid?.basicPay != null && (
                                 <span className="shrink-0">
-                                  <strong>Pre-revised Pay:</strong> {statement.employeeInfo.paid.payLevel ? `${getPayLevelDisplay(statement.employeeInfo.paid.cpc, statement.employeeInfo.paid.payLevel)} ` : ''}(Basic: Rs. {Number(statement.employeeInfo.paid.basicPay).toLocaleString('en-IN')})
+                                  <strong>Pre-revised:</strong> {statement.employeeInfo.paid.payLevel ? `${getPayLevelDisplay(statement.employeeInfo.paid.cpc, statement.employeeInfo.paid.payLevel)} ` : ''}(Basic: Rs. {Number(statement.employeeInfo.paid.basicPay).toLocaleString('en-IN')})
                                 </span>
                               )}
                               {statement.employeeInfo.paid?.basicPay != null && statement.employeeInfo.toBePaid?.basicPay != null && (
@@ -4108,7 +4108,7 @@ export default function Home() {
                               )}
                               {statement.employeeInfo.toBePaid?.basicPay != null && (
                                 <span className="shrink-0">
-                                  <strong>Revised Pay:</strong> {statement.employeeInfo.toBePaid.payLevel ? `${getPayLevelDisplay(statement.employeeInfo.toBePaid.cpc, statement.employeeInfo.toBePaid.payLevel)} ` : ''}(Basic: Rs. {Number(statement.employeeInfo.toBePaid.basicPay).toLocaleString('en-IN')})
+                                  <strong>Revised:</strong> {statement.employeeInfo.toBePaid.payLevel ? `${getPayLevelDisplay(statement.employeeInfo.toBePaid.cpc, statement.employeeInfo.toBePaid.payLevel)} ` : ''}(Basic: Rs. {Number(statement.employeeInfo.toBePaid.basicPay).toLocaleString('en-IN')})
                                 </span>
                               )}
                             </>
