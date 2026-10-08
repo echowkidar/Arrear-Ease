@@ -1555,13 +1555,13 @@ export function RatesMatrixViewerModal({
                       <div className="p-3 rounded-lg border bg-muted/20">
                         <h4 className="font-bold text-foreground mb-1">House Rent Allowance (HRA)</h4>
                         <p className="text-muted-foreground">
-                          <strong>15% of Basic Pay</strong> w.e.f. 01.08.1997. Calculated on Basic Pay.
+                          <strong>15%</strong> (on Basic Pay upto 31.03.2004; on <strong>Basic Pay + DP</strong> w.e.f. 01.04.2004).
                         </p>
                       </div>
                       <div className="p-3 rounded-lg border bg-muted/20">
                         <h4 className="font-bold text-foreground mb-1">Non-Practicing Allowance (NPA)</h4>
                         <p className="text-muted-foreground">
-                          <strong>25% of Basic Pay</strong> w.e.f. 01.01.1996 to 31.03.2006. (Ceiling: Basic + NPA &le; ₹29,500/month).
+                          <strong>25%</strong> (on Basic Pay upto 31.03.2004; on <strong>Basic Pay + DP</strong> w.e.f. 01.04.2004. Ceiling: Basic + NPA &le; ₹29,500/month).
                         </p>
                       </div>
                     </div>

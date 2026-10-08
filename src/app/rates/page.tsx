@@ -440,14 +440,14 @@ const FifthCpcFixedRates = ({
                     5th CPC — Fixed Allowance Rates & Settings
                 </CardTitle>
                 <CardDescription>
-                    HRA is <strong>15% of Basic Pay</strong> (w.e.f. 01.08.1997). NPA is <strong>25% of Basic Pay</strong> (w.e.f. 01.01.1996 to 31.03.2006).
+                    HRA is <strong>15%</strong> (on Basic Pay upto 31.03.2004; on <strong>Basic Pay + DP</strong> w.e.f. 01.04.2004). NPA is <strong>25%</strong> (on Basic Pay upto 31.03.2004; on <strong>Basic Pay + DP</strong> w.e.f. 01.04.2004 with ₹29,500 ceiling).
                     Applicable up to 31.12.2005 (1.1.2006 se 6th CPC).
                 </CardDescription>
             </CardHeader>
             <CardContent>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                     <div className="space-y-2">
-                        <label className="text-sm font-medium">HRA Rate (%) <span className="text-muted-foreground text-xs">— on Basic Pay</span></label>
+                        <label className="text-sm font-medium">HRA Rate (%) <span className="text-muted-foreground text-xs">— on Basic (+ DP from 01.04.2004)</span></label>
                         <div className="flex items-center gap-2">
                             <Input
                                 type="number"
@@ -461,7 +461,7 @@ const FifthCpcFixedRates = ({
                         </div>
                     </div>
                     <div className="space-y-2">
-                        <label className="text-sm font-medium">NPA Rate (%) <span className="text-muted-foreground text-xs">— on Basic Pay</span></label>
+                        <label className="text-sm font-medium">NPA Rate (%) <span className="text-muted-foreground text-xs">— on Basic (+ DP from 01.04.2004)</span></label>
                         <div className="flex items-center gap-2">
                             <Input
                                 type="number"

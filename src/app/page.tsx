@@ -1411,14 +1411,22 @@ export default function Home() {
 
       const { rate: effectiveDaRate, dpMerged: isDpMerged } = getEffectiveDaRate();
 
+      // For 5th CPC w.e.f. 01.04.2004, 50% of Basic Pay is treated as Dearness Pay (DP)
+      const fullMonthDp = (is5thCpc && isDpMerged) ? Math.round(fullMonthBasic * 0.50) : 0;
+      const dpOnBasic = (is5thCpc && isDpMerged) ? (proratedBasic * 0.50) : 0;
+      const dpAmount = Math.round(dpOnBasic);
+
       // Calculate NPA
       let npa = 0;
       let fullMonthNpaCalculated = 0;
       if (sideData.npaApplicable) {
         if (is5thCpc) {
-          // 5th CPC: NPA is 25% of Basic Pay (w.e.f. 01.01.1996)
+          // 5th CPC: NPA rate is 25% (or configured rate)
+          // w.e.f. 01.04.2004: NPA is calculated on (Basic Pay + DP)
+          // Prior to 01.04.2004: NPA is calculated on Basic Pay
+          const npaBase = isDpMerged ? (fullMonthBasic + fullMonthDp) : fullMonthBasic;
+          fullMonthNpaCalculated = npaBase * (fifthCpcConfig.npa5thRate / 100);
           // Ceiling: Basic Pay + NPA shall not exceed ₹29,500 per month
-          fullMonthNpaCalculated = fullMonthBasic * (fifthCpcConfig.npa5thRate / 100);
           if (fullMonthBasic + fullMonthNpaCalculated > 29500) {
             fullMonthNpaCalculated = Math.max(0, 29500 - fullMonthBasic);
           }
@@ -1447,46 +1455,49 @@ export default function Home() {
       // Calculate DA & DP
       let da = 0;
       let reportedBasic = proratedBasic;
-      let dpAmount = 0;
       let basicDisplay = `${Math.round(proratedBasic)}`;
 
       if (sideData.daApplicable) {
-        // DA base = Basic Pay + NPA (for all CPCs, NPA counts for DA)
-        const baseForDA = proratedBasic + npa;
         if (is5thCpc && isDpMerged) {
           // 5th CPC DP Merger w.e.f. 01.04.2004 (MoF OM No. 105/1/2004-IC dated 01.03.2004):
-          // 50% of Basic Pay is treated as Dearness Pay (DP).
-          const dpOnBasic = proratedBasic * 0.50;
-          dpAmount = Math.round(dpOnBasic);
-          const totalDp = baseForDA * 0.50;
-          const daOnBaseAndDp = (baseForDA + totalDp) * (effectiveDaRate / 100);
+          // Base for DA = Basic Pay + DP + NPA (since NPA is 25% of Basic+DP)
+          // Applicable DA rate (11%, 14%, 17%, 21%) is calculated on (Basic Pay + DP + NPA)
+          const baseForDaWithDp = proratedBasic + dpAmount + npa;
+          const daAmount = baseForDaWithDp * (effectiveDaRate / 100);
 
           if (fifthCpcConfig.mergeDpInBasic) {
             // Option 1 (Standard Accounts Practice / User Request):
-            // Merge 50% DP into the Basic Pay column for display & summation
-            reportedBasic = proratedBasic + dpOnBasic;
+            // Merge 50% DP into Basic Pay column for display & summation
+            reportedBasic = proratedBasic + dpAmount;
             const pureBasic = Math.round(proratedBasic);
-            const dpPart = Math.round(dpOnBasic);
-            // Display as "5000+2500" with plus sign per user requirement
+            const dpPart = dpAmount;
+            // Display as "10000+5000" with plus sign per user requirement
             basicDisplay = `${pureBasic}+${dpPart}`;
 
-            // DA column reflects the remaining DA% (11%, 14%, 17%, 21%) calculated on (Base + DP)
-            // If NPA exists, DP on NPA is included in DA
-            const dpOnNpa = npa * 0.50;
-            da = daOnBaseAndDp + dpOnNpa;
+            // DA column reflects the DA% on (Basic + DP + NPA)
+            da = daAmount;
           } else {
             // Option 2 (Unmerged display):
-            // Keep pure basic in Basic column, and include DP + DA in DA column
+            // Keep pure basic in Basic column, and include DP in DA column
             reportedBasic = proratedBasic;
             basicDisplay = `${Math.round(proratedBasic)}`;
-            da = totalDp + daOnBaseAndDp;
+            da = dpAmount + daAmount;
           }
         } else {
+          // 5th CPC pre-2004, 6th CPC, 7th CPC: DA base = Basic Pay + NPA
+          const baseForDA = proratedBasic + npa;
           da = baseForDA * (effectiveDaRate / 100);
           basicDisplay = `${Math.round(proratedBasic)}`;
         }
       } else {
-        basicDisplay = `${Math.round(proratedBasic)}`;
+        if (is5thCpc && isDpMerged && fifthCpcConfig.mergeDpInBasic) {
+          reportedBasic = proratedBasic + dpAmount;
+          const pureBasic = Math.round(proratedBasic);
+          const dpPart = dpAmount;
+          basicDisplay = `${pureBasic}+${dpPart}`;
+        } else {
+          basicDisplay = `${Math.round(proratedBasic)}`;
+        }
       }
 
       // Calculate HRA
@@ -1495,8 +1506,10 @@ export default function Home() {
         const prorationFactor = getProratedFactorForAllowance(sideData.hraFromDate, sideData.hraToDate);
         if (prorationFactor > 0) {
           if (is5thCpc) {
-            // 5th CPC: HRA = 15% of Basic Pay (w.e.f. 01.08.1997)
-            const hraBase = fullMonthBasic;
+            // 5th CPC: HRA rate (default 15% w.e.f. 01.08.1997)
+            // Prior to 01.04.2004: HRA base = Basic Pay (+ NPA if applicable)
+            // w.e.f. 01.04.2004: HRA base = (Basic Pay + DP) (+ NPA if applicable)
+            const hraBase = fullMonthBasic + (isDpMerged ? fullMonthDp : 0) + (sideData.npaApplicable ? fullMonthNpaCalculated : 0);
             let fullMonthHra = hraBase * (fifthCpcConfig.hra5thRate / 100);
             if (sideData.hraFixedRateApplicable && sideData.hraFixedRate && sideData.hraFixedRateFromDate && sideData.hraFixedRateToDate) {
               if (isWithinInterval(currentDate, { start: sideData.hraFixedRateFromDate, end: sideData.hraFixedRateToDate })) {
@@ -1597,10 +1610,12 @@ export default function Home() {
       if (is5thCpc && fifthCpcConfig.ccaApplicable) {
         // 5th CPC CCA Slabs:
         // Upto 2999: Rs 25 | 3000 to 4499: Rs 35 | 4500 to 5999: Rs 65 | 6000 & Above: Rs 120
+        // w.e.f. 01.04.2004: DP counts for CCA slabs
+        const ccaBase = isDpMerged ? (fullMonthBasic + fullMonthDp) : fullMonthBasic;
         let ccaAmount = 0;
-        if (fullMonthBasic < 3000) ccaAmount = 25;
-        else if (fullMonthBasic < 4500) ccaAmount = 35;
-        else if (fullMonthBasic < 6000) ccaAmount = 65;
+        if (ccaBase < 3000) ccaAmount = 25;
+        else if (ccaBase < 4500) ccaAmount = 35;
+        else if (ccaBase < 6000) ccaAmount = 65;
         else ccaAmount = 120;
         otherAmount += ccaAmount;
       }
