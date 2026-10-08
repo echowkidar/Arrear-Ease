@@ -47,6 +47,7 @@ import {
   ShieldCheck,
   ArrowRightLeft,
   UserCheck,
+  RotateCcw,
 } from "lucide-react";
 import { db, isFirebaseConfigured } from "@/lib/firebase";
 import { collection, addDoc, getDocs, getDoc, doc, deleteDoc, Timestamp, writeBatch, setDoc, updateDoc, query, where, serverTimestamp } from "firebase/firestore";
@@ -1680,6 +1681,68 @@ export default function Home() {
     return { row, newTrackers: { drawnBasic: newDrawnTracker, dueBasic: newDueTracker } };
   };
 
+  const generatePeriodRows = (pData: ArrearFormData): { rows: StatementRow[]; totals: StatementTotals } => {
+    const toDateObj = (val: any): Date => (val instanceof Date ? val : new Date(val));
+    const toOptionalDateObj = (val: any): Date | undefined => {
+      if (!val) return undefined;
+      const d = val instanceof Date ? val : new Date(val);
+      return isNaN(d.getTime()) ? undefined : d;
+    };
+
+    const normalizedData: ArrearFormData = {
+      ...pData,
+      fromDate: toDateObj(pData.fromDate),
+      toDate: toDateObj(pData.toDate),
+      paid: {
+        ...pData.paid,
+        incrementDate: toOptionalDateObj(pData.paid?.incrementDate),
+        refixedBasicPayDate: toOptionalDateObj(pData.paid?.refixedBasicPayDate),
+      },
+      toBePaid: {
+        ...pData.toBePaid,
+        incrementDate: toOptionalDateObj(pData.toBePaid?.incrementDate),
+        refixedBasicPayDate: toOptionalDateObj(pData.toBePaid?.refixedBasicPayDate),
+      },
+    };
+
+    const rows: StatementRow[] = [];
+    const totals: StatementTotals = { drawn: { total: 0 }, due: { total: 0 }, difference: 0 };
+
+    const arrearFromDate = normalizedData.fromDate;
+    const arrearToDate = normalizedData.toDate;
+    const firstMonth = startOfMonth(arrearFromDate);
+    const monthCount = differenceInCalendarMonths(arrearToDate, arrearFromDate);
+
+    let trackers = {
+      drawnBasic: Number(normalizedData.paid.basicPay),
+      dueBasic: Number(normalizedData.toBePaid.basicPay)
+    };
+
+    for (let i = 0; i <= monthCount; i++) {
+      const currentDate = addMonths(firstMonth, i);
+      const monthStart = startOfMonth(currentDate);
+      const monthEnd = endOfMonth(currentDate);
+
+      if (currentDate < arrearFromDate && !isWithinInterval(arrearFromDate, { start: monthStart, end: monthEnd })) continue;
+      if (currentDate > arrearToDate && !isWithinInterval(arrearToDate, { start: monthStart, end: monthEnd })) continue;
+
+      const effectiveMonthStart = max([monthStart, arrearFromDate]);
+      const effectiveMonthEnd = min([monthEnd, arrearToDate]);
+      const daysToCalculateForMonth = differenceInDays(startOfDay(effectiveMonthEnd), startOfDay(effectiveMonthStart)) + 1;
+
+      if (daysToCalculateForMonth <= 0) continue;
+
+      const { row, newTrackers } = calculateMonthlyRow(currentDate, arrearFromDate, arrearToDate, normalizedData, trackers);
+      rows.push(row);
+      trackers = newTrackers;
+    }
+
+    totals.drawn.total = rows.reduce((acc, row) => acc + row.drawn.total, 0);
+    totals.due.total = rows.reduce((acc, row) => acc + row.due.total, 0);
+    totals.difference = rows.reduce((acc, row) => acc + row.difference, 0);
+
+    return { rows, totals };
+  };
 
   const onSubmit = (data: ArrearFormData) => {
     if (authStatus !== 'authenticated') {
@@ -1718,41 +1781,7 @@ export default function Home() {
         }
       }
 
-      const rows: StatementRow[] = [];
-      const totals: StatementTotals = { drawn: { total: 0 }, due: { total: 0 }, difference: 0 };
-
-      const arrearFromDate = data.fromDate;
-      const arrearToDate = data.toDate;
-      const firstMonth = startOfMonth(arrearFromDate);
-      const monthCount = differenceInCalendarMonths(arrearToDate, arrearFromDate);
-
-      let trackers = {
-        drawnBasic: data.paid.basicPay,
-        dueBasic: data.toBePaid.basicPay
-      };
-
-      for (let i = 0; i <= monthCount; i++) {
-        const currentDate = addMonths(firstMonth, i);
-        const monthStart = startOfMonth(currentDate);
-        const monthEnd = endOfMonth(currentDate);
-
-        if (currentDate < arrearFromDate && !isWithinInterval(arrearFromDate, { start: monthStart, end: monthEnd })) continue;
-        if (currentDate > arrearToDate && !isWithinInterval(arrearToDate, { start: monthStart, end: monthEnd })) continue;
-
-        const effectiveMonthStart = max([monthStart, arrearFromDate]);
-        const effectiveMonthEnd = min([monthEnd, arrearToDate]);
-        const daysToCalculateForMonth = differenceInDays(startOfDay(effectiveMonthEnd), startOfDay(effectiveMonthStart)) + 1;
-
-        if (daysToCalculateForMonth <= 0) continue;
-
-        const { row, newTrackers } = calculateMonthlyRow(currentDate, arrearFromDate, arrearToDate, data, trackers);
-        rows.push(row);
-        trackers = newTrackers;
-      }
-
-      totals.drawn.total = rows.reduce((acc, row) => acc + row.drawn.total, 0);
-      totals.due.total = rows.reduce((acc, row) => acc + row.due.total, 0);
-      totals.difference = rows.reduce((acc, row) => acc + row.difference, 0);
+      const { rows, totals } = generatePeriodRows(data);
 
       const existingPeriodId = (currentPeriodIndex < currentPeriods.length && currentPeriods[currentPeriodIndex]?.id)
         ? currentPeriods[currentPeriodIndex].id
@@ -1825,6 +1854,96 @@ export default function Home() {
         variant: "destructive",
         title: "Calculation Failed",
         description: "An unexpected error occurred. Please check your inputs.",
+      });
+    }
+  };
+
+  const handleForceRecalculate = () => {
+    if (authStatus !== 'authenticated') {
+      openAuthModal();
+      return;
+    }
+
+    try {
+      const currentFormData = form.getValues();
+
+      if (statement && statement.periods && statement.periods.length > 0) {
+        let periodsToRecalc = [...statement.periods];
+        if (currentPeriodIndex < periodsToRecalc.length) {
+          periodsToRecalc[currentPeriodIndex] = {
+            ...periodsToRecalc[currentPeriodIndex],
+            formData: {
+              ...periodsToRecalc[currentPeriodIndex].formData,
+              ...currentFormData
+            }
+          };
+        }
+
+        const updatedPeriods: FixationPeriod[] = periodsToRecalc.map(period => {
+          const { rows, totals } = generatePeriodRows(period.formData);
+          return {
+            ...period,
+            rows,
+            totals
+          };
+        });
+
+        updatedPeriods.sort((a, b) => new Date(a.formData.fromDate).getTime() - new Date(b.formData.fromDate).getTime());
+
+        const combinedRows = updatedPeriods.flatMap(p => p.rows);
+        const combinedTotals = {
+          drawn: { total: updatedPeriods.reduce((acc, p) => acc + p.totals.drawn.total, 0) },
+          due: { total: updatedPeriods.reduce((acc, p) => acc + p.totals.due.total, 0) },
+          difference: updatedPeriods.reduce((acc, p) => acc + p.totals.difference, 0)
+        };
+
+        const updatedEmployeeInfo = {
+          ...statement.employeeInfo,
+          employeeId: currentFormData.employeeId || statement.employeeInfo.employeeId,
+          employeeName: currentFormData.employeeName || statement.employeeInfo.employeeName,
+          designation: currentFormData.designation || statement.employeeInfo.designation,
+          department: currentFormData.department || statement.employeeInfo.department,
+          salaryRegisterNo: currentFormData.salaryRegisterNo || statement.employeeInfo.salaryRegisterNo,
+          payFixationRef: currentFormData.payFixationRef || statement.employeeInfo.payFixationRef,
+          remark: currentFormData.remark || statement.employeeInfo.remark,
+          fromDate: updatedPeriods[0].formData.fromDate,
+          toDate: updatedPeriods[updatedPeriods.length - 1].formData.toDate
+        };
+
+        setStatement({
+          ...statement,
+          rows: combinedRows,
+          totals: combinedTotals,
+          employeeInfo: updatedEmployeeInfo,
+          periods: updatedPeriods
+        });
+
+        form.reset(currentFormData);
+
+        setShowDiffToast({ show: true, diff: combinedTotals.difference });
+        setTimeout(() => {
+          setShowDiffToast(prev => ({ ...prev, show: false }));
+        }, 7000);
+
+        toast({
+          title: "Statement Recalculated",
+          description: updatedPeriods.length > 1
+            ? `All ${updatedPeriods.length} periods recalculated successfully with latest rules & rates.`
+            : "Statement recalculated successfully with latest rules & rates.",
+        });
+
+        setTimeout(() => {
+          document.getElementById("statement-section")?.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
+      } else {
+        form.handleSubmit(onSubmit)();
+      }
+    } catch (error) {
+      console.error("Recalculation error:", error);
+      toast({
+        variant: "destructive",
+        title: "Recalculation Failed",
+        description: "An unexpected error occurred during recalculation.",
       });
     }
   };
@@ -3838,7 +3957,7 @@ export default function Home() {
               </Card>
             </div>
 
-            <div className="flex justify-center pt-2 gap-4">
+            <div className="flex items-center justify-center pt-2 gap-3 flex-wrap">
               <Button type="submit" disabled={isLoading || (!!(statement && statement.periods) && currentPeriodIndex < statement.periods.length && !isCalcFieldDirty)} size="lg" className="w-full sm:w-auto font-bold text-lg px-10 py-6 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:from-blue-700 hover:via-indigo-700 hover:to-violet-700 text-white shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 hover:scale-[1.01] active:scale-[0.99] transition-all rounded-xl border-0 disabled:opacity-50 disabled:scale-100">
                 {isLoading ? (
                   <>
@@ -3851,6 +3970,18 @@ export default function Home() {
                     {(!statement || !statement.periods) ? "Calculate Arrears" : (currentPeriodIndex < statement.periods.length ? "Recalculate Arrears" : "Calculate & Append")}
                   </>
                 )}
+              </Button>
+              <Button
+                type="button"
+                onClick={handleForceRecalculate}
+                disabled={isLoading}
+                variant="outline"
+                size="icon"
+                className="h-14 w-14 rounded-xl border-2 border-indigo-200 dark:border-indigo-800/60 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 shadow-md shadow-indigo-500/10 hover:shadow-indigo-500/20 hover:scale-105 active:scale-95 transition-all group shrink-0"
+                title="Force Recalculate (Click to re-calculate anytime with latest rules & rates, even if Calculate button is inactive)"
+              >
+                <RotateCcw className={cn("h-5 w-5 transition-transform duration-500 group-hover:-rotate-180", isLoading && "animate-spin")} />
+                <span className="sr-only">Force Recalculate</span>
               </Button>
               {statement && statement.periods && currentPeriodIndex === statement.periods.length && (
                 <Button type="button" onClick={() => loadPeriodIntoForm(statement.periods!.length - 1)} size="lg" variant="outline" className="font-bold text-lg px-8 py-6 text-slate-600 border-slate-300 hover:bg-slate-100 rounded-xl">
