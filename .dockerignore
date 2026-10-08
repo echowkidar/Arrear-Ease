@@ -1,6 +1,7 @@
 node_modules
 .next
 .git
+.idx
 
 .env
 .env.*
@@ -12,3 +13,6 @@ yarn-error.log*
 pnpm-debug.log*
 
 *.pem
+*.md
+docs
+tsconfig.tsbuildinfo
