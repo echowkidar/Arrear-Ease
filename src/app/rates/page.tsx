@@ -82,21 +82,22 @@ const allPayLevels = [
 
 const DateInput = ({ value, onChange, label = "Pick a date" }: { value: Date | undefined; onChange: (date?: Date) => void; label?: string; }) => {
     const [dateValue, setDateValue] = React.useState(value);
+    const [open, setOpen] = React.useState(false);
 
     React.useEffect(() => {
         setDateValue(value);
     }, [value]);
 
     return (
-        <Popover>
+        <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger asChild>
-                <Button variant={"outline"} className={cn("w-full md:w-[240px] pl-3 text-left font-normal", !dateValue && "text-muted-foreground")}>
+                <Button type="button" variant={"outline"} className={cn("w-full md:w-[240px] pl-3 text-left font-normal", !dateValue && "text-muted-foreground")}>
                     {dateValue ? format(new Date(dateValue), "PPP") : <span>{label}</span>}
                     <CalendarDays className="ml-auto h-4 w-4 opacity-50" />
                 </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
-                <Calendar mode="single" selected={dateValue ? new Date(dateValue) : undefined} onSelect={onChange} captionLayout="dropdown-buttons" fromYear={1990} toYear={2050} defaultMonth={dateValue ? new Date(dateValue) : undefined} />
+                <Calendar mode="single" selected={dateValue ? new Date(dateValue) : undefined} onSelect={(d) => { if (d) { onChange(d); } setOpen(false); }} captionLayout="dropdown-buttons" fromYear={1990} toYear={2050} defaultMonth={dateValue ? new Date(dateValue) : undefined} />
             </PopoverContent>
         </Popover>
     );

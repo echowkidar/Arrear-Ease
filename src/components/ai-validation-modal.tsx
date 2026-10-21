@@ -163,6 +163,7 @@ export function AIValidationModal({ isOpen, onClose, data, onConfirm }: AIValida
                     />
                     <div className="p-2 border-t border-border">
                       <Button 
+                        type="button"
                         variant="ghost" 
                         className="w-full text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
                         onClick={(e) => {
@@ -275,6 +276,7 @@ export function AIValidationModal({ isOpen, onClose, data, onConfirm }: AIValida
                     />
                     <div className="p-2 border-t border-border">
                       <Button 
+                        type="button"
                         variant="ghost" 
                         className="w-full text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
                         onClick={(e) => {
@@ -381,6 +383,7 @@ export function AIValidationModal({ isOpen, onClose, data, onConfirm }: AIValida
                     />
                     <div className="p-2 border-t border-border">
                       <Button 
+                        type="button"
                         variant="ghost" 
                         className="w-full text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
                         onClick={(e) => {

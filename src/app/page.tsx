@@ -248,10 +248,13 @@ const FormDateInput = ({ field, label, onDateSelect }: { field: any, label?: str
       <PopoverTrigger asChild>
         <Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !field.value && "text-muted-foreground")}>
           <CalendarDays className="mr-2 h-4 w-4" />
-          {field.value ? format(field.value, "PPP") : <span>{label || 'Pick a date'}</span>}
+          {field.value ? format(new Date(field.value), "PPP") : <span>{label || 'Pick a date'}</span>}
           {field.value && (
             <span
+              role="button"
+              aria-label="Clear date"
               className="ml-auto p-1 rounded-full hover:bg-muted"
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={handleClear}
             >
               <X className="h-4 w-4" />
@@ -262,11 +265,14 @@ const FormDateInput = ({ field, label, onDateSelect }: { field: any, label?: str
       <PopoverContent className="w-auto p-0" align="start">
         <Calendar
           mode="single"
-          selected={field.value}
+          selected={field.value ? new Date(field.value) : undefined}
           onSelect={(date) => {
+            // Clicking the already-selected day returns undefined — keep the date
+            // (use "Clear Date" to remove it).
+            if (!date) { setOpen(false); return; }
             field.onChange(date);
             if (onDateSelect) onDateSelect(date);
-            if (date) setOpen(false);
+            setOpen(false);
           }}
           defaultMonth={field.value ? new Date(field.value) : undefined}
           captionLayout="dropdown-buttons"
@@ -275,14 +281,10 @@ const FormDateInput = ({ field, label, onDateSelect }: { field: any, label?: str
         />
         <div className="p-2 border-t border-border">
           <Button 
+            type="button"
             variant="ghost" 
             className="w-full text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
-            onClick={(e) => {
-              e.preventDefault();
-              form.setValue(name, undefined, { shouldDirty: true, shouldValidate: true });
-              if (onDateSelect) onDateSelect(undefined);
-              setOpen(false);
-            }}
+            onClick={handleClear}
           >
             Clear Date
           </Button>
