@@ -49,7 +49,17 @@ import {
   UserCheck,
   RotateCcw,
 } from "lucide-react";
-import { db, isFirebaseConfigured } from "@/lib/firebase";
+import { db, auth as firebaseAuth, isFirebaseConfigured } from "@/lib/firebase";
+
+// Adds the signed-in user's Firebase ID token so API routes can verify the caller.
+const getAuthHeaders = async (): Promise<Record<string, string>> => {
+  try {
+    const token = await firebaseAuth?.currentUser?.getIdToken();
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
+};
 import { collection, addDoc, getDocs, getDoc, doc, deleteDoc, Timestamp, writeBatch, setDoc, updateDoc, query, where, serverTimestamp } from "firebase/firestore";
 
 import { cn } from "@/lib/utils";
@@ -122,124 +132,30 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { cpcData, fifthCpcCcaSlabs, fifthCpcTraSlabs, calculate5thCpcIncrement } from "@/lib/cpc-data";
 import { Rate, useRates } from "@/context/rates-context";
+import {
+  createArrearEngine,
+  formSchema,
+  salaryComponentSchema,
+  type ArrearFormData,
+  type StatementComponent,
+  type StatementRow,
+  type StatementTotals,
+} from "@/lib/arrear-engine";
+import {
+  CITY_PRESETS,
+  DEFAULT_CITY_SETTINGS,
+  FIFTH_CPC_CITY_CLASSES,
+  HRA_CITY_CLASSES,
+  TA_CITY_TYPES,
+  cityLabel,
+  resolveCitySettings,
+} from "@/lib/city-class";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/context/auth-context";
 import { AuthModal } from "@/components/auth-modals";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-
-const salaryComponentSchema = z.object({
-  cpc: z.enum(["5th", "6th", "7th"], { required_error: "CPC selection is required." }),
-  basicPay: z.coerce.number({ required_error: "Basic Pay is required." }).min(0, "Cannot be negative"),
-  payLevel: z.string({ required_error: "Pay Level is required." }),
-  incrementMonth: z.string({ required_error: "Increment month is required." }),
-  incrementDate: z.date().optional(),
-
-  fixedBasicPayApplicable: z.boolean().default(false),
-  fixedBasicPayValue: z.coerce.number().min(0).optional(),
-  fixedBasicPayFromDate: z.date().optional(),
-  fixedBasicPayToDate: z.date().optional(),
-
-  daApplicable: z.boolean().default(true),
-  daFixedRateApplicable: z.boolean().default(false),
-  daFixedRate: z.coerce.number().min(0).optional(),
-  daFixedRateFromDate: z.date().optional(),
-  daFixedRateToDate: z.date().optional(),
-
-  hraApplicable: z.boolean().default(true),
-  hraFromDate: z.date().optional(),
-  hraToDate: z.date().optional(),
-  hraFixedRateApplicable: z.boolean().default(false),
-  hraFixedRate: z.coerce.number().min(0).optional(),
-  hraFixedRateFromDate: z.date().optional(),
-  hraFixedRateToDate: z.date().optional(),
-
-  npaApplicable: z.boolean().default(false),
-  npaFromDate: z.date().optional(),
-  npaToDate: z.date().optional(),
-
-  taApplicable: z.boolean().default(false),
-  doubleTaApplicable: z.boolean().default(false),
-  taFromDate: z.date().optional(),
-  taToDate: z.date().optional(),
-  taFixedRateApplicable: z.boolean().default(false),
-  taFixedRate: z.coerce.number().min(0).optional(),
-  taFixedRateFromDate: z.date().optional(),
-  taFixedRateToDate: z.date().optional(),
-
-  otherAllowanceName: z.string().optional(),
-  otherAllowance: z.coerce.number().min(0).optional().default(0),
-  otherAllowanceFromDate: z.date().optional(),
-  otherAllowanceToDate: z.date().optional(),
-  otherAllowanceFixedRateApplicable: z.boolean().default(false),
-  otherAllowanceFixedRate: z.coerce.number().min(0).optional(),
-  otherAllowanceFixedRateFromDate: z.date().optional(),
-  otherAllowanceFixedRateToDate: z.date().optional(),
-
-  refixedBasicPay: z.coerce.number().min(0).optional(),
-  refixedBasicPayDate: z.date().optional(),
-});
-
-const formSchema = z.object({
-  employeeId: z.string().min(1, "Employee ID is required"),
-  employeeName: z.string().min(1, "Employee name is required"),
-  designation: z.string().min(1, "Designation is required"),
-  department: z.string().min(1, "Department is required"),
-  fromDate: z.date({ required_error: "From date is required." }),
-  toDate: z.date({ required_error: "To date is required." }),
-  payFixationRef: z.string().optional(),
-  salaryRegisterNo: z.string().optional(),
-  remark: z.string().optional(),
-  paid: salaryComponentSchema,
-  toBePaid: salaryComponentSchema,
-}).refine(data => data.toDate >= data.fromDate, {
-  message: "To Date cannot be before From Date.",
-  path: ["toDate"],
-}).refine(data => {
-  if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPay > 0 && !data.toBePaid.refixedBasicPayDate) {
-    return false;
-  }
-  return true;
-}, {
-  message: "Refixation date is required if refixed basic pay is provided.",
-  path: ["toBePaid", "refixedBasicPayDate"],
-}).refine(data => {
-  if (data.paid.refixedBasicPay && data.paid.refixedBasicPay > 0 && !data.paid.refixedBasicPayDate) {
-    return false;
-  }
-  return true;
-}, {
-  message: "Refixation date is required if refixed basic pay is provided.",
-  path: ["paid", "refixedBasicPayDate"],
-});
-
-type ArrearFormData = z.infer<typeof formSchema>;
-
-type StatementComponent = {
-  basic: number;
-  da: number;
-  hra: number;
-  npa: number;
-  ta: number;
-  other: number;
-  total: number;
-  dp?: number;
-  basicDisplay?: string;
-};
-
-type StatementRow = {
-  month: string;
-  drawn: StatementComponent;
-  due: StatementComponent;
-  difference: number;
-};
-
-type StatementTotals = {
-  drawn: { total: number };
-  due: { total: number };
-  difference: number;
-};
 
 type EmployeeInfo = Partial<ArrearFormData>;
 
@@ -486,12 +402,6 @@ const AllowanceField = ({ type, name, label }: { type: 'paid' | 'toBePaid', name
   );
 };
 
-const payLevelIndexMap = new Map<string, number>();
-cpcData["5th"].payLevels.forEach((level, index) => payLevelIndexMap.set(level.level, index));
-const offset5th = cpcData["5th"].payLevels.length;
-cpcData["6th"].payLevels.forEach((level, index) => payLevelIndexMap.set(level.level, index + offset5th));
-cpcData["7th"].payLevels.forEach((level, index) => payLevelIndexMap.set(level.level, index + offset5th + cpcData["6th"].payLevels.length));
-
 // Note: Debug useEffect removed — was incorrectly placed outside a React component.
 
 const compressImage = (file: File): Promise<File> => {
@@ -576,7 +486,7 @@ export default function Home() {
   const { user, authStatus, loading, logout, openAuthModal } = useAuth();
   const { toast } = useToast();
   const { daRates, hraRates, npaRates, taRates, da6thRates, sixthCpcConfig, da5thRates, fifthCpcConfig, setFifthCpcConfig } = useRates();
-  const { hasCredits, isUnlimited, consumeCredit, credits } = useSubscription();
+  const { hasCredits, isUnlimited, credits } = useSubscription();
 
   const isAdmin = user?.email === "amulivealigarh@gmail.com";
 
@@ -929,6 +839,7 @@ export default function Home() {
       payFixationRef: "",
       salaryRegisterNo: "",
       remark: "",
+      ...DEFAULT_CITY_SETTINGS,
       paid: {
         cpc: "7th" as any,
         basicPay: '' as any,
@@ -980,8 +891,12 @@ export default function Home() {
   React.useEffect(() => {
     const fetchEmployeeData = async () => {
       if (watchedEmployeeId && watchedEmployeeId.length === 5) {
+        // Employee lookup needs a signed-in user
+        if (!firebaseAuth?.currentUser) return;
         try {
-          const response = await fetch(`/api/employee/${watchedEmployeeId}`);
+          const response = await fetch(`/api/employee/${watchedEmployeeId}`, {
+            headers: await getAuthHeaders(),
+          });
           if (response.ok) {
             const data = await response.json();
             form.setValue("employeeName", data.name || "");
@@ -1013,6 +928,23 @@ export default function Home() {
   }, [watchedEmployeeId, form, toast]);
 
   const watchedFromDate = form.watch("fromDate");
+  const watchedCity = resolveCitySettings({
+    hraCityClass: form.watch("hraCityClass"),
+    taCityType: form.watch("taCityType"),
+    fifthCpcCityClass: form.watch("fifthCpcCityClass"),
+  });
+  const currentCityPresetId = CITY_PRESETS.find(p =>
+    p.settings.hraCityClass === watchedCity.hraCityClass &&
+    p.settings.taCityType === watchedCity.taCityType &&
+    p.settings.fifthCpcCityClass === watchedCity.fifthCpcCityClass
+  )?.id ?? "custom";
+  const applyCityPreset = (presetId: string) => {
+    const preset = CITY_PRESETS.find(p => p.id === presetId);
+    if (!preset) return;
+    form.setValue("hraCityClass", preset.settings.hraCityClass, { shouldDirty: true });
+    form.setValue("taCityType", preset.settings.taCityType, { shouldDirty: true });
+    form.setValue("fifthCpcCityClass", preset.settings.fifthCpcCityClass, { shouldDirty: true });
+  };
   React.useEffect(() => {
     const fetchBasicPayHistory = async () => {
       if (!allowBasicPayAutoFill) return;
@@ -1021,7 +953,9 @@ export default function Home() {
         const month = dateObj.getMonth() + 1;
         const year = dateObj.getFullYear();
         try {
-          const response = await fetch(`/api/employee/${watchedEmployeeId}/history?month=${month}&year=${year}`);
+          const response = await fetch(`/api/employee/${watchedEmployeeId}/history?month=${month}&year=${year}`, {
+            headers: await getAuthHeaders(),
+          });
           if (response.ok) {
             const data = await response.json();
             if (data.basic_sal) {
@@ -1073,134 +1007,10 @@ export default function Home() {
     }
     return String(level).startsWith('Level') || String(level).startsWith('AL-') || String(level).startsWith('GP') ? String(level) : `Level ${level}`;
   };
-  const getRateForDate = (
-    rates: Rate[],
-    date: Date,
-    options: { basicPay?: number, payLevel?: string, daRate?: number } = {}
-  ): Rate | null => {
-    const { basicPay, payLevel, daRate } = options;
-    const calcDate = startOfDay(date);
-
-    // First attempt: exact match within fromDate and toDate interval
-    let applicableRates = rates.filter(r => {
-      let isMatch = true;
-
-      if (r.fromDate) {
-        const rFrom = startOfDay(new Date(r.fromDate));
-        if (calcDate < rFrom) {
-          isMatch = false;
-        }
-      }
-
-      if (r.toDate) {
-        const rTo = endOfDay(new Date(r.toDate));
-        if (calcDate > rTo) {
-          isMatch = false;
-        }
-      }
-
-      if (daRate !== undefined && r.daRateFrom !== undefined && r.daRateTo !== undefined && r.daRateFrom !== '' && r.daRateTo !== '') {
-        if (!(daRate >= Number(r.daRateFrom) && daRate <= Number(r.daRateTo))) {
-          isMatch = false;
-        }
-      }
-
-      if (!isMatch) return false;
-
-      if (basicPay !== undefined) {
-        if (r.basicFrom !== undefined && r.basicTo !== undefined && Number(r.basicFrom) > 0 && Number(r.basicTo) > 0) {
-          if (!(basicPay >= Number(r.basicFrom) && basicPay <= Number(r.basicTo))) {
-            isMatch = false;
-          }
-        }
-      }
-
-      if (!isMatch) return false;
-
-      if (payLevel !== undefined && r.payLevelFrom !== undefined && r.payLevelTo !== undefined && r.payLevelFrom !== '' && r.payLevelTo !== '') {
-        const fromIndex = payLevelIndexMap.get(String(r.payLevelFrom));
-        const toIndex = payLevelIndexMap.get(String(r.payLevelTo));
-        const currentIndex = payLevelIndexMap.get(String(payLevel));
-
-        if (fromIndex !== undefined && toIndex !== undefined && currentIndex !== undefined) {
-          if (!(currentIndex >= fromIndex && currentIndex <= toIndex)) {
-            isMatch = false;
-          }
-        } else {
-          isMatch = false;
-        }
-      }
-
-      return isMatch;
-    });
-
-    // Fallback: If no exact match (e.g. calculation date is past the latest configured toDate),
-    // pick the latest rate that started on or before the calculation date (r.fromDate <= date)
-    if (applicableRates.length === 0) {
-      applicableRates = rates.filter(r => {
-        let isMatch = true;
-
-        if (r.fromDate) {
-          const rFrom = startOfDay(new Date(r.fromDate));
-          if (calcDate < rFrom) {
-            isMatch = false;
-          }
-        }
-
-        if (daRate !== undefined && r.daRateFrom !== undefined && r.daRateTo !== undefined && r.daRateFrom !== '' && r.daRateTo !== '') {
-          if (!(daRate >= Number(r.daRateFrom) && daRate <= Number(r.daRateTo))) {
-            isMatch = false;
-          }
-        }
-
-        if (!isMatch) return false;
-
-        if (basicPay !== undefined) {
-          if (r.basicFrom !== undefined && r.basicTo !== undefined && Number(r.basicFrom) > 0 && Number(r.basicTo) > 0) {
-            if (!(basicPay >= Number(r.basicFrom) && basicPay <= Number(r.basicTo))) {
-              isMatch = false;
-            }
-          }
-        }
-
-        if (!isMatch) return false;
-
-        if (payLevel !== undefined && r.payLevelFrom !== undefined && r.payLevelTo !== undefined && r.payLevelFrom !== '' && r.payLevelTo !== '') {
-          const fromIndex = payLevelIndexMap.get(String(r.payLevelFrom));
-          const toIndex = payLevelIndexMap.get(String(r.payLevelTo));
-          const currentIndex = payLevelIndexMap.get(String(payLevel));
-
-          if (fromIndex !== undefined && toIndex !== undefined && currentIndex !== undefined) {
-            if (!(currentIndex >= fromIndex && currentIndex <= toIndex)) {
-              isMatch = false;
-            }
-          } else {
-            isMatch = false;
-          }
-        }
-
-        return isMatch;
-      });
-    }
-
-    if (applicableRates.length === 0) return null;
-    applicableRates.sort((a, b) => (new Date(b.fromDate!) as any) - (new Date(a.fromDate!) as any));
-
-    // Additional sort for HRA rates based on DA rate range to pick the most specific one
-    if (daRate !== undefined) {
-      applicableRates.sort((a, b) => {
-        const aDaFrom = a.daRateFrom ?? -Infinity;
-        const bDaFrom = b.daRateFrom ?? -Infinity;
-        return bDaFrom - aDaFrom;
-      });
-    }
-
-    const matchedRate = applicableRates[0];
-    return {
-      ...matchedRate,
-      rate: Number(matchedRate.rate),
-    };
-  };
+  // Pure calculation engine (src/lib/arrear-engine.ts), fed with the current rate masters
+  const { generatePeriodRows } = createArrearEngine({
+    daRates, hraRates, npaRates, taRates, da6thRates, sixthCpcConfig, da5thRates, fifthCpcConfig,
+  });
 
   const handlePrint = () => {
     if (authStatus !== 'authenticated') {
@@ -1208,563 +1018,6 @@ export default function Home() {
       return;
     }
     window.print();
-  };
-
-  const calculateMonthlyRow = (
-    currentDate: Date,
-    arrearFromDate: Date,
-    arrearToDate: Date,
-    data: ArrearFormData,
-    trackers: { drawnBasic: number; dueBasic: number }
-  ): { row: StatementRow; newTrackers: { drawnBasic: number; dueBasic: number } } => {
-
-    const { drawnBasic: drawnBasicTracker, dueBasic: dueBasicTracker } = trackers;
-    const currentMonth = currentDate.getMonth() + 1;
-    const currentYear = currentDate.getFullYear();
-    const daysInMonth = getDaysInMonth(currentDate);
-
-    const monthStart = startOfMonth(currentDate);
-    const monthEnd = endOfMonth(currentDate);
-
-    let drawnBasicForMonth = drawnBasicTracker;
-    let dueBasicForMonth = dueBasicTracker;
-    let newDrawnTracker = drawnBasicTracker;
-    let newDueTracker = dueBasicTracker;
-
-    const handleIncrement = (side: 'paid' | 'toBePaid', trackerBasic: number): { newTrackerValue: number; basicForMonth: number } => {
-      const sideData = data[side];
-      let newTracker = trackerBasic;
-      let basicForMonth = trackerBasic;
-
-      if (sideData.fixedBasicPayApplicable && sideData.fixedBasicPayValue && sideData.fixedBasicPayFromDate && sideData.fixedBasicPayToDate) {
-        const fixedStart = startOfMonth(sideData.fixedBasicPayFromDate);
-        const fixedEnd = endOfMonth(sideData.fixedBasicPayToDate);
-        if (isWithinInterval(currentDate, { start: fixedStart, end: fixedEnd })) {
-          return { newTrackerValue: sideData.fixedBasicPayValue, basicForMonth: sideData.fixedBasicPayValue };
-        }
-      }
-
-      if (sideData.incrementMonth || sideData.incrementDate) {
-        const incrementMonthValue = sideData.incrementMonth
-          ? parseInt(sideData.incrementMonth, 10)
-          : (sideData.incrementDate ? sideData.incrementDate.getMonth() + 1 : 0);
-        let incrementTriggerDate: Date | null = null;
-
-        if (!sideData.incrementDate && currentMonth === incrementMonthValue && currentDate >= new Date(currentYear, incrementMonthValue - 1, 1)) {
-          incrementTriggerDate = new Date(currentYear, incrementMonthValue - 1, 1);
-        }
-        else if (sideData.incrementDate) {
-          const incMonth = sideData.incrementDate.getMonth() + 1;
-          const incDay = sideData.incrementDate.getDate();
-
-          // Determine starting year for anniversary increment:
-          // If the selected year is beyond arrearToDate (e.g. default calendar year),
-          // treat as an annual recurring anniversary starting in arrearFromDate's year.
-          const incStartYear = (sideData.incrementDate.getFullYear() > arrearToDate.getFullYear())
-            ? arrearFromDate.getFullYear()
-            : sideData.incrementDate.getFullYear();
-
-          if (currentMonth === incMonth && currentYear >= incStartYear) {
-            incrementTriggerDate = new Date(currentYear, incMonth - 1, incDay);
-          }
-        }
-
-        if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd }) && startOfDay(incrementTriggerDate) >= startOfDay(arrearFromDate)) {
-          let newBasic: number | null = null;
-
-          if (sideData.cpc === '7th' && trackerBasic >= 218200) {
-            newBasic = trackerBasic; // Freeze at 218200 or above
-          } else if (sideData.cpc === '7th' && sideData.payLevel) {
-            let levelData = cpcData['7th'].payLevels.find(l => l.level === sideData.payLevel);
-
-            if (!levelData) {
-              levelData = cpcData['7th'].payLevels.find(l => l.level.includes('/') && l.level.split('/').includes(sideData.payLevel));
-            }
-
-            if (levelData) {
-              const currentBasicIndex = levelData.values.indexOf(trackerBasic);
-              if (currentBasicIndex !== -1 && currentBasicIndex + 1 < levelData.values.length) {
-                newBasic = levelData.values[currentBasicIndex + 1];
-              } else {
-                // If refixed to a different level, try to find the basic in any level to get the next cell
-                for (const l of cpcData['7th'].payLevels) {
-                  const idx = l.values.indexOf(trackerBasic);
-                  if (idx !== -1 && idx + 1 < l.values.length) {
-                    newBasic = l.values[idx + 1];
-                    break;
-                  }
-                }
-              }
-            }
-          } else if (sideData.cpc === '5th' && sideData.payLevel) {
-            const levelData = cpcData['5th'].payLevels.find(l => l.level === sideData.payLevel);
-            if (levelData && levelData.scale) {
-              newBasic = calculate5thCpcIncrement(trackerBasic, levelData.scale);
-            }
-          }
-
-          if (newBasic === null) {
-            // 6th CPC (and fallback): Annual increment @ 3% of Basic Pay (Pay in Pay Band + Grade Pay).
-            // Per Rule 9 & Rule 13 of CCS (RP) Rules, 2008 and Ministry of Finance OM No. 1/1/2008-IC dated 29.01.2009:
-            // "paise should be ignored, but any amount of a rupee or more should be rounded off to next multiple of 10."
-            const incrementAmount = Math.floor(trackerBasic * 0.03); // Discard/ignore paise
-            const roundedIncrement = Math.ceil(incrementAmount / 10) * 10; // Round off to next multiple of 10
-            newBasic = trackerBasic + roundedIncrement;
-          }
-
-          if (newBasic !== null) {
-            if (sideData.incrementDate) {
-              const incrementDay = sideData.incrementDate.getDate();
-              if (incrementDay > 1) {
-                const daysBefore = incrementDay - 1;
-                const daysAfter = daysInMonth - daysBefore;
-                basicForMonth = ((trackerBasic * daysBefore) + (newBasic * daysAfter)) / daysInMonth;
-              } else {
-                basicForMonth = newBasic;
-              }
-            } else {
-              basicForMonth = newBasic;
-            }
-            newTracker = newBasic;
-          }
-        }
-      }
-      return { newTrackerValue: newTracker, basicForMonth };
-    };
-
-    ({ newTrackerValue: newDrawnTracker, basicForMonth: drawnBasicForMonth } = handleIncrement('paid', drawnBasicTracker));
-    ({ newTrackerValue: newDueTracker, basicForMonth: dueBasicForMonth } = handleIncrement('toBePaid', dueBasicTracker));
-
-    if (data.paid.refixedBasicPay && data.paid.refixedBasicPay > 0 && data.paid.refixedBasicPayDate) {
-      const refixDate = data.paid.refixedBasicPayDate;
-      if (currentDate >= startOfMonth(refixDate)) {
-        if (isWithinInterval(refixDate, { start: monthStart, end: monthEnd })) {
-          const refixDay = refixDate.getDate();
-          const basicBeforeRefix = drawnBasicForMonth;
-
-          if (refixDay > 1) {
-            const daysBefore = refixDay - 1;
-            const daysAfter = daysInMonth - daysBefore;
-            drawnBasicForMonth = ((basicBeforeRefix * daysBefore) + (data.paid.refixedBasicPay * daysAfter)) / daysInMonth;
-          } else {
-            drawnBasicForMonth = data.paid.refixedBasicPay;
-          }
-          newDrawnTracker = data.paid.refixedBasicPay;
-        } else if (currentDate > refixDate) {
-          drawnBasicForMonth = newDrawnTracker;
-        }
-      }
-    }
-
-    if (data.toBePaid.refixedBasicPay && data.toBePaid.refixedBasicPay > 0 && data.toBePaid.refixedBasicPayDate) {
-      const refixDate = data.toBePaid.refixedBasicPayDate;
-      if (currentDate >= startOfMonth(refixDate)) {
-        if (isWithinInterval(refixDate, { start: monthStart, end: monthEnd })) {
-          const refixDay = refixDate.getDate();
-          const basicBeforeRefix = dueBasicForMonth;
-
-          if (refixDay > 1) {
-            const daysBefore = refixDay - 1;
-            const daysAfter = daysInMonth - daysBefore;
-            dueBasicForMonth = ((basicBeforeRefix * daysBefore) + (data.toBePaid.refixedBasicPay * daysAfter)) / daysInMonth;
-          } else {
-            dueBasicForMonth = data.toBePaid.refixedBasicPay;
-          }
-          newDueTracker = data.toBePaid.refixedBasicPay;
-        } else if (currentDate > refixDate) {
-          dueBasicForMonth = newDueTracker;
-        }
-      }
-    }
-
-    const effectiveMonthStart = max([monthStart, arrearFromDate]);
-    const effectiveMonthEnd = min([monthEnd, arrearToDate]);
-    const daysToCalculateForMonth = differenceInDays(startOfDay(effectiveMonthEnd), startOfDay(effectiveMonthStart)) + 1;
-    const monthProRataFactor = daysToCalculateForMonth > 0 ? daysToCalculateForMonth / daysInMonth : 0;
-
-    const calculateAllowancesForSide = (side: 'paid' | 'toBePaid') => {
-      const sideData = data[side];
-      const payLevel = sideData.payLevel;
-      const fullMonthBasic = side === 'paid' ? drawnBasicForMonth : dueBasicForMonth;
-      const proratedBasic = fullMonthBasic * monthProRataFactor;
-
-      const getProratedFactorForAllowance = (allowanceFrom?: Date, allowanceTo?: Date): number => {
-        const mStart = startOfMonth(currentDate);
-        const mEnd = endOfMonth(currentDate);
-        const daysInCalcMonth = getDaysInMonth(currentDate);
-
-        const effectiveAllowanceFrom = allowanceFrom ? max([allowanceFrom, arrearFromDate]) : arrearFromDate;
-        const effectiveAllowanceTo = allowanceTo ? min([allowanceTo, arrearToDate]) : arrearToDate;
-
-        const intersectionStart = max([mStart, effectiveAllowanceFrom]);
-        const intersectionEnd = min([mEnd, effectiveAllowanceTo]);
-
-        if (intersectionStart > intersectionEnd) return 0;
-
-        const daysToCalc = differenceInDays(startOfDay(intersectionEnd), startOfDay(intersectionStart)) + 1;
-        return daysToCalc > 0 ? daysToCalc / daysInCalcMonth : 0;
-      };
-
-      const is5thCpc = sideData.cpc === '5th';
-      const is6thCpc = sideData.cpc === '6th';
-
-      const getEffectiveDaRate = (): { rate: number; dpMerged: boolean } => {
-        // Fixed rate override (applies to 5th, 6th and 7th CPC)
-        if (sideData.daFixedRateApplicable && sideData.daFixedRate && sideData.daFixedRateFromDate && sideData.daFixedRateToDate) {
-          if (isWithinInterval(currentDate, { start: sideData.daFixedRateFromDate, end: sideData.daFixedRateToDate })) {
-            return { rate: sideData.daFixedRate, dpMerged: false };
-          }
-        }
-        // 5th CPC: use da5thRates table (tracks DP merger w.e.f 01.04.2004)
-        if (is5thCpc) {
-          const daRateDetails = getRateForDate(da5thRates, currentDate);
-          return {
-            rate: daRateDetails ? daRateDetails.rate : 0,
-            dpMerged: Boolean((daRateDetails as any)?.dpMerged),
-          };
-        }
-        // 6th CPC: use da6thRates table
-        if (is6thCpc) {
-          const daRateDetails = getRateForDate(da6thRates, currentDate);
-          return { rate: daRateDetails ? daRateDetails.rate : 0, dpMerged: false };
-        }
-        // 7th CPC: use daRates table
-        const daRateDetails = getRateForDate(daRates, currentDate);
-        return { rate: daRateDetails ? daRateDetails.rate : 0, dpMerged: false };
-      };
-
-      const { rate: effectiveDaRate, dpMerged: isDpMerged } = getEffectiveDaRate();
-
-      // For 5th CPC w.e.f. 01.04.2004, 50% of Basic Pay is treated as Dearness Pay (DP)
-      const fullMonthDp = (is5thCpc && isDpMerged) ? Math.round(fullMonthBasic * 0.50) : 0;
-      const dpOnBasic = (is5thCpc && isDpMerged) ? (proratedBasic * 0.50) : 0;
-      const dpAmount = Math.round(dpOnBasic);
-
-      // Calculate NPA
-      let npa = 0;
-      let fullMonthNpaCalculated = 0;
-      if (sideData.npaApplicable) {
-        if (is5thCpc) {
-          // 5th CPC: NPA rate is 25% (or configured rate)
-          // w.e.f. 01.04.2004: NPA is calculated on (Basic Pay + DP)
-          // Prior to 01.04.2004: NPA is calculated on Basic Pay
-          const npaBase = isDpMerged ? (fullMonthBasic + fullMonthDp) : fullMonthBasic;
-          fullMonthNpaCalculated = npaBase * (fifthCpcConfig.npa5thRate / 100);
-          // Ceiling: Basic Pay + NPA shall not exceed ₹29,500 per month
-          if (fullMonthBasic + fullMonthNpaCalculated > 29500) {
-            fullMonthNpaCalculated = Math.max(0, 29500 - fullMonthBasic);
-          }
-        } else if (is6thCpc) {
-          fullMonthNpaCalculated = fullMonthBasic * (sixthCpcConfig.npa6thRate / 100);
-          // 6th CPC Ceiling: Basic Pay + NPA shall not exceed ₹85,000 per month
-          if (fullMonthBasic + fullMonthNpaCalculated > 85000) {
-            fullMonthNpaCalculated = Math.max(0, 85000 - fullMonthBasic);
-          }
-        } else {
-          const npaRateDetails = getRateForDate(npaRates, currentDate);
-          if (npaRateDetails) {
-            fullMonthNpaCalculated = fullMonthBasic * (npaRateDetails.rate / 100);
-          }
-          // 7th CPC Ceiling: Basic Pay + NPA shall not exceed ₹2,37,500 per month (MoF OM dated 07.07.2017)
-          if (fullMonthBasic + fullMonthNpaCalculated > 237500) {
-            fullMonthNpaCalculated = Math.max(0, 237500 - fullMonthBasic);
-          }
-        }
-        const prorationFactor = getProratedFactorForAllowance(sideData.npaFromDate, sideData.npaToDate);
-        if (prorationFactor > 0) {
-          npa = fullMonthNpaCalculated * prorationFactor;
-        }
-      }
-
-      // Calculate DA & DP
-      let da = 0;
-      let reportedBasic = proratedBasic;
-      let basicDisplay = `${Math.round(proratedBasic)}`;
-
-      if (sideData.daApplicable) {
-        if (is5thCpc && isDpMerged) {
-          // 5th CPC DP Merger w.e.f. 01.04.2004 (MoF OM No. 105/1/2004-IC dated 01.03.2004):
-          // Base for DA = Basic Pay + DP + NPA (since NPA is 25% of Basic+DP)
-          // Applicable DA rate (11%, 14%, 17%, 21%) is calculated on (Basic Pay + DP + NPA)
-          const baseForDaWithDp = proratedBasic + dpAmount + npa;
-          const daAmount = baseForDaWithDp * (effectiveDaRate / 100);
-
-          if (fifthCpcConfig.mergeDpInBasic) {
-            // Option 1 (Standard Accounts Practice / User Request):
-            // Merge 50% DP into Basic Pay column for display & summation
-            reportedBasic = proratedBasic + dpAmount;
-            const pureBasic = Math.round(proratedBasic);
-            const dpPart = dpAmount;
-            // Display as "10000+5000" with plus sign per user requirement
-            basicDisplay = `${pureBasic}+${dpPart}`;
-
-            // DA column reflects the DA% on (Basic + DP + NPA)
-            da = daAmount;
-          } else {
-            // Option 2 (Unmerged display):
-            // Keep pure basic in Basic column, and include DP in DA column
-            reportedBasic = proratedBasic;
-            basicDisplay = `${Math.round(proratedBasic)}`;
-            da = dpAmount + daAmount;
-          }
-        } else {
-          // 5th CPC pre-2004, 6th CPC, 7th CPC: DA base = Basic Pay + NPA
-          const baseForDA = proratedBasic + npa;
-          da = baseForDA * (effectiveDaRate / 100);
-          basicDisplay = `${Math.round(proratedBasic)}`;
-        }
-      } else {
-        if (is5thCpc && isDpMerged && fifthCpcConfig.mergeDpInBasic) {
-          reportedBasic = proratedBasic + dpAmount;
-          const pureBasic = Math.round(proratedBasic);
-          const dpPart = dpAmount;
-          basicDisplay = `${pureBasic}+${dpPart}`;
-        } else {
-          basicDisplay = `${Math.round(proratedBasic)}`;
-        }
-      }
-
-      // Calculate HRA
-      let hra = 0;
-      if (sideData.hraApplicable) {
-        const prorationFactor = getProratedFactorForAllowance(sideData.hraFromDate, sideData.hraToDate);
-        if (prorationFactor > 0) {
-          if (is5thCpc) {
-            // 5th CPC: HRA rate (default 15% w.e.f. 01.08.1997)
-            // Prior to 01.04.2004: HRA base = Basic Pay (+ NPA if applicable)
-            // w.e.f. 01.04.2004: HRA base = (Basic Pay + DP) (+ NPA if applicable)
-            const hraBase = fullMonthBasic + (isDpMerged ? fullMonthDp : 0) + (sideData.npaApplicable ? fullMonthNpaCalculated : 0);
-            let fullMonthHra = hraBase * (fifthCpcConfig.hra5thRate / 100);
-            if (sideData.hraFixedRateApplicable && sideData.hraFixedRate && sideData.hraFixedRateFromDate && sideData.hraFixedRateToDate) {
-              if (isWithinInterval(currentDate, { start: sideData.hraFixedRateFromDate, end: sideData.hraFixedRateToDate })) {
-                fullMonthHra = hraBase * (sideData.hraFixedRate / 100);
-              }
-            }
-            hra = fullMonthHra * prorationFactor;
-          } else if (is6thCpc) {
-            // 6th CPC: HRA is on (Basic Pay + NPA)
-            const hraBase = fullMonthBasic + (sideData.npaApplicable ? fullMonthNpaCalculated : 0);
-            let fullMonthHra = hraBase * (sixthCpcConfig.hra6thRate / 100);
-            if (sideData.hraFixedRateApplicable && sideData.hraFixedRate && sideData.hraFixedRateFromDate && sideData.hraFixedRateToDate) {
-              if (isWithinInterval(currentDate, { start: sideData.hraFixedRateFromDate, end: sideData.hraFixedRateToDate })) {
-                fullMonthHra = hraBase * (sideData.hraFixedRate / 100);
-              }
-            }
-            hra = fullMonthHra * prorationFactor;
-          } else {
-            // 7th CPC: HRA is DA-slab based from hraRates table, or fixed rate override if active
-            const hraBase = fullMonthBasic;
-            let fullMonthHra = 0;
-            if (sideData.hraFixedRateApplicable && sideData.hraFixedRate && sideData.hraFixedRateFromDate && sideData.hraFixedRateToDate && isWithinInterval(currentDate, { start: sideData.hraFixedRateFromDate, end: sideData.hraFixedRateToDate })) {
-              fullMonthHra = hraBase * (sideData.hraFixedRate / 100);
-            } else {
-              const hraRateDetails = getRateForDate(hraRates, currentDate, { daRate: effectiveDaRate });
-              if (hraRateDetails) {
-                fullMonthHra = hraBase * (hraRateDetails.rate / 100);
-                if (hraRateDetails.minAmount && hraRateDetails.minAmount > 0) {
-                  fullMonthHra = Math.max(fullMonthHra, hraRateDetails.minAmount);
-                }
-              }
-            }
-            hra = fullMonthHra * prorationFactor;
-          }
-        }
-      }
-
-      // Calculate TA / TRA
-      let ta = 0;
-      if (sideData.taApplicable) {
-        const prorationFactor = getProratedFactorForAllowance(sideData.taFromDate, sideData.taToDate);
-        if (prorationFactor > 0) {
-          if (is5thCpc) {
-            // 5th CPC Transport Allowance (T.R.A.):
-            // Upto 5500-9000: Rs 75 | 6500-10500 to 7500-12000: Rs 200 | 8000-13500 & Above: Rs 400
-            let traBaseAmount = 0;
-            if (sideData.taFixedRateApplicable && sideData.taFixedRate && sideData.taFixedRateFromDate && sideData.taFixedRateToDate && isWithinInterval(currentDate, { start: sideData.taFixedRateFromDate, end: sideData.taFixedRateToDate })) {
-              traBaseAmount = sideData.taFixedRate;
-            } else {
-              const levelNum = parseInt(String(payLevel).replace('S-', ''), 10);
-              if (!isNaN(levelNum)) {
-                if (levelNum <= 10) traBaseAmount = 75;
-                else if (levelNum <= 13) traBaseAmount = 200;
-                else traBaseAmount = 400;
-              } else {
-                const curBasic = side === 'paid' ? newDrawnTracker : newDueTracker;
-                if (curBasic < 6500) traBaseAmount = 75;
-                else if (curBasic < 8000) traBaseAmount = 200;
-                else traBaseAmount = 400;
-              }
-            }
-            if (sideData.doubleTaApplicable) {
-              traBaseAmount *= 2;
-            }
-            // In 5th CPC, TRA was flat fixed and did not have DA added on it
-            ta = traBaseAmount * prorationFactor;
-          } else {
-            // 6th / 7th CPC (TA + DA on TA)
-            let taBaseAmount = 0;
-            if (sideData.taFixedRateApplicable && sideData.taFixedRate && sideData.taFixedRateFromDate && sideData.taFixedRateToDate && isWithinInterval(currentDate, { start: sideData.taFixedRateFromDate, end: sideData.taFixedRateToDate })) {
-              taBaseAmount = sideData.taFixedRate;
-            } else {
-              const taRateDetails = getRateForDate(taRates, currentDate, { basicPay: (side === 'paid' ? newDrawnTracker : newDueTracker), payLevel });
-              if (taRateDetails) {
-                taBaseAmount = taRateDetails.rate;
-                if (sideData.doubleTaApplicable) {
-                  taBaseAmount *= 2;
-                  if (sideData.cpc === '7th' && taBaseAmount < 2250) {
-                    taBaseAmount = 2250;
-                  }
-                }
-              }
-            }
-            if (taBaseAmount > 0) {
-              let fullMonthTa = taBaseAmount + (taBaseAmount * (effectiveDaRate / 100));
-              ta = fullMonthTa * prorationFactor;
-            }
-          }
-        }
-      }
-
-      // Calculate Other Allowance (including 5th CPC CCA if enabled)
-      let other = 0;
-      let otherAmount = sideData.otherAllowance || 0;
-      if (sideData.otherAllowanceFixedRateApplicable && sideData.otherAllowanceFixedRate && sideData.otherAllowanceFixedRateFromDate && sideData.otherAllowanceFixedRateToDate && isWithinInterval(currentDate, { start: sideData.otherAllowanceFixedRateFromDate, end: sideData.otherAllowanceFixedRateToDate })) {
-        otherAmount = sideData.otherAllowanceFixedRate;
-      }
-      if (is5thCpc && fifthCpcConfig.ccaApplicable) {
-        // 5th CPC CCA Slabs:
-        // Upto 2999: Rs 25 | 3000 to 4499: Rs 35 | 4500 to 5999: Rs 65 | 6000 & Above: Rs 120
-        // w.e.f. 01.04.2004: DP counts for CCA slabs
-        const ccaBase = isDpMerged ? (fullMonthBasic + fullMonthDp) : fullMonthBasic;
-        let ccaAmount = 0;
-        if (ccaBase < 3000) ccaAmount = 25;
-        else if (ccaBase < 4500) ccaAmount = 35;
-        else if (ccaBase < 6000) ccaAmount = 65;
-        else ccaAmount = 120;
-        otherAmount += ccaAmount;
-      }
-      if (otherAmount > 0) {
-        const prorationFactor = getProratedFactorForAllowance(sideData.otherAllowanceFromDate, sideData.otherAllowanceToDate);
-        if (prorationFactor > 0) {
-          other = otherAmount * prorationFactor;
-        }
-      }
-
-      return { basic: reportedBasic, da, hra, npa, ta, other, dp: dpAmount, basicDisplay };
-    };
-
-    const drawnComponents = calculateAllowancesForSide('paid');
-    const dueComponents = calculateAllowancesForSide('toBePaid');
-
-    const drawnBasic = Math.round(drawnComponents.basic);
-    const drawnDa = Math.round(drawnComponents.da);
-    const drawnHra = Math.round(drawnComponents.hra);
-    const drawnNpa = Math.round(drawnComponents.npa);
-    const drawnTa = Math.round(drawnComponents.ta);
-    const drawnOther = Math.round(drawnComponents.other);
-    const drawnTotal = drawnBasic + drawnDa + drawnHra + drawnNpa + drawnTa + drawnOther;
-
-    const dueBasic = Math.round(dueComponents.basic);
-    const dueDa = Math.round(dueComponents.da);
-    const dueHra = Math.round(dueComponents.hra);
-    const dueNpa = Math.round(dueComponents.npa);
-    const dueTa = Math.round(dueComponents.ta);
-    const dueOther = Math.round(dueComponents.other);
-    const dueTotal = dueBasic + dueDa + dueHra + dueNpa + dueTa + dueOther;
-
-    const difference = dueTotal - drawnTotal;
-
-    const row: StatementRow = {
-      month: format(currentDate, "MMM yy"),
-      drawn: {
-        basic: drawnBasic,
-        da: drawnDa,
-        hra: drawnHra,
-        npa: drawnNpa,
-        ta: drawnTa,
-        other: drawnOther,
-        total: drawnTotal,
-        dp: drawnComponents.dp,
-        basicDisplay: drawnComponents.basicDisplay,
-      },
-      due: {
-        basic: dueBasic,
-        da: dueDa,
-        hra: dueHra,
-        npa: dueNpa,
-        ta: dueTa,
-        other: dueOther,
-        total: dueTotal,
-        dp: dueComponents.dp,
-        basicDisplay: dueComponents.basicDisplay,
-      },
-      difference: difference,
-    };
-
-    return { row, newTrackers: { drawnBasic: newDrawnTracker, dueBasic: newDueTracker } };
-  };
-
-  const generatePeriodRows = (pData: ArrearFormData): { rows: StatementRow[]; totals: StatementTotals } => {
-    const toDateObj = (val: any): Date => (val instanceof Date ? val : new Date(val));
-    const toOptionalDateObj = (val: any): Date | undefined => {
-      if (!val) return undefined;
-      const d = val instanceof Date ? val : new Date(val);
-      return isNaN(d.getTime()) ? undefined : d;
-    };
-
-    const normalizedData: ArrearFormData = {
-      ...pData,
-      fromDate: toDateObj(pData.fromDate),
-      toDate: toDateObj(pData.toDate),
-      paid: {
-        ...pData.paid,
-        incrementDate: toOptionalDateObj(pData.paid?.incrementDate),
-        refixedBasicPayDate: toOptionalDateObj(pData.paid?.refixedBasicPayDate),
-      },
-      toBePaid: {
-        ...pData.toBePaid,
-        incrementDate: toOptionalDateObj(pData.toBePaid?.incrementDate),
-        refixedBasicPayDate: toOptionalDateObj(pData.toBePaid?.refixedBasicPayDate),
-      },
-    };
-
-    const rows: StatementRow[] = [];
-    const totals: StatementTotals = { drawn: { total: 0 }, due: { total: 0 }, difference: 0 };
-
-    const arrearFromDate = normalizedData.fromDate;
-    const arrearToDate = normalizedData.toDate;
-    const firstMonth = startOfMonth(arrearFromDate);
-    const monthCount = differenceInCalendarMonths(arrearToDate, arrearFromDate);
-
-    let trackers = {
-      drawnBasic: Number(normalizedData.paid.basicPay),
-      dueBasic: Number(normalizedData.toBePaid.basicPay)
-    };
-
-    for (let i = 0; i <= monthCount; i++) {
-      const currentDate = addMonths(firstMonth, i);
-      const monthStart = startOfMonth(currentDate);
-      const monthEnd = endOfMonth(currentDate);
-
-      if (currentDate < arrearFromDate && !isWithinInterval(arrearFromDate, { start: monthStart, end: monthEnd })) continue;
-      if (currentDate > arrearToDate && !isWithinInterval(arrearToDate, { start: monthStart, end: monthEnd })) continue;
-
-      const effectiveMonthStart = max([monthStart, arrearFromDate]);
-      const effectiveMonthEnd = min([monthEnd, arrearToDate]);
-      const daysToCalculateForMonth = differenceInDays(startOfDay(effectiveMonthEnd), startOfDay(effectiveMonthStart)) + 1;
-
-      if (daysToCalculateForMonth <= 0) continue;
-
-      const { row, newTrackers } = calculateMonthlyRow(currentDate, arrearFromDate, arrearToDate, normalizedData, trackers);
-      rows.push(row);
-      trackers = newTrackers;
-    }
-
-    totals.drawn.total = rows.reduce((acc, row) => acc + row.drawn.total, 0);
-    totals.due.total = rows.reduce((acc, row) => acc + row.due.total, 0);
-    totals.difference = rows.reduce((acc, row) => acc + row.difference, 0);
-
-    return { rows, totals };
   };
 
   const onSubmit = (data: ArrearFormData) => {
@@ -2545,6 +1798,7 @@ export default function Home() {
       payFixationRef: "",
       salaryRegisterNo: "",
       remark: "",
+      ...DEFAULT_CITY_SETTINGS,
       paid: { cpc: "7th" as any, basicPay: '' as any, payLevel: undefined, incrementMonth: undefined, daApplicable: true, hraApplicable: true, npaApplicable: false, taApplicable: false, doubleTaApplicable: false, otherAllowance: '' as any, otherAllowanceName: "", refixedBasicPay: '' as any },
       toBePaid: { cpc: "7th" as any, basicPay: '' as any, payLevel: undefined, incrementMonth: undefined, daApplicable: true, hraApplicable: true, npaApplicable: false, taApplicable: false, doubleTaApplicable: false, otherAllowance: '' as any, otherAllowanceName: "", refixedBasicPay: '' as any },
     });
@@ -2576,9 +1830,14 @@ export default function Home() {
 
       const response = await fetch("/api/extract-proforma", {
         method: "POST",
+        headers: await getAuthHeaders(),
         body: formData,
       });
 
+      if (response.status === 401) {
+        openAuthModal();
+        throw new Error("Please sign in to scan documents with AI.");
+      }
       if (!response.ok) {
         throw new Error("Failed to process document");
       }
@@ -2676,6 +1935,15 @@ export default function Home() {
       return;
     }
 
+    if (authStatus !== 'authenticated' || !user) {
+      toast({
+        title: "Please Sign In",
+        description: "Sign in to use AI statement verification.",
+      });
+      openAuthModal();
+      return;
+    }
+
     if (!hasCredits() && !isUnlimited()) {
       setIsPricingModalOpen(true);
       return;
@@ -2686,7 +1954,7 @@ export default function Home() {
     try {
       const response = await fetch("/api/ai-audit-statement", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(await getAuthHeaders()) },
         body: JSON.stringify({
           employeeInfo: statement.employeeInfo,
           rows: statement.rows,
@@ -2696,13 +1964,22 @@ export default function Home() {
         }),
       });
 
+      if (response.status === 401) {
+        setIsAuditReportOpen(false);
+        openAuthModal();
+        throw new Error("Please sign in to use AI verification.");
+      }
+      if (response.status === 402) {
+        setIsAuditReportOpen(false);
+        setIsPricingModalOpen(true);
+        throw new Error("No AI audit credits left. Please purchase a plan.");
+      }
       if (!response.ok) {
         throw new Error("AI Audit verification failed.");
       }
 
       const auditData: AIAuditResult = await response.json();
       setAuditResult(auditData);
-      consumeCredit();
 
       setStatement((prev: any) => ({
         ...prev,
@@ -3928,6 +3205,55 @@ export default function Home() {
                       <FormField control={form.control} name="payFixationRef" render={({ field }) => (<FormItem><FormLabel>Pay Fixation Reference</FormLabel><FormControl><Input placeholder="Reference No." {...field} /></FormControl></FormItem>)} />
                       <FormField control={form.control} name="remark" render={({ field }) => (<FormItem><FormLabel>Remark (Optional)</FormLabel><FormControl><Input placeholder="Any remark for pay fixation..." {...field} /></FormControl><p className="text-xs text-muted-foreground mt-1">This will be printed below the statement table.</p></FormItem>)} />
                     </div>
+                    {/* City class for HRA / TA / CCA — default Aligarh */}
+                    <div className="rounded-lg border border-border/60 p-3 space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-semibold">City Class (HRA / TA)</p>
+                          <p className="text-xs text-muted-foreground">Default is Aligarh. Change only if the employee was posted in another city during this period.</p>
+                        </div>
+                        <Select value={currentCityPresetId} onValueChange={applyCityPreset}>
+                          <SelectTrigger className="sm:w-[260px]"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {CITY_PRESETS.map(p => <SelectItem key={p.id} value={p.id}>{p.label}</SelectItem>)}
+                            <SelectItem value="custom" disabled>Custom (set below)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <FormField control={form.control} name="hraCityClass" render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-xs">HRA Class (6th/7th CPC)</FormLabel>
+                            <Select value={field.value || DEFAULT_CITY_SETTINGS.hraCityClass} onValueChange={field.onChange}>
+                              <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                              <SelectContent>{HRA_CITY_CLASSES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent>
+                            </Select>
+                          </FormItem>
+                        )} />
+                        <FormField control={form.control} name="taCityType" render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-xs">TA City (all CPC)</FormLabel>
+                            <Select value={field.value || DEFAULT_CITY_SETTINGS.taCityType} onValueChange={field.onChange}>
+                              <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                              <SelectContent>{TA_CITY_TYPES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent>
+                            </Select>
+                          </FormItem>
+                        )} />
+                        <FormField control={form.control} name="fifthCpcCityClass" render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-xs">5th CPC Class (HRA/CCA)</FormLabel>
+                            <Select value={field.value || DEFAULT_CITY_SETTINGS.fifthCpcCityClass} onValueChange={field.onChange}>
+                              <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                              <SelectContent>{FIFTH_CPC_CITY_CLASSES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent>
+                            </Select>
+                          </FormItem>
+                        )} />
+                      </div>
+                      <p className="text-[11px] text-muted-foreground leading-snug">
+                        X: Delhi, Mumbai, Kolkata, Chennai, Bengaluru, Hyderabad, Ahmedabad, Pune · Y: Aligarh, Lucknow, Kanpur, Jaipur etc. · Z: other places.
+                        Higher TA city: Delhi, Mumbai, Kolkata, Chennai, Lucknow, Kanpur, Ghaziabad etc. (as per TA order Annexure).
+                      </p>
+                    </div>
                   </CardContent>
                 </div>
               </Card>
@@ -4091,6 +3417,10 @@ export default function Home() {
                                   </span>
                                 </>
                               )}
+                              <span className="font-normal text-muted-foreground/60 print:text-black shrink-0">|</span>
+                              <span className="shrink-0">
+                                <strong>City:</strong> {cityLabel(resolveCitySettings(p.formData), p.formData.paid?.cpc === '5th' || p.formData.toBePaid?.cpc === '5th')}
+                              </span>
                             </div>
                           ))}
                         </div>
@@ -4135,6 +3465,10 @@ export default function Home() {
                               </span>
                             </>
                           )}
+                          <span className="font-normal text-muted-foreground/60 print:text-black shrink-0">|</span>
+                          <span className="shrink-0">
+                            <strong>City:</strong> {cityLabel(resolveCitySettings(statement.employeeInfo), statement.employeeInfo.paid?.cpc === '5th' || statement.employeeInfo.toBePaid?.cpc === '5th')}
+                          </span>
                         </div>
                       )}
                     </CardDescription>

@@ -1,7 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cpcData } from "@/lib/cpc-data";
+import {
+  requireUser,
+  getOwnUserDoc,
+  hasUnlimitedAccess,
+  availableCredits,
+  deductOneCredit,
+} from "@/lib/server-auth";
 
 export async function POST(req: NextRequest) {
+  // Login is required, and the user must have an active plan or credits.
+  const auth = await requireUser(req);
+  if (auth.error) return auth.error;
+  const authUser = auth.user;
+
+  let chargeCredit = false;
+  if (!authUser.isAdmin) {
+    try {
+      const info = await getOwnUserDoc(authUser);
+      if (!hasUnlimitedAccess(info)) {
+        if (availableCredits(info) <= 0) {
+          return NextResponse.json(
+            { error: "No AI audit credits left. Please purchase a plan.", code: "no-credits" },
+            { status: 402 }
+          );
+        }
+        chargeCredit = true;
+      }
+    } catch (err) {
+      console.error("Subscription check failed:", err);
+      return NextResponse.json(
+        { error: "Could not verify your subscription. Please try again." },
+        { status: 503 }
+      );
+    }
+  }
+
   try {
     const body = await req.json();
     const { employeeInfo, rows, totals, cpc, periods, proformaDetails, proformaImage } = body;
@@ -407,6 +441,17 @@ AI Statement Audit Engine | Arrear Ease
     const hasFailures = ruleChecklist.some((r) => r.status === "fail");
     const overallScore = !hasFailures && !hasWarnings ? 100 : !hasFailures ? 90 : 75;
     const overallStatus = overallScore === 100 ? "VERIFIED_ACCURATE" : overallScore >= 90 ? "WARNINGS_DETECTED" : "DISCREPANCIES_FOUND";
+
+    // Deduct one credit only after a successful audit.
+    if (chargeCredit) {
+      const deducted = await deductOneCredit(authUser);
+      if (!deducted) {
+        return NextResponse.json(
+          { error: "No AI audit credits left. Please purchase a plan.", code: "no-credits" },
+          { status: 402 }
+        );
+      }
+    }
 
     return NextResponse.json({
       success: true,

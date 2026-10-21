@@ -69,6 +69,8 @@ import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/context/auth-context";
 import { useRouter } from "next/navigation";
 
+import { HRA_CITY_CLASSES, TA_CITY_TYPES, FIFTH_CPC_CITY_CLASSES, DEFAULT_5TH_HRA_BY_CLASS } from "@/lib/city-class";
+
 export const dynamic = 'force-dynamic';
 
 const allPayLevels = [
@@ -111,6 +113,7 @@ const RateTable = ({
     isAmount, 
     withPayLevelRange, 
     withMinAmount, 
+    cityClassOptions,
     initialRates, 
     setGlobalRates 
 }: { 
@@ -124,6 +127,7 @@ const RateTable = ({
     isAmount?: boolean, 
     withPayLevelRange?: boolean, 
     withMinAmount?: boolean, 
+    cityClassOptions?: { value: string; label: string }[],
     initialRates: Rate[], 
     setGlobalRates: React.Dispatch<React.SetStateAction<Rate[]>> 
 }) => {
@@ -180,7 +184,8 @@ const RateTable = ({
             daRateTo: '',
             payLevelFrom: '', 
             payLevelTo: '', 
-            minAmount: '' 
+            minAmount: '',
+            ...(cityClassOptions ? { cityClass: cityClassOptions[0].value } : {}),
         };
         setLocalRates(prev => [...prev, newRate]);
     }
@@ -247,6 +252,7 @@ const RateTable = ({
                     <Table>
                         <TableHeader>
                             <TableRow>
+                                {cityClassOptions && <TableHead>City Class</TableHead>}
                                 {withDateRange && !withFromDateOnly && <><TableHead>From Date</TableHead><TableHead>To Date</TableHead></>}
                                 {withFromDateOnly && <TableHead>{fromDateLabel || 'From Date'}</TableHead>}
                                 {withDaRateRange && <><TableHead>DA Rate From (%)</TableHead><TableHead>DA Rate To (%)</TableHead></>}
@@ -260,6 +266,16 @@ const RateTable = ({
                         <TableBody>
                             {localRates.map((field) => (
                                 <TableRow key={field.id}>
+                                    {cityClassOptions && (
+                                      <TableCell className="min-w-[200px]">
+                                        <Select value={String(field.cityClass || cityClassOptions[0].value)} onValueChange={(v) => updateRate(field.id, 'cityClass', v)}>
+                                          <SelectTrigger><SelectValue /></SelectTrigger>
+                                          <SelectContent>
+                                            {cityClassOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                                          </SelectContent>
+                                        </Select>
+                                      </TableCell>
+                                    )}
                                     {withDateRange && !withFromDateOnly && <>
                                       <TableCell className="min-w-[160px]">
                                           <DateInput 
@@ -345,9 +361,7 @@ const SixthCpcFixedRates = ({
 
     React.useEffect(() => { setLocal(config); }, [config]);
 
-    const isModified =
-        local.hra6thRate !== config.hra6thRate ||
-        local.npa6thRate !== config.npa6thRate;
+    const isModified = JSON.stringify(local) !== JSON.stringify(config);
 
     const handleSave = () => {
         setConfig(local);
@@ -369,17 +383,22 @@ const SixthCpcFixedRates = ({
             <CardContent>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     <div className="space-y-2">
-                        <label className="text-sm font-medium">HRA Rate (%) <span className="text-muted-foreground text-xs">— on Basic Pay + NPA</span></label>
-                        <div className="flex items-center gap-2">
-                            <Input
-                                type="number"
-                                min={0}
-                                max={100}
-                                value={local.hra6thRate}
-                                onChange={e => setLocal(prev => ({ ...prev, hra6thRate: parseFloat(e.target.value) || 0 }))}
-                                className="max-w-[140px]"
-                            />
-                            <span className="text-muted-foreground font-medium">%</span>
+                        <label className="text-sm font-medium">HRA Rate (%) by City Class <span className="text-muted-foreground text-xs">— on Basic Pay + NPA, w.e.f. 01.09.2008</span></label>
+                        <div className="flex flex-wrap items-center gap-3">
+                            {([['hra6thRateX', 'X'], ['hra6thRate', 'Y (Aligarh)'], ['hra6thRateZ', 'Z']] as const).map(([key, lbl]) => (
+                                <div key={key} className="flex items-center gap-1.5">
+                                    <span className="text-xs text-muted-foreground w-[70px]">{lbl}</span>
+                                    <Input
+                                        type="number"
+                                        min={0}
+                                        max={100}
+                                        value={local[key]}
+                                        onChange={e => setLocal(prev => ({ ...prev, [key]: parseFloat(e.target.value) || 0 }))}
+                                        className="max-w-[90px]"
+                                    />
+                                    <span className="text-muted-foreground font-medium">%</span>
+                                </div>
+                            ))}
                         </div>
                     </div>
                     <div className="space-y-2">
@@ -422,10 +441,7 @@ const FifthCpcFixedRates = ({
 
     React.useEffect(() => { setLocal(config); }, [config]);
 
-    const isModified =
-        local.hra5thRate !== config.hra5thRate ||
-        local.npa5thRate !== config.npa5thRate ||
-        local.ccaApplicable !== config.ccaApplicable;
+    const isModified = JSON.stringify(local) !== JSON.stringify(config);
 
     const handleSave = () => {
         setConfig(local);
@@ -440,14 +456,14 @@ const FifthCpcFixedRates = ({
                     5th CPC — Fixed Allowance Rates & Settings
                 </CardTitle>
                 <CardDescription>
-                    HRA is <strong>15%</strong> (on Basic Pay upto 31.03.2004; on <strong>Basic Pay + DP</strong> w.e.f. 01.04.2004). NPA is <strong>25%</strong> (on Basic Pay upto 31.03.2004; on <strong>Basic Pay + DP</strong> w.e.f. 01.04.2004 with ₹29,500 ceiling).
+                    HRA (B-2 / Aligarh) is <strong>15%</strong> (on Basic Pay upto 31.03.2004; on <strong>Basic Pay + DP</strong> w.e.f. 01.04.2004). NPA is <strong>25%</strong> (on Basic Pay upto 31.03.2004; on <strong>Basic Pay + DP</strong> w.e.f. 01.04.2004 with ₹29,500 ceiling).
                     Applicable up to 31.12.2005 (1.1.2006 se 6th CPC).
                 </CardDescription>
             </CardHeader>
             <CardContent>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                     <div className="space-y-2">
-                        <label className="text-sm font-medium">HRA Rate (%) <span className="text-muted-foreground text-xs">— on Basic (+ DP from 01.04.2004)</span></label>
+                        <label className="text-sm font-medium">HRA Rate (%) — B-2 (Aligarh) <span className="text-muted-foreground text-xs">— on Basic (+ DP from 01.04.2004)</span></label>
                         <div className="flex items-center gap-2">
                             <Input
                                 type="number"
@@ -458,6 +474,24 @@ const FifthCpcFixedRates = ({
                                 className="max-w-[140px]"
                             />
                             <span className="text-muted-foreground font-medium">%</span>
+                        </div>
+                        <label className="text-xs font-medium block pt-2">Other city classes</label>
+                        <div className="grid grid-cols-2 gap-2">
+                            {FIFTH_CPC_CITY_CLASSES.filter(c => c.value !== 'B-2').map(c => (
+                                <div key={c.value} className="flex items-center gap-1.5">
+                                    <span className="text-xs text-muted-foreground w-[44px]">{c.value === 'UC' ? 'Unclass.' : c.value}</span>
+                                    <Input
+                                        type="number"
+                                        min={0}
+                                        max={100}
+                                        step="0.5"
+                                        value={local.hra5thRateByClass?.[c.value] ?? DEFAULT_5TH_HRA_BY_CLASS[c.value]}
+                                        onChange={e => setLocal(prev => ({ ...prev, hra5thRateByClass: { ...prev.hra5thRateByClass, [c.value]: parseFloat(e.target.value) || 0 } }))}
+                                        className="max-w-[80px] h-8"
+                                    />
+                                    <span className="text-muted-foreground text-xs">%</span>
+                                </div>
+                            ))}
                         </div>
                     </div>
                     <div className="space-y-2">
@@ -482,7 +516,7 @@ const FifthCpcFixedRates = ({
                                 onCheckedChange={checked => setLocal(prev => ({ ...prev, ccaApplicable: checked }))}
                             />
                             <span className="text-xs text-muted-foreground">
-                                {local.ccaApplicable ? "Enabled (₹25/₹35/₹65/₹120)" : "Disabled"}
+                                {local.ccaApplicable ? "Enabled (amount by city class; B-2: ₹25/₹35/₹65/₹120)" : "Disabled"}
                             </span>
                         </div>
                     </div>
@@ -690,22 +724,24 @@ const ProtectedRatesPage = () => {
                 <RateTable title="DA Rate Master (7th CPC)" initialRates={daRates} setGlobalRates={setDaRates} />
                 <RateTable 
                     title="HRA Rate Master (7th CPC)"
-                    description="HRA rates are determined by the applicable DA rate from an effective date."
+                    description="HRA rates are determined by the city class (X / Y / Z) and the applicable DA rate from an effective date. Y = Aligarh."
                     withDateRange={false}
                     withFromDateOnly
                     fromDateLabel="Effective Date"
                     withDaRateRange
                     withMinAmount 
+                    cityClassOptions={HRA_CITY_CLASSES.map(c => ({ value: c.value, label: `${c.value} City` }))}
                     initialRates={hraRates} 
                     setGlobalRates={setHraRates} 
                 />
                 <RateTable title="NPA Rate Master (7th CPC)" initialRates={npaRates} setGlobalRates={setNpaRates} />
                 <RateTable
                     title="TA Master (7th CPC)"
-                    description="Define fixed transport allowance amounts."
+                    description="Define fixed transport allowance amounts. 'Other places' = Aligarh; 'Higher TA city' = cities in the TA order Annexure (Delhi, Mumbai, Lucknow, Kanpur, etc.)."
                     withBasicRange
                     withPayLevelRange
                     isAmount
+                    cityClassOptions={[{ value: 'other', label: 'Other places' }, { value: 'higher', label: 'Higher TA city' }]}
                     initialRates={taRates}
                     setGlobalRates={setTaRates}
                 />

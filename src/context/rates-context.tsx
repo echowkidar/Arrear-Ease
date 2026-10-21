@@ -8,6 +8,7 @@ import { doc, getDoc, setDoc, Timestamp } from "firebase/firestore";
 import { useToast } from '@/hooks/use-toast';
 import isEqual from 'lodash.isequal';
 import { default6thCpcDaRates, default5thCpcDaRates } from '@/lib/cpc-data';
+import { ensureCityRows, DEFAULT_6TH_HRA_BY_CLASS, DEFAULT_5TH_HRA_BY_CLASS } from '@/lib/city-class';
 
 const rateSchema = z.object({
   id: z.string(),
@@ -21,6 +22,8 @@ const rateSchema = z.object({
   payLevelFrom: z.any().optional(),
   payLevelTo: z.any().optional(),
   minAmount: z.any().optional(),
+  // City class: HRA master => 'X' | 'Y' | 'Z'; TA master => 'higher' | 'other'. Missing = Aligarh (Y / other).
+  cityClass: z.any().optional(),
 }).refine(data => !data.toDate || !data.fromDate || new Date(data.toDate) >= new Date(data.fromDate), {
     message: "To Date cannot be before From Date.",
     path: ["toDate"],
@@ -30,13 +33,16 @@ export type Rate = z.infer<typeof rateSchema>;
 
 // 6th CPC fixed config type
 export type SixthCpcConfig = {
-  hra6thRate: number;   // HRA % on (Basic + NPA) — default 20
+  hra6thRate: number;   // HRA % on (Basic + NPA) — Y city (Aligarh), default 20
+  hra6thRateX: number;  // X city, default 30
+  hra6thRateZ: number;  // Z city, default 10
   npa6thRate: number;   // NPA % on Basic — default 25
 };
 
 // 5th CPC fixed config type
 export type FifthCpcConfig = {
-  hra5thRate: number;     // HRA % on Basic Pay — default 15 (w.e.f. 01.08.1997)
+  hra5thRate: number;     // HRA % on Basic Pay — B-2 city (Aligarh), default 15 (w.e.f. 01.08.1997)
+  hra5thRateByClass: Record<string, number>; // other city classes: A-1, A, B-1, C, UC
   npa5thRate: number;     // NPA % on Basic Pay — default 25
   ccaApplicable: boolean; // CCA applicable or not
   mergeDpInBasic: boolean; // Merge 50% DP in Basic Pay column w.e.f. 01.04.2004 (default: true)
@@ -70,11 +76,14 @@ interface RatesContextType extends AllRates {
 
 const DEFAULT_6TH_CONFIG: SixthCpcConfig = {
   hra6thRate: 20,
+  hra6thRateX: DEFAULT_6TH_HRA_BY_CLASS.X,
+  hra6thRateZ: DEFAULT_6TH_HRA_BY_CLASS.Z,
   npa6thRate: 25,
 };
 
 const DEFAULT_5TH_CONFIG: FifthCpcConfig = {
   hra5thRate: 15,    // 15% of Basic Pay w.e.f. 01.08.1997
+  hra5thRateByClass: { ...DEFAULT_5TH_HRA_BY_CLASS },
   npa5thRate: 25,    // 25% of Basic Pay w.e.f. 01.01.1996 to 31.03.2006
   ccaApplicable: false,
   mergeDpInBasic: true, // Default to true: 01.04.2004 se basic pay column me DP merge hokar show hogi
@@ -133,11 +142,15 @@ const parseTimestamps = (rates: any[]): Rate[] => {
     });
 }
 
-const parseAllRateTypes = (data: any): AllRates => ({
+const parseAllRateTypes = (data: any): AllRates => {
+  // Existing HRA/TA rows are the Aligarh (Y / other places) rates; official rows for
+  // X / Z cities and higher-TA cities are added if they are not present yet.
+  const cityRows = ensureCityRows(parseTimestamps(data.hraRates || []), parseTimestamps(data.taRates || []));
+  return {
     daRates: parseTimestamps(data.daRates || []),
-    hraRates: parseTimestamps(data.hraRates || []),
+    hraRates: cityRows.hraRates,
     npaRates: parseTimestamps(data.npaRates || []),
-    taRates: parseTimestamps(data.taRates || []),
+    taRates: cityRows.taRates,
     // 6th CPC — fall back to defaults if not present in stored data
     da6thRates: data.da6thRates && Array.isArray(data.da6thRates) && data.da6thRates.length > 0
         ? parseTimestamps(data.da6thRates)
@@ -145,6 +158,8 @@ const parseAllRateTypes = (data: any): AllRates => ({
     sixthCpcConfig: {
         hra6thRate: data.sixthCpcConfig?.hra6thRate ?? DEFAULT_6TH_CONFIG.hra6thRate,
         npa6thRate: data.sixthCpcConfig?.npa6thRate ?? DEFAULT_6TH_CONFIG.npa6thRate,
+        hra6thRateX: data.sixthCpcConfig?.hra6thRateX ?? DEFAULT_6TH_CONFIG.hra6thRateX,
+        hra6thRateZ: data.sixthCpcConfig?.hra6thRateZ ?? DEFAULT_6TH_CONFIG.hra6thRateZ,
     },
     // 5th CPC — fall back to defaults if not present in stored data
     da5thRates: data.da5thRates && Array.isArray(data.da5thRates) && data.da5thRates.length > 0
@@ -155,8 +170,10 @@ const parseAllRateTypes = (data: any): AllRates => ({
         npa5thRate: data.fifthCpcConfig?.npa5thRate ?? DEFAULT_5TH_CONFIG.npa5thRate,
         ccaApplicable: data.fifthCpcConfig?.ccaApplicable ?? DEFAULT_5TH_CONFIG.ccaApplicable,
         mergeDpInBasic: data.fifthCpcConfig?.mergeDpInBasic ?? DEFAULT_5TH_CONFIG.mergeDpInBasic,
+        hra5thRateByClass: { ...DEFAULT_5TH_CONFIG.hra5thRateByClass, ...(data.fifthCpcConfig?.hra5thRateByClass || {}) },
     },
-});
+  };
+};
 
 export const RatesProvider = ({ children }: { children: ReactNode }) => {
   const [daRates, setDaRates] = useState<Rate[]>([]);

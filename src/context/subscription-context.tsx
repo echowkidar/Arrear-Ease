@@ -2,7 +2,15 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
+import {
+  doc,
+  onSnapshot,
+  addDoc,
+  collection,
+  query,
+  where,
+  serverTimestamp,
+} from "firebase/firestore";
 import { useAuth } from "@/context/auth-context";
 
 export type PlanType = "free" | "single" | "pro" | "unlimited";
@@ -66,6 +74,8 @@ export const PRICING_PLANS: PlanDetails[] = [
   },
 ];
 
+export type PaymentStatus = "pending" | "completed" | "rejected";
+
 export interface PaymentTransaction {
   id: string;
   planId: PlanType;
@@ -73,7 +83,13 @@ export interface PaymentTransaction {
   amount: number;
   date: string;
   utr: string;
-  status: "completed" | "pending";
+  status: PaymentStatus;
+  userId?: string;
+  userEmail?: string;
+  userName?: string;
+  migrated?: boolean;
+  legacyCredits?: number;
+  legacyExpiresAt?: string | null;
 }
 
 interface SubscriptionContextType {
@@ -81,16 +97,21 @@ interface SubscriptionContextType {
   credits: number;
   expiresAt: string | null;
   transactions: PaymentTransaction[];
+  pendingTransactions: PaymentTransaction[];
   merchantUpiId: string;
   merchantName: string;
   hasCredits: () => boolean;
   isUnlimited: () => boolean;
-  consumeCredit: () => boolean;
-  activatePlan: (planId: PlanType, utr: string) => void;
-  resetToFree: () => void;
+  /** Creates a "pending" payment request. Admin approves it from the Users page. */
+  submitPaymentRequest: (planId: PlanType, utr: string) => Promise<void>;
 }
 
-const STORAGE_KEY = "arrear_ease_subscription_v1";
+// Old versions kept the plan only in this browser's localStorage. It is no longer
+// trusted for access; it is only read once to send a pending request to the admin.
+const LEGACY_STORAGE_KEY = "arrear_ease_subscription_v1";
+const LEGACY_MIGRATED_KEY = "arrear_ease_subscription_v1_migrated";
+const ADMIN_EMAIL = "amulivealigarh@gmail.com";
+const PAID_PLAN_IDS: PlanType[] = ["single", "pro", "unlimited"];
 
 const SubscriptionContext = createContext<SubscriptionContextType | undefined>(undefined);
 
@@ -101,9 +122,9 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
   const [transactions, setTransactions] = useState<PaymentTransaction[]>([]);
   const [merchantUpiId, setMerchantUpiId] = useState<string>("arrearease@upi");
   const [merchantName, setMerchantName] = useState<string>("Arrear Ease");
-  const [isLoaded, setIsLoaded] = useState<boolean>(false);
 
   const { user, authStatus } = useAuth();
+  const isAdmin = authStatus === "authenticated" && user?.email === ADMIN_EMAIL;
 
   // 1. Load dynamic merchant UPI configuration from localStorage & Firestore
   useEffect(() => {
@@ -137,125 +158,148 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     }
   }, []);
 
-  // 2. Load from localStorage on initial mount
+  // 2. Plan & credits come ONLY from the user's Firestore account (set by admin).
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        setCurrentPlan(parsed.currentPlan || "free");
-        setCredits(parsed.credits ?? 0);
-        setExpiresAt(parsed.expiresAt || null);
-        setTransactions(parsed.transactions || []);
-      }
-    } catch (e) {
-      console.error("Failed to load subscription state:", e);
-    } finally {
-      setIsLoaded(true);
+    if (!db || authStatus !== "authenticated" || !user?.uid) {
+      setCurrentPlan("free");
+      setCredits(0);
+      setExpiresAt(null);
+      return;
     }
-  }, []);
-
-  // 3. Sync with Firestore User Account if authenticated
-  useEffect(() => {
-    if (!db || authStatus !== "authenticated" || !user?.uid) return;
 
     const unsubUser = onSnapshot(
       doc(db, "users", user.uid),
       (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          if (data.subscriptionPlan) {
-            setCurrentPlan(data.subscriptionPlan);
-          }
-          if (data.credits !== undefined) {
-            setCredits(data.credits);
-          }
-          if (data.planExpiresAt) {
-            setExpiresAt(data.planExpiresAt);
-          }
-        }
+        const data = docSnap.exists() ? docSnap.data() : {};
+        setCurrentPlan((data.subscriptionPlan as PlanType) || "free");
+        setCredits(typeof data.credits === "number" ? data.credits : 0);
+        setExpiresAt(data.planExpiresAt || null);
+        migrateLegacyPlanOnce(docSnap.exists() ? data : null);
       },
       (err) => console.warn("User subscription sync note:", err)
     );
 
     return () => unsubUser();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.uid, authStatus]);
 
-  // 4. Save to localStorage whenever state changes
+  // 3. The user's own payment requests (to show "pending" status)
   useEffect(() => {
-    if (!isLoaded) return;
-    try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({
-          currentPlan,
-          credits,
-          expiresAt,
-          transactions,
-        })
-      );
-    } catch (e) {
-      console.error("Failed to save subscription state:", e);
+    if (!db || authStatus !== "authenticated" || !user?.uid) {
+      setTransactions([]);
+      return;
     }
-  }, [currentPlan, credits, expiresAt, transactions, isLoaded]);
+    const q = query(collection(db, "payment_transactions"), where("userId", "==", user.uid));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as PaymentTransaction[];
+        list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        setTransactions(list);
+      },
+      (err) => console.warn("Payment requests sync note:", err)
+    );
+    return () => unsub();
+  }, [user?.uid, authStatus]);
 
-  const hasCredits = () => {
-    if (currentPlan === "unlimited") {
-      if (!expiresAt) return true;
-      return new Date(expiresAt) > new Date();
+  // One-time: if this browser has a plan from the old version (stored only locally),
+  // send it to the admin as a pending request so the paid user doesn't lose it.
+  const migrationStarted = React.useRef(false);
+  const migrateLegacyPlanOnce = async (userData: any) => {
+    if (!db || !user?.uid || migrationStarted.current) return;
+    try {
+      if (localStorage.getItem(LEGACY_MIGRATED_KEY)) return;
+      const raw = localStorage.getItem(LEGACY_STORAGE_KEY);
+      if (!raw) return;
+      migrationStarted.current = true;
+
+      // Admin already assigned a plan in Firestore => nothing to migrate.
+      if (userData?.subscriptionPlan && userData.subscriptionPlan !== "free") {
+        localStorage.setItem(LEGACY_MIGRATED_KEY, new Date().toISOString());
+        return;
+      }
+
+      const legacy = JSON.parse(raw);
+      const legacyTx: any[] = Array.isArray(legacy.transactions) ? legacy.transactions : [];
+      const realTx = legacyTx.filter(
+        (t) =>
+          t &&
+          typeof t.utr === "string" &&
+          t.utr.trim() &&
+          !/^(DEMO|MOCK)/i.test(t.utr) &&
+          PAID_PLAN_IDS.includes(t.planId)
+      );
+      if (realTx.length === 0) {
+        localStorage.setItem(LEGACY_MIGRATED_KEY, new Date().toISOString());
+        return;
+      }
+
+      const planId: PlanType = PAID_PLAN_IDS.includes(legacy.currentPlan)
+        ? legacy.currentPlan
+        : realTx[0].planId;
+      const plan = PRICING_PLANS.find((p) => p.id === planId)!;
+
+      await addDoc(collection(db, "payment_transactions"), {
+        planId,
+        planName: `${plan.name} (old version)`,
+        amount: realTx.reduce((sum, t) => sum + (Number(t.amount) || 0), 0),
+        utr: realTx.map((t) => String(t.utr).trim()).join(", "),
+        date: realTx[0].date || new Date().toISOString(),
+        status: "pending",
+        userId: user.uid,
+        userEmail: user.email || null,
+        userName: user.displayName || null,
+        migrated: true,
+        legacyCredits: typeof legacy.credits === "number" ? legacy.credits : 0,
+        legacyExpiresAt: legacy.expiresAt || null,
+        createdAt: serverTimestamp(),
+      });
+      localStorage.setItem(LEGACY_MIGRATED_KEY, new Date().toISOString());
+    } catch (e) {
+      migrationStarted.current = false; // retry on next load
+      console.warn("Legacy plan migration note:", e);
     }
-    return credits > 0;
   };
 
   const isUnlimited = () => {
+    if (isAdmin) return true;
     if (currentPlan !== "unlimited") return false;
     if (!expiresAt) return true;
     return new Date(expiresAt) > new Date();
   };
 
-  const consumeCredit = () => {
+  const hasCredits = () => {
     if (isUnlimited()) return true;
-    if (credits > 0) {
-      setCredits((prev) => Math.max(0, prev - 1));
-      return true;
-    }
-    return false;
+    return credits > 0;
   };
 
-  const activatePlan = (planId: PlanType, utr: string) => {
+  const submitPaymentRequest = async (planId: PlanType, utr: string) => {
     const plan = PRICING_PLANS.find((p) => p.id === planId);
-    if (!plan) return;
+    if (!plan) throw new Error("Invalid plan selected.");
+    if (!db) throw new Error("Database is not available. Please try again later.");
+    if (authStatus !== "authenticated" || !user?.uid) {
+      throw new Error("Please sign in before submitting a payment.");
+    }
+    const cleanUtr = utr.replace(/\s+/g, "");
+    if (transactions.some((t) => t.utr === cleanUtr && t.status !== "rejected")) {
+      throw new Error("This UTR has already been submitted.");
+    }
 
-    const txn: PaymentTransaction = {
-      id: `TXN-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    await addDoc(collection(db, "payment_transactions"), {
       planId,
       planName: plan.name,
       amount: plan.price,
+      utr: cleanUtr,
       date: new Date().toISOString(),
-      utr: utr || `MOCK-UTR-${Date.now()}`,
-      status: "completed",
-    };
-
-    if (planId === "unlimited") {
-      setCurrentPlan("unlimited");
-      const expiry = new Date();
-      expiry.setDate(expiry.getDate() + plan.validityDays);
-      setExpiresAt(expiry.toISOString());
-    } else {
-      if (currentPlan !== "unlimited") {
-        setCurrentPlan(planId);
-      }
-      setCredits((prev) => prev + plan.credits);
-    }
-
-    setTransactions((prev) => [txn, ...prev]);
+      status: "pending",
+      userId: user.uid,
+      userEmail: user.email || null,
+      userName: user.displayName || null,
+      createdAt: serverTimestamp(),
+    });
   };
 
-  const resetToFree = () => {
-    setCurrentPlan("free");
-    setCredits(0);
-    setExpiresAt(null);
-  };
+  const pendingTransactions = transactions.filter((t) => t.status === "pending");
 
   return (
     <SubscriptionContext.Provider
@@ -264,13 +308,12 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         credits,
         expiresAt,
         transactions,
+        pendingTransactions,
         merchantUpiId,
         merchantName,
         hasCredits,
         isUnlimited,
-        consumeCredit,
-        activatePlan,
-        resetToFree,
+        submitPaymentRequest,
       }}
     >
       {children}

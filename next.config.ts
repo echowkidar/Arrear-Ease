@@ -4,7 +4,8 @@ const nextConfig: NextConfig = {
   output: 'standalone',
   /* config options here */
   typescript: {
-    ignoreBuildErrors: true,
+    // Type errors now fail the build so bugs are caught before deploy.
+    ignoreBuildErrors: false,
   },
   eslint: {
     ignoreDuringBuilds: true,

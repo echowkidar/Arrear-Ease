@@ -34,8 +34,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
-import { db } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { useAuth } from "@/context/auth-context";
 
 interface AIPricingModalProps {
   isOpen: boolean;
@@ -52,7 +51,8 @@ export function AIPricingModal({
   initialPromptText,
   isAdmin = false,
 }: AIPricingModalProps) {
-  const { activatePlan, credits, isUnlimited, merchantUpiId, merchantName } = useSubscription();
+  const { submitPaymentRequest, pendingTransactions, merchantUpiId, merchantName } = useSubscription();
+  const { authStatus, openAuthModal } = useAuth();
   const { toast } = useToast();
 
   const [selectedPlan, setSelectedPlan] = useState<PlanDetails | null>(
@@ -87,60 +87,60 @@ export function AIPricingModal({
     setStep("checkout");
   };
 
-  const handleVerifyAndComplete = async (mock = false) => {
+  const handleVerifyAndComplete = async () => {
     if (!selectedPlan) return;
-    if (!mock && !utrNumber.trim()) {
+
+    if (authStatus !== "authenticated") {
+      toast({
+        variant: "destructive",
+        title: "Please Sign In",
+        description: "Sign in first so your payment can be linked to your account.",
+      });
+      onClose();
+      openAuthModal();
+      return;
+    }
+
+    const utr = utrNumber.replace(/\s+/g, "");
+    if (!/^[A-Za-z0-9]{6,30}$/.test(utr)) {
       toast({
         variant: "destructive",
         title: "UTR / Transaction ID Required",
-        description: "Please enter your 12-digit UPI reference number after paying.",
+        description: "Please enter the 12-digit UPI reference (UTR) number from your payment receipt.",
       });
       return;
     }
 
     setIsVerifying(true);
-    const utr = mock ? `DEMO-${Date.now()}` : utrNumber.trim();
-
     try {
-      // Save payment transaction record to Firestore if available
-      if (db) {
-        await addDoc(collection(db, "payment_transactions"), {
-          planId: selectedPlan.id,
-          planName: selectedPlan.name,
-          amount: selectedPlan.price,
-          utr: utr,
-          date: new Date().toISOString(),
-          status: "completed",
-          createdAt: serverTimestamp(),
-        });
-      }
-    } catch (dbErr) {
-      console.warn("Firestore transaction log note:", dbErr);
-    }
-
-    setTimeout(() => {
-      setIsVerifying(false);
-      activatePlan(selectedPlan.id, utr);
+      await submitPaymentRequest(selectedPlan.id, utr);
       setStep("success");
-
       toast({
-        title: "Payment Confirmed! 🎉",
-        description: `${selectedPlan.name} is now active. You have full AI verification access.`,
+        title: "Payment Request Submitted",
+        description: "Your plan will be activated after the admin verifies your payment.",
       });
+    } catch (err: any) {
+      console.error("Payment request failed:", err);
+      toast({
+        variant: "destructive",
+        title: "Could Not Submit",
+        description: err?.message || "Please try again.",
+      });
+    } finally {
+      setIsVerifying(false);
+    }
+  };
 
-      setTimeout(() => {
-        onClose();
-        if (onPaymentSuccess) {
-          onPaymentSuccess();
-        }
-        setStep("plans");
-        setUtrNumber("");
-      }, 1800);
-    }, 1200);
+  const handleCloseModal = () => {
+    if (step === "success") {
+      setStep("plans");
+      setUtrNumber("");
+    }
+    onClose();
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) handleCloseModal(); }}>
       <DialogContent className="sm:max-w-4xl max-h-[92vh] overflow-y-auto p-0 gap-0 border-border bg-background shadow-2xl rounded-2xl">
         <DialogHeader className="sr-only">
           <DialogTitle>AI Verification Plans & Payment</DialogTitle>
@@ -164,6 +164,17 @@ export function AIPricingModal({
                   "Ensure 100% compliance with 7th/6th CPC rules, DA/HRA schedules, and increment stages with our instant AI audit engine."}
               </DialogDescription>
             </DialogHeader>
+
+            {pendingTransactions.length > 0 && (
+              <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-3 text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2">
+                <Info className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>
+                  You have {pendingTransactions.length} payment request(s) pending verification
+                  (UTR: {pendingTransactions.map((t) => t.utr).join(", ")}). Your plan will be
+                  activated once the admin approves it.
+                </span>
+              </div>
+            )}
 
             {/* Pricing Cards Grid */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 pt-2">
@@ -359,34 +370,23 @@ export function AIPricingModal({
                 {/* Complete & Verify Button */}
                 <div className="space-y-2 pt-2">
                   <Button
-                    onClick={() => handleVerifyAndComplete(false)}
+                    onClick={handleVerifyAndComplete}
                     disabled={isVerifying}
                     className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-10 shadow-md"
                   >
                     {isVerifying ? (
                       <span className="flex items-center gap-2">
                         <span className="h-4 w-4 border-2 border-white border-t-transparent animate-spin rounded-full" />
-                        Verifying Payment...
+                        Submitting...
                       </span>
                     ) : (
                       <span className="flex items-center gap-2">
                         <CheckCircle2 className="h-4 w-4" />
-                        Confirm & Activate AI Audit
+                        Submit Payment for Verification
                       </span>
                     )}
                   </Button>
 
-                  {/* Sandbox / Demo Fast-track - ONLY for Admin */}
-                  {isAdmin && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleVerifyAndComplete(true)}
-                      className="w-full text-xs text-muted-foreground hover:text-foreground h-7"
-                    >
-                      ⚡ Admin Test Simulator (Instant Sandbox Activation)
-                    </Button>
-                  )}
                 </div>
               </div>
             </div>
@@ -398,15 +398,19 @@ export function AIPricingModal({
         {/* ========================================================================= */}
         {step === "success" && (
           <div className="p-8 text-center space-y-4">
-            <div className="h-16 w-16 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto shadow-inner">
+            <div className="h-16 w-16 bg-amber-100 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 rounded-full flex items-center justify-center mx-auto shadow-inner">
               <CheckCircle2 className="h-10 w-10" />
             </div>
             <div className="space-y-1">
-              <h2 className="text-2xl font-bold text-foreground">Payment Successful!</h2>
-              <p className="text-sm text-muted-foreground">
-                Your account is now credited. Starting AI Statement Verification...
+              <h2 className="text-2xl font-bold text-foreground">Payment Request Submitted</h2>
+              <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                Your payment is <strong>pending verification</strong>. Your plan will be activated
+                as soon as the admin verifies the UTR — usually within a few hours.
               </p>
             </div>
+            <Button onClick={handleCloseModal} className="mt-2">
+              Close
+            </Button>
           </div>
         )}
       </DialogContent>

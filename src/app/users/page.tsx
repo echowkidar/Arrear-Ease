@@ -20,6 +20,8 @@ import {
   Zap,
   CheckCircle2,
   RefreshCw,
+  Clock,
+  XCircle,
 } from "lucide-react";
 import { format } from "date-fns";
 import { useAuth } from "@/context/auth-context";
@@ -35,6 +37,8 @@ import {
   where,
   Timestamp,
   orderBy,
+  runTransaction,
+  serverTimestamp,
 } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import {
@@ -86,7 +90,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Switch } from "@/components/ui/switch";
-import { PlanType } from "@/context/subscription-context";
+import { PlanType, PRICING_PLANS } from "@/context/subscription-context";
 
 export const dynamic = "force-dynamic";
 
@@ -111,7 +115,13 @@ type PaymentTransaction = {
   utr: string;
   date: string;
   status: string;
+  userId?: string;
   userEmail?: string;
+  userName?: string;
+  migrated?: boolean;
+  legacyCredits?: number;
+  legacyExpiresAt?: string | null;
+  creditsGranted?: number;
   createdAt?: any;
 };
 
@@ -133,6 +143,7 @@ const ProtectedUsersPage = () => {
   const [isSavingPlan, setIsSavingPlan] = React.useState(false);
   const [userToDelete, setUserToDelete] = React.useState<AppUser | null>(null);
   const [isDeletingUser, setIsDeletingUser] = React.useState(false);
+  const [processingPaymentId, setProcessingPaymentId] = React.useState<string | null>(null);
 
   const { toast } = useToast();
   const { user, authStatus } = useAuth();
@@ -192,7 +203,13 @@ const ProtectedUsersPage = () => {
           id: d.id,
           ...d.data(),
         })) as PaymentTransaction[];
-        txData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        txData.sort((a, b) => {
+          // Pending requests first, then newest first
+          const ap = a.status === "pending" ? 0 : 1;
+          const bp = b.status === "pending" ? 0 : 1;
+          if (ap !== bp) return ap - bp;
+          return new Date(b.date).getTime() - new Date(a.date).getTime();
+        });
         setPayments(txData);
       } catch (txErr) {
         console.warn("Payment transactions fetch note:", txErr);
@@ -287,6 +304,114 @@ const ProtectedUsersPage = () => {
       setIsSavingPlan(false);
     }
   };
+
+  // Approve a pending UPI payment: credits/plan are added to the user's account.
+  const handleApprovePayment = async (p: PaymentTransaction) => {
+    if (!db) return;
+    if (!p.userId) {
+      toast({
+        variant: "destructive",
+        title: "No user linked",
+        description: "This old payment has no linked user. Use 'Assign Plan' on the user instead.",
+      });
+      return;
+    }
+    const plan = PRICING_PLANS.find((x) => x.id === p.planId);
+    if (!plan) {
+      toast({ variant: "destructive", title: "Unknown plan", description: String(p.planId) });
+      return;
+    }
+
+    setProcessingPaymentId(p.id);
+    try {
+      const summary = await runTransaction(db, async (tx) => {
+        const payRef = doc(db!, "payment_transactions", p.id);
+        const userRef = doc(db!, "users", p.userId!);
+        const paySnap = await tx.get(payRef);
+        const userSnap = await tx.get(userRef);
+        if (!paySnap.exists() || paySnap.data().status !== "pending") {
+          throw new Error("This payment was already processed.");
+        }
+        const u: any = userSnap.exists() ? userSnap.data() : {};
+        const now = new Date();
+        const curExp = u.planExpiresAt ? new Date(u.planExpiresAt) : null;
+        const unlimitedActive =
+          u.subscriptionPlan === "unlimited" && (!curExp || isNaN(curExp.getTime()) || curExp > now);
+
+        let update: Record<string, any> | null = null;
+        let creditsGranted = 0;
+        let message = "";
+
+        if (plan.id === "unlimited") {
+          let expiry: Date;
+          if (p.migrated && p.legacyExpiresAt && !isNaN(new Date(p.legacyExpiresAt).getTime())) {
+            expiry = new Date(p.legacyExpiresAt);
+          } else {
+            const base = unlimitedActive && curExp && !isNaN(curExp.getTime()) ? curExp : now;
+            expiry = new Date(base);
+            expiry.setDate(expiry.getDate() + plan.validityDays);
+          }
+          update = { subscriptionPlan: "unlimited", credits: -1, planExpiresAt: expiry.toISOString() };
+          message = `Unlimited access till ${format(expiry, "dd MMM yyyy")}.`;
+        } else {
+          creditsGranted = p.migrated ? Math.max(0, Math.floor(Number(p.legacyCredits) || 0)) : plan.credits;
+          if (unlimitedActive) {
+            message = "User already has active Unlimited plan; no credits added.";
+          } else {
+            const cur = typeof u.credits === "number" && u.credits > 0 ? u.credits : 0;
+            const expiry = new Date(now);
+            expiry.setDate(expiry.getDate() + plan.validityDays);
+            update = {
+              subscriptionPlan: plan.id,
+              credits: cur + creditsGranted,
+              planExpiresAt: expiry.toISOString(),
+            };
+            message = `${creditsGranted} credit(s) added. New balance: ${cur + creditsGranted}.`;
+          }
+        }
+
+        if (update) tx.set(userRef, update, { merge: true });
+        tx.update(payRef, {
+          status: "completed",
+          approvedAt: serverTimestamp(),
+          creditsGranted,
+        });
+        return message;
+      });
+
+      toast({ title: "Payment Approved ✅", description: summary });
+      await fetchUsers();
+    } catch (error: any) {
+      console.error("Approve payment failed:", error);
+      toast({
+        variant: "destructive",
+        title: "Approval failed",
+        description: error?.message || "Firestore update failed.",
+      });
+    } finally {
+      setProcessingPaymentId(null);
+    }
+  };
+
+  const handleRejectPayment = async (p: PaymentTransaction) => {
+    if (!db) return;
+    setProcessingPaymentId(p.id);
+    try {
+      await updateDoc(doc(db, "payment_transactions", p.id), {
+        status: "rejected",
+        rejectedAt: serverTimestamp(),
+      });
+      setPayments((prev) => prev.map((x) => (x.id === p.id ? { ...x, status: "rejected" } : x)));
+      toast({ title: "Payment Rejected", description: `UTR ${p.utr} marked as rejected.` });
+    } catch (error: any) {
+      console.error("Reject payment failed:", error);
+      toast({ variant: "destructive", title: "Reject failed", description: error?.message });
+    } finally {
+      setProcessingPaymentId(null);
+    }
+  };
+
+  const pendingPaymentsCount = payments.filter((p) => p.status === "pending").length;
 
   const toggleBasicPayAutoFill = async (uid: string, currentVal: boolean | undefined) => {
     setIsLoading(true);
@@ -455,6 +580,11 @@ const ProtectedUsersPage = () => {
           </TabsTrigger>
           <TabsTrigger value="payments" className="font-semibold">
             <CreditCard className="h-4 w-4 mr-2" /> UPI Payments ({payments.length})
+            {pendingPaymentsCount > 0 && (
+              <Badge className="ml-2 bg-amber-500 text-white text-[10px] px-1.5">
+                {pendingPaymentsCount} pending
+              </Badge>
+            )}
           </TabsTrigger>
         </TabsList>
 
@@ -615,7 +745,7 @@ const ProtectedUsersPage = () => {
                 <CreditCard className="h-5 w-5 text-emerald-600" /> UPI Payment Requests & UTR Verification Log
               </CardTitle>
               <CardDescription>
-                All payment transactions submitted by users with 12-digit UTR references and plan activation details.
+                Verify each UTR in your bank / UPI app, then Approve (plan gets activated) or Reject.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -629,22 +759,35 @@ const ProtectedUsersPage = () => {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Date & Time</TableHead>
+                        <TableHead>User</TableHead>
                         <TableHead>Plan Purchased</TableHead>
                         <TableHead>Amount (Rs.)</TableHead>
                         <TableHead>12-Digit UTR / Reference</TableHead>
-                        <TableHead className="text-right">Status</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {payments.map((p) => (
                         <TableRow key={p.id} className="hover:bg-muted/30">
                           <TableCell className="text-xs font-mono">
-                            {format(new Date(p.date), "dd MMM yyyy, HH:mm")}
+                            {formatDate(p.date)}
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            <div className="font-semibold">{p.userName || "—"}</div>
+                            <div className="text-muted-foreground">{p.userEmail || (p.userId ? p.userId : "Not linked (old)")}</div>
                           </TableCell>
                           <TableCell>
                             <Badge className="bg-primary/10 text-primary border border-primary/20 text-xs">
                               {p.planName}
                             </Badge>
+                            {p.migrated && (
+                              <div className="text-[10px] text-muted-foreground mt-1">
+                                Old version — {p.planId === "unlimited"
+                                  ? `expiry ${p.legacyExpiresAt ? formatDate(p.legacyExpiresAt) : "N/A"}`
+                                  : `${p.legacyCredits ?? 0} credit(s) left`}
+                              </div>
+                            )}
                           </TableCell>
                           <TableCell className="font-bold text-foreground">
                             Rs. {p.amount}
@@ -652,10 +795,50 @@ const ProtectedUsersPage = () => {
                           <TableCell className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400">
                             {p.utr}
                           </TableCell>
+                          <TableCell>
+                            {p.status === "pending" ? (
+                              <Badge className="bg-amber-500 text-white text-[11px] gap-1">
+                                <Clock className="h-3 w-3" /> Pending
+                              </Badge>
+                            ) : p.status === "rejected" ? (
+                              <Badge className="bg-rose-600 text-white text-[11px] gap-1">
+                                <XCircle className="h-3 w-3" /> Rejected
+                              </Badge>
+                            ) : (
+                              <Badge className="bg-emerald-600 text-white text-[11px] gap-1">
+                                <CheckCircle2 className="h-3 w-3" /> Completed
+                              </Badge>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right">
-                            <Badge className="bg-emerald-600 text-white text-[11px] gap-1">
-                              <CheckCircle2 className="h-3 w-3" /> Completed
-                            </Badge>
+                            {p.status === "pending" ? (
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  size="sm"
+                                  className="h-7 bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+                                  disabled={!!processingPaymentId}
+                                  onClick={() => handleApprovePayment(p)}
+                                >
+                                  {processingPaymentId === p.id ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                                  )}
+                                  Approve
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs text-rose-600 border-rose-300"
+                                  disabled={!!processingPaymentId}
+                                  onClick={() => handleRejectPayment(p)}
+                                >
+                                  <XCircle className="h-3 w-3 mr-1" /> Reject
+                                </Button>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))}

@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireUser } from "@/lib/server-auth";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireUser(request);
+  if (auth.error) return auth.error;
+
   const { id } = await params;
 
   if (!id || id.length !== 5) {

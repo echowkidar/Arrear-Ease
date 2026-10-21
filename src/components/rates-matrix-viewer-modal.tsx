@@ -960,7 +960,7 @@ export function RatesMatrixViewerModal({
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-4 pt-1 text-xs text-muted-foreground">
-                  HRA: <strong>{sixthCpcConfig?.hra6thRate ?? 20}%</strong> on (Basic + NPA). NPA: <strong>{sixthCpcConfig?.npa6thRate ?? 25}%</strong> on Basic Pay.
+                  HRA (X / Y / Z city): <strong>{sixthCpcConfig?.hra6thRateX ?? 30}% / {sixthCpcConfig?.hra6thRate ?? 20}% / {sixthCpcConfig?.hra6thRateZ ?? 10}%</strong> on (Basic + NPA). NPA: <strong>{sixthCpcConfig?.npa6thRate ?? 25}%</strong> on Basic Pay.
                 </CardContent>
               </Card>
             </div>

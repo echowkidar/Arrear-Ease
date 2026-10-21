@@ -1,13 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cpcData } from "@/lib/cpc-data";
+import { requireUser } from "@/lib/server-auth";
+
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
 
 export async function POST(req: NextRequest) {
+  const auth = await requireUser(req);
+  if (auth.error) return auth.error;
+
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
 
     if (!file) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      return NextResponse.json({ error: "File is too large (max 10 MB)." }, { status: 413 });
     }
 
     const bytes = await file.arrayBuffer();

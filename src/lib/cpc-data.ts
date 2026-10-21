@@ -37,7 +37,7 @@ export const default5thCpcDaRates = [
   { fromDate: new Date("2007-01-01"), dpMerged: true, rate: 35 },   // 50+35%
   { fromDate: new Date("2007-07-01"), dpMerged: true, rate: 41 },   // 50+41%
   { fromDate: new Date("2008-01-01"), dpMerged: true, rate: 47 },   // 50+47%
-  { fromDate: new Date("2008-07-01"), dpMerged: true, rate: 14 },   // 50+14% (revised after 6th CPC onset)
+  { fromDate: new Date("2008-07-01"), dpMerged: true, rate: 54 },   // 50+54% (DA raised from 47% to 54% w.e.f. 01.07.2008)
 ];
 
 // 5th CPC Pay Scales
