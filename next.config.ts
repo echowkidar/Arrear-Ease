@@ -23,6 +23,11 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        // OpenCV.js for the document scanner: versioned file name, cache for a year
+        source: '/vendor/:path*',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+      },
+      {
         source: '/(.*)',
         headers: [
           { key: 'X-Frame-Options', value: 'DENY' },

@@ -43,3 +43,6 @@ next-env.d.ts
 # firebase
 firebase-debug.log
 firestore-debug.log
+
+# OpenCV.js copied from node_modules at build time (scripts/copy-opencv.mjs)
+/public/vendor/

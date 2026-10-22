@@ -10,6 +10,7 @@ import { format, addMonths, differenceInCalendarMonths, getDaysInMonth, startOfM
 import { AIValidationModal } from "@/components/ai-validation-modal";
 import { RatesMatrixViewerModal } from "@/components/rates-matrix-viewer-modal";
 import { AIPricingModal } from "@/components/ai-pricing-modal";
+import { DocumentScannerModal } from "@/components/document-scanner-modal";
 import { AIAuditReportModal, AIAuditResult } from "@/components/ai-audit-report-modal";
 import { useSubscription } from "@/context/subscription-context";
 import {
@@ -415,8 +416,9 @@ const compressImage = (file: File): Promise<File> => {
       img.src = event.target?.result as string;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 1200;
-        const MAX_HEIGHT = 1200;
+        // 2000px keeps small print on an A4 proforma readable for the AI
+        const MAX_WIDTH = 2000;
+        const MAX_HEIGHT = 2000;
         let width = img.width;
         let height = img.height;
 
@@ -450,7 +452,7 @@ const compressImage = (file: File): Promise<File> => {
             }
           },
           'image/jpeg',
-          0.7
+          0.85
         );
       };
       img.onerror = (error) => reject(error);
@@ -1814,10 +1816,21 @@ export default function Home() {
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  // Photo picked from camera/gallery: first open "Adjust Scan" (edge detection,
+  // straighten & crop), then send the cleaned page for AI extraction.
+  const [scanFile, setScanFile] = React.useState<File | null>(null);
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
+    if (fileInputRef.current) fileInputRef.current.value = '';
     if (!file) return;
+    if (file.type && !file.type.startsWith('image/')) {
+      processProformaFile(file);
+      return;
+    }
+    setScanFile(file);
+  };
 
+  const processProformaFile = async (file: File) => {
     setIsScanning(true);
     toast({
       title: "Scanning Document",
@@ -2600,6 +2613,13 @@ export default function Home() {
       <RatesMatrixViewerModal
         isOpen={isRatesMatrixOpen}
         onClose={() => setIsRatesMatrixOpen(false)}
+      />
+      <DocumentScannerModal
+        file={scanFile}
+        onClose={() => setScanFile(null)}
+        onUse={(f) => { setScanFile(null); processProformaFile(f); }}
+        onSkip={(f) => { setScanFile(null); processProformaFile(f); }}
+        onRetake={() => { fileInputRef.current?.click(); setScanFile(null); }}
       />
       <AIPricingModal
         isOpen={isPricingModalOpen}
