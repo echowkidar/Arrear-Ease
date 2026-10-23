@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cpcData } from "@/lib/cpc-data";
 import { requireUser } from "@/lib/server-auth";
+import { normalizeProformaExtraction } from "@/lib/proforma-normalize";
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
 
@@ -46,7 +47,9 @@ Extract the following information and return it strictly as a JSON object matchi
   "designation": "string",
   "department": "string",
   "fromDate": "YYYY-MM-DD",
+  "fromDateText": "the same date copied EXACTLY as printed, e.g. 01.07.2024",
   "payFixationRef": "string",
+  "hasRefixationSection": false,
   "paid": {
     "cpc": "7th",
     "basicPay": 0,
@@ -59,6 +62,7 @@ Extract the following information and return it strictly as a JSON object matchi
     "payLevel": "string",
     "refixedBasicPay": 0,
     "refixedBasicPayDate": "",
+    "refixedBasicPayDateText": "",
     "incrementMonth": "string"
   },
   "fullTextSummary": "string - Complete narrative summary of all sections, clauses, fixation rules, and notes present in the document",
@@ -66,7 +70,7 @@ Extract the following information and return it strictly as a JSON object matchi
 }
 
 IMPORTANT DATE INSTRUCTION:
-All dates in the image are in Indian format (DD.MM.YYYY or DD/MM/YYYY). For example, "09.04.2022" means 9th April 2022, NOT September 4th. You must correctly parse these dates and strictly format them as YYYY-MM-DD.
+All dates in the image are in Indian format DAY first (DD.MM.YYYY or DD/MM/YYYY). For example, "09.04.2022" means 9th April 2022, NOT September 4th, and "01.07.2024" means 1st July 2024, NOT 7th January. Format them as YYYY-MM-DD, AND also copy each date character-for-character as printed into the matching "...Text" field (fromDateText, refixedBasicPayDateText).
 
 Use the image to extract:
 - Name of employee
@@ -81,8 +85,9 @@ Use the image to extract:
 - Level in which appointed/promoted (this is toBePaid.payLevel, e.g. "13" from "Level - 13"). IMPORTANT: Must EXACTLY match one of these valid levels: [${validPayLevels}]. If it doesn't match, choose the closest valid level.
 - Pay in the upgraded Level (Section 12) (this is toBePaid.basicPay, e.g. 26000)
 - Date of Next Increment in upgraded level (Section 13) (extract month number for toBePaid.incrementMonth, e.g. "7" if July, "1" if Jan)
-- Re-fixed amount (Section 12(a)) (this is toBePaid.refixedBasicPay, e.g. 27600. If Section 12(a) does NOT exist, return 0)
-- Date of re-fixation (Section 12(a)) (this is toBePaid.refixedBasicPayDate format YYYY-MM-DD. If Section 12(a) does NOT exist, return "")
+- hasRefixationSection: true ONLY if the document has a separate item numbered "12(a)" (or "12 (a)") that gives a RE-FIXED pay with its own date. Otherwise false. Most proformas do NOT have it.
+- Re-fixed amount (Section 12(a)) (this is toBePaid.refixedBasicPay, e.g. 27600). If there is no Section 12(a), return 0. NEVER copy the existing pay, the pay in the upgraded level, or any other number into this field.
+- Date of re-fixation (Section 12(a)) (this is toBePaid.refixedBasicPayDate as YYYY-MM-DD and refixedBasicPayDateText exactly as printed). If there is no Section 12(a), return "" for both.
 - Full Text Summary of the entire proforma: Include all sections (1 to 15), table headers, and remarks.
 - Order Clauses: Include exact text from Internal Audit Endorsement, option availed under FR 22(1)(a)(1), notional increment notes, and administrative conditions.
 
@@ -119,7 +124,10 @@ Return ONLY the raw JSON object, without any markdown formatting, backticks, or 
       return NextResponse.json({ error: "Failed to parse Ollama response as JSON" }, { status: 500 });
     }
 
-    return NextResponse.json(jsonResponse);
+    // Fix day/month swaps and drop a re-fixed pay that is not really in the document
+    const { data: cleaned, notes } = normalizeProformaExtraction(jsonResponse);
+    if (notes.corrections.length) console.info("Proforma extraction corrections:", notes.corrections.join("; "));
+    return NextResponse.json(cleaned);
   } catch (error: any) {
     console.error("Error processing proforma:", error);
     return NextResponse.json(

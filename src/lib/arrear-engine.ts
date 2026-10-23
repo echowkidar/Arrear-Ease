@@ -12,56 +12,61 @@ import {
   type TaCityType,
 } from "@/lib/city-class";
 
+// A cleared date picker stores null (so it does not fall back to a loaded value);
+// treat null / "" as "no date".
+const emptyToUndefined = (v: unknown) => (v === null || v === "" ? undefined : v);
+const optionalDate = z.preprocess(emptyToUndefined, z.date().optional());
+
 export const salaryComponentSchema = z.object({
   cpc: z.enum(["5th", "6th", "7th"], { required_error: "CPC selection is required." }),
   basicPay: z.coerce.number({ required_error: "Basic Pay is required." }).min(0, "Cannot be negative"),
-  payLevel: z.string({ required_error: "Pay Level is required." }),
-  incrementMonth: z.string({ required_error: "Increment month is required." }),
-  incrementDate: z.date().optional(),
+  payLevel: z.string({ required_error: "Pay Level is required." }).min(1, "Pay Level is required."),
+  incrementMonth: z.string({ required_error: "Increment month is required." }).min(1, "Increment month is required."),
+  incrementDate: optionalDate,
 
   fixedBasicPayApplicable: z.boolean().default(false),
   fixedBasicPayValue: z.coerce.number().min(0).optional(),
-  fixedBasicPayFromDate: z.date().optional(),
-  fixedBasicPayToDate: z.date().optional(),
+  fixedBasicPayFromDate: optionalDate,
+  fixedBasicPayToDate: optionalDate,
 
   daApplicable: z.boolean().default(true),
   daFixedRateApplicable: z.boolean().default(false),
   daFixedRate: z.coerce.number().min(0).optional(),
-  daFixedRateFromDate: z.date().optional(),
-  daFixedRateToDate: z.date().optional(),
+  daFixedRateFromDate: optionalDate,
+  daFixedRateToDate: optionalDate,
 
   hraApplicable: z.boolean().default(true),
-  hraFromDate: z.date().optional(),
-  hraToDate: z.date().optional(),
+  hraFromDate: optionalDate,
+  hraToDate: optionalDate,
   hraFixedRateApplicable: z.boolean().default(false),
   hraFixedRate: z.coerce.number().min(0).optional(),
-  hraFixedRateFromDate: z.date().optional(),
-  hraFixedRateToDate: z.date().optional(),
+  hraFixedRateFromDate: optionalDate,
+  hraFixedRateToDate: optionalDate,
 
   npaApplicable: z.boolean().default(false),
-  npaFromDate: z.date().optional(),
-  npaToDate: z.date().optional(),
+  npaFromDate: optionalDate,
+  npaToDate: optionalDate,
 
   taApplicable: z.boolean().default(false),
   doubleTaApplicable: z.boolean().default(false),
-  taFromDate: z.date().optional(),
-  taToDate: z.date().optional(),
+  taFromDate: optionalDate,
+  taToDate: optionalDate,
   taFixedRateApplicable: z.boolean().default(false),
   taFixedRate: z.coerce.number().min(0).optional(),
-  taFixedRateFromDate: z.date().optional(),
-  taFixedRateToDate: z.date().optional(),
+  taFixedRateFromDate: optionalDate,
+  taFixedRateToDate: optionalDate,
 
   otherAllowanceName: z.string().optional(),
   otherAllowance: z.coerce.number().min(0).optional().default(0),
-  otherAllowanceFromDate: z.date().optional(),
-  otherAllowanceToDate: z.date().optional(),
+  otherAllowanceFromDate: optionalDate,
+  otherAllowanceToDate: optionalDate,
   otherAllowanceFixedRateApplicable: z.boolean().default(false),
   otherAllowanceFixedRate: z.coerce.number().min(0).optional(),
-  otherAllowanceFixedRateFromDate: z.date().optional(),
-  otherAllowanceFixedRateToDate: z.date().optional(),
+  otherAllowanceFixedRateFromDate: optionalDate,
+  otherAllowanceFixedRateToDate: optionalDate,
 
   refixedBasicPay: z.coerce.number().min(0).optional(),
-  refixedBasicPayDate: z.date().optional(),
+  refixedBasicPayDate: optionalDate,
 });
 
 export const formSchema = z.object({
@@ -69,8 +74,8 @@ export const formSchema = z.object({
   employeeName: z.string().min(1, "Employee name is required"),
   designation: z.string().min(1, "Designation is required"),
   department: z.string().min(1, "Department is required"),
-  fromDate: z.date({ required_error: "From date is required." }),
-  toDate: z.date({ required_error: "To date is required." }),
+  fromDate: z.preprocess(emptyToUndefined, z.date({ required_error: "From date is required." })),
+  toDate: z.preprocess(emptyToUndefined, z.date({ required_error: "To date is required." })),
   payFixationRef: z.string().optional(),
   salaryRegisterNo: z.string().optional(),
   remark: z.string().optional(),

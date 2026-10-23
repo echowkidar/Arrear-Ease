@@ -232,6 +232,91 @@ const sanitizeForFirebase = (obj: any): any => {
   return newObj;
 };
 
+// A completely empty form (also used by "Clear Form"). Selects use '' (not
+// undefined) so they visibly reset to their placeholder.
+const emptySalarySide = () => ({
+  cpc: "7th" as any,
+  basicPay: '' as any,
+  payLevel: '',
+  incrementMonth: '',
+  incrementDate: null,
+  fixedBasicPayApplicable: false,
+  fixedBasicPayValue: '' as any,
+  fixedBasicPayFromDate: null,
+  fixedBasicPayToDate: null,
+  daApplicable: true,
+  daFixedRateApplicable: false,
+  daFixedRate: '' as any,
+  daFixedRateFromDate: null,
+  daFixedRateToDate: null,
+  hraApplicable: true,
+  hraFromDate: null,
+  hraToDate: null,
+  hraFixedRateApplicable: false,
+  hraFixedRate: '' as any,
+  hraFixedRateFromDate: null,
+  hraFixedRateToDate: null,
+  npaApplicable: false,
+  npaFromDate: null,
+  npaToDate: null,
+  taApplicable: false,
+  doubleTaApplicable: false,
+  taFromDate: null,
+  taToDate: null,
+  taFixedRateApplicable: false,
+  taFixedRate: '' as any,
+  taFixedRateFromDate: null,
+  taFixedRateToDate: null,
+  otherAllowanceName: "",
+  otherAllowance: '' as any,
+  otherAllowanceFromDate: null,
+  otherAllowanceToDate: null,
+  otherAllowanceFixedRateApplicable: false,
+  otherAllowanceFixedRate: '' as any,
+  otherAllowanceFixedRateFromDate: null,
+  otherAllowanceFixedRateToDate: null,
+  refixedBasicPay: '' as any,
+  refixedBasicPayDate: null,
+});
+
+const buildEmptyFormValues = (): any => ({
+  employeeId: "",
+  employeeName: "",
+  designation: "",
+  department: "",
+  fromDate: null,
+  toDate: null,
+  payFixationRef: "",
+  salaryRegisterNo: "",
+  remark: "",
+  ...DEFAULT_CITY_SETTINGS,
+  paid: emptySalarySide(),
+  toBePaid: emptySalarySide(),
+});
+
+const withoutUndefined = (o: any) =>
+  Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v !== undefined));
+
+/** Fills every missing field so that form.reset() never leaves stale values behind. */
+const normalizeFormValues = (v: any): any => {
+  const empty = buildEmptyFormValues();
+  return {
+    ...empty,
+    ...withoutUndefined(v),
+    paid: { ...empty.paid, ...withoutUndefined(v?.paid) },
+    toBePaid: { ...empty.toBePaid, ...withoutUndefined(v?.toBePaid) },
+  };
+};
+
+/** "YYYY-MM-DD" from the AI as a local date (avoids time-zone day shifts). */
+const parseLocalYmd = (v: unknown): Date | null => {
+  if (!v) return null;
+  const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  const d = new Date(String(v));
+  return isNaN(d.getTime()) ? null : d;
+};
+
 const FormDateInput = ({ field, label, onDateSelect }: { field: any, label?: string, onDateSelect?: (date: Date | undefined) => void }) => {
   const [open, setOpen] = React.useState(false);
   const { name } = useFormField();
@@ -239,7 +324,9 @@ const FormDateInput = ({ field, label, onDateSelect }: { field: any, label?: str
   const handleClear = (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    form.setValue(name, undefined, { shouldDirty: true, shouldValidate: true });
+    // null (not undefined): with undefined react-hook-form shows the field's default
+    // value again, so a date loaded from a saved statement could not be cleared.
+    form.setValue(name, null, { shouldDirty: true, shouldValidate: true });
     if (onDateSelect) onDateSelect(undefined);
     setOpen(false);
   };
@@ -302,9 +389,10 @@ const FixedRateFields = ({ type, name, isAmount }: { type: 'paid' | 'toBePaid', 
 
   React.useEffect(() => {
     if (!isFixedRateApplicable) {
-      form.setValue(`${type}.${name}FixedRate`, undefined, { shouldDirty: true });
-      form.setValue(`${type}.${name}FixedRateFromDate`, undefined, { shouldDirty: true });
-      form.setValue(`${type}.${name}FixedRateToDate`, undefined, { shouldDirty: true });
+      // '' / null rather than undefined, so values of a loaded statement do not come back
+      form.setValue(`${type}.${name}FixedRate`, '', { shouldDirty: true });
+      form.setValue(`${type}.${name}FixedRateFromDate`, null, { shouldDirty: true });
+      form.setValue(`${type}.${name}FixedRateToDate`, null, { shouldDirty: true });
     }
   }, [isFixedRateApplicable, form, type, name]);
 
@@ -467,6 +555,8 @@ export default function Home() {
   const [statement, setStatement] = React.useState<Omit<SavedStatement, 'id' | 'savedAt' | 'isLocal'> | null>(null);
   const [savedStatements, setSavedStatements] = React.useState<SavedStatement[]>([]);
   const [searchQuery, setSearchQuery] = React.useState('');
+  // Salary Components tab: "Already Paid" opens by default (and after Load / Clear / Add Period)
+  const [salaryTab, setSalaryTab] = React.useState<'paid' | 'toBePaid'>('paid');
   const [sortDirection, setSortDirection] = React.useState<'asc' | 'desc' | null>(null);
   const [isLoadDialogOpen, setLoadDialogOpen] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
@@ -833,56 +923,7 @@ export default function Home() {
 
   const form = useForm<ArrearFormData>({
     resolver: zodResolver(formSchema),
-    defaultValues: {
-      employeeId: "",
-      employeeName: "",
-      designation: "",
-      department: "",
-      fromDate: undefined,
-      toDate: undefined,
-      payFixationRef: "",
-      salaryRegisterNo: "",
-      remark: "",
-      ...DEFAULT_CITY_SETTINGS,
-      paid: {
-        cpc: "7th" as any,
-        basicPay: '' as any,
-        payLevel: undefined,
-        incrementMonth: undefined,
-        fixedBasicPayApplicable: false,
-        daApplicable: true,
-        daFixedRateApplicable: false,
-        hraApplicable: true,
-        hraFixedRateApplicable: false,
-        npaApplicable: false,
-        taApplicable: false,
-        doubleTaApplicable: false,
-        taFixedRateApplicable: false,
-        otherAllowance: '' as any,
-        otherAllowanceName: "",
-        otherAllowanceFixedRateApplicable: false,
-        refixedBasicPay: '' as any,
-      },
-      toBePaid: {
-        cpc: "7th" as any,
-        basicPay: '' as any,
-        payLevel: undefined,
-        incrementMonth: undefined,
-        fixedBasicPayApplicable: false,
-        daApplicable: true,
-        daFixedRateApplicable: false,
-        hraApplicable: true,
-        hraFixedRateApplicable: false,
-        npaApplicable: false,
-        taApplicable: false,
-        doubleTaApplicable: false,
-        taFixedRateApplicable: false,
-        otherAllowance: '' as any,
-        otherAllowanceName: "",
-        otherAllowanceFixedRateApplicable: false,
-        refixedBasicPay: '' as any,
-      },
-    },
+    defaultValues: buildEmptyFormValues(),
   });
 
   const { dirtyFields } = form.formState;
@@ -1127,7 +1168,7 @@ export default function Home() {
       }, 100);
 
       // Reset form dirty state so the calculate button becomes inactive again
-      form.reset(data);
+      form.reset(normalizeFormValues(data));
     } catch (error) {
       console.error(error);
       toast({
@@ -1198,7 +1239,7 @@ export default function Home() {
           periods: updatedPeriods
         });
 
-        form.reset(currentFormData);
+        form.reset(normalizeFormValues(currentFormData));
 
         setShowDiffToast({ show: true, diff: combinedTotals.difference });
         setTimeout(() => {
@@ -1335,30 +1376,31 @@ export default function Home() {
     // Clear the form but retain top level non-period specific data if possible, or just reset and set specific fields
     // We can use form.reset with a partial payload to keep employee details
     const currentData = form.getValues();
-    form.reset({
+    form.reset(normalizeFormValues({
       ...currentData,
       fromDate: nextStartDate,
-      toDate: undefined as any,
+      toDate: null as any,
       remark: "",
       paid: {
         ...currentData.paid,
         basicPay: '' as any,
-        payLevel: undefined,
-        incrementMonth: undefined,
-        incrementDate: undefined,
+        payLevel: '',
+        incrementMonth: '',
+        incrementDate: null,
         refixedBasicPay: '' as any,
-        refixedBasicPayDate: undefined,
+        refixedBasicPayDate: null,
       },
       toBePaid: {
         ...currentData.toBePaid,
         basicPay: '' as any,
-        payLevel: undefined,
-        incrementMonth: undefined,
-        incrementDate: undefined,
+        payLevel: '',
+        incrementMonth: '',
+        incrementDate: null,
         refixedBasicPay: '' as any,
-        refixedBasicPayDate: undefined,
+        refixedBasicPayDate: null,
       }
-    });
+    }));
+    setSalaryTab('paid');
     
     toast({
       title: "Add New Period",
@@ -1401,7 +1443,7 @@ export default function Home() {
       remark: updatedPeriods[index].formData.remark || "",
       payFixationRef: updatedPeriods[index].formData.payFixationRef || ""
     };
-    form.reset(newFormData);
+    form.reset(normalizeFormValues(newFormData));
 
     setTimeout(() => {
       ['paid', 'toBePaid'].forEach(type => {
@@ -1454,7 +1496,7 @@ export default function Home() {
       periods: remainingPeriods
     });
     setCurrentPeriodIndex(newIdx);
-    form.reset(remainingPeriods[newIdx].formData);
+    form.reset(normalizeFormValues(remainingPeriods[newIdx].formData));
     toast({
       title: "Period Deleted",
       description: `Period ${indexToDelete + 1} was removed from the arrear statement.`,
@@ -1653,6 +1695,28 @@ export default function Home() {
     document.getElementById("employee-details-card")?.scrollIntoView({ behavior: 'smooth' });
   }
 
+  // Saved statements matching the search box, in the order shown in the Load dialog
+  const getFilteredSavedStatements = (): SavedStatement[] => {
+    let result = [...savedStatements];
+    if (searchQuery.trim() !== '') {
+      const q = searchQuery.trim().toLowerCase();
+      result = result.filter(s =>
+        (s.employeeInfo?.employeeName || '').toLowerCase().includes(q) ||
+        (s.employeeInfo?.employeeId || '').toLowerCase().includes(q)
+      );
+    }
+    if (sortDirection) {
+      result.sort((a, b) => {
+        const nameA = (a.employeeInfo?.employeeName || '').toLowerCase();
+        const nameB = (b.employeeInfo?.employeeName || '').toLowerCase();
+        if (nameA < nameB) return sortDirection === 'asc' ? -1 : 1;
+        if (nameA > nameB) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+    return result;
+  };
+
   const loadStatement = async (statementToLoad: SavedStatement) => {
     const { employeeInfo, ...restOfStatement } = statementToLoad;
 
@@ -1679,7 +1743,8 @@ export default function Home() {
       department: fullyProcessedInfo.department || "",
     }
 
-    form.reset(formDataToReset as ArrearFormData);
+    form.reset(normalizeFormValues(formDataToReset));
+    setSalaryTab('paid');
 
     setTimeout(() => {
       if (formDataToReset.paid?.payLevel) form.setValue('paid.payLevel', formDataToReset.paid.payLevel);
@@ -1780,7 +1845,7 @@ export default function Home() {
       if (loadedStatementId === id) {
         setLoadedStatementId(null);
         setStatement(null);
-        form.reset();
+        form.reset(buildEmptyFormValues());
       }
 
       await fetchSavedStatements();
@@ -1792,23 +1857,19 @@ export default function Home() {
   };
 
   const handleClearForm = () => {
-    form.reset({
-      employeeId: "",
-      employeeName: "",
-      designation: "",
-      department: "",
-      fromDate: undefined,
-      toDate: undefined,
-      payFixationRef: "",
-      salaryRegisterNo: "",
-      remark: "",
-      ...DEFAULT_CITY_SETTINGS,
-      paid: { cpc: "7th" as any, basicPay: '' as any, payLevel: undefined, incrementMonth: undefined, daApplicable: true, hraApplicable: true, npaApplicable: false, taApplicable: false, doubleTaApplicable: false, otherAllowance: '' as any, otherAllowanceName: "", refixedBasicPay: '' as any },
-      toBePaid: { cpc: "7th" as any, basicPay: '' as any, payLevel: undefined, incrementMonth: undefined, daApplicable: true, hraApplicable: true, npaApplicable: false, taApplicable: false, doubleTaApplicable: false, otherAllowance: '' as any, otherAllowanceName: "", refixedBasicPay: '' as any },
-    });
+    form.reset(buildEmptyFormValues());
+    form.clearErrors();
     setStatement(null);
     setLoadedStatementId(null);
     setAssignedOwner(null);
+    setCurrentPeriodIndex(0);
+    setSalaryTab('paid');
+    setAiScannedData(null);
+    setScannedProformaDetails(null);
+    setScannedImageBase64(null);
+    setAuditResult(null);
+    setBasicPayWarning(null);
+    setShowDiffToast({ show: false, diff: 0 });
     toast({ title: "Form Cleared", description: "All fields have been reset." });
   };
 
@@ -1898,16 +1959,20 @@ export default function Home() {
     if (confirmedData.designation) form.setValue("designation", confirmedData.designation);
     if (confirmedData.department) form.setValue("department", confirmedData.department);
     
-    if (confirmedData.fromDate) form.setValue("fromDate", new Date(confirmedData.fromDate));
-    if (confirmedData.toDate) form.setValue("toDate", new Date(confirmedData.toDate));
+    if (confirmedData.fromDate) form.setValue("fromDate", parseLocalYmd(confirmedData.fromDate) as any);
+    if (confirmedData.toDate) form.setValue("toDate", (confirmedData.toDate instanceof Date ? confirmedData.toDate : parseLocalYmd(confirmedData.toDate)) as any);
     if (confirmedData.payFixationRef) form.setValue("payFixationRef", confirmedData.payFixationRef);
     
     if (confirmedData.paid) {
       if (confirmedData.paid.cpc) form.setValue("paid.cpc", confirmedData.paid.cpc);
       if (confirmedData.paid.basicPay) form.setValue("paid.basicPay", confirmedData.paid.basicPay);
       if (confirmedData.paid.payLevel) form.setValue("paid.payLevel", confirmedData.paid.payLevel);
-      if (confirmedData.paid.refixedBasicPay) form.setValue("paid.refixedBasicPay", confirmedData.paid.refixedBasicPay);
-      if (confirmedData.paid.refixedBasicPayDate) form.setValue("paid.refixedBasicPayDate", new Date(confirmedData.paid.refixedBasicPayDate));
+      // Re-fixation: always overwrite, so values from a previously loaded statement or
+      // scan do not stay behind when this document has no Section 12(a).
+      const paidRefixDate = parseLocalYmd(confirmedData.paid.refixedBasicPayDate);
+      const paidRefix = Number(confirmedData.paid.refixedBasicPay) || 0;
+      form.setValue("paid.refixedBasicPay", (paidRefix > 0 && paidRefixDate ? paidRefix : '') as any);
+      form.setValue("paid.refixedBasicPayDate", (paidRefix > 0 && paidRefixDate ? paidRefixDate : null) as any);
       if (confirmedData.paid.incrementMonth) form.setValue("paid.incrementMonth", confirmedData.paid.incrementMonth);
     }
     
@@ -1915,8 +1980,12 @@ export default function Home() {
       if (confirmedData.toBePaid.cpc) form.setValue("toBePaid.cpc", confirmedData.toBePaid.cpc);
       if (confirmedData.toBePaid.basicPay) form.setValue("toBePaid.basicPay", confirmedData.toBePaid.basicPay);
       if (confirmedData.toBePaid.payLevel) form.setValue("toBePaid.payLevel", confirmedData.toBePaid.payLevel);
-      if (confirmedData.toBePaid.refixedBasicPay) form.setValue("toBePaid.refixedBasicPay", confirmedData.toBePaid.refixedBasicPay);
-      if (confirmedData.toBePaid.refixedBasicPayDate) form.setValue("toBePaid.refixedBasicPayDate", new Date(confirmedData.toBePaid.refixedBasicPayDate));
+      // Re-fixation: always overwrite, so values from a previously loaded statement or
+      // scan do not stay behind when this document has no Section 12(a).
+      const toBePaidRefixDate = parseLocalYmd(confirmedData.toBePaid.refixedBasicPayDate);
+      const toBePaidRefix = Number(confirmedData.toBePaid.refixedBasicPay) || 0;
+      form.setValue("toBePaid.refixedBasicPay", (toBePaidRefix > 0 && toBePaidRefixDate ? toBePaidRefix : '') as any);
+      form.setValue("toBePaid.refixedBasicPayDate", (toBePaidRefix > 0 && toBePaidRefixDate ? toBePaidRefixDate : null) as any);
       if (confirmedData.toBePaid.incrementMonth) form.setValue("toBePaid.incrementMonth", confirmedData.toBePaid.incrementMonth);
     }
 
@@ -2162,8 +2231,8 @@ export default function Home() {
                   <FormLabel>CPC</FormLabel>
                   <Select onValueChange={(value) => {
                     field.onChange(value);
-                    form.setValue(`${type}.payLevel`, undefined as any);
-                  }} value={field.value}>
+                    form.setValue(`${type}.payLevel`, '' as any);
+                  }} value={field.value ?? ''}>
                     <FormControl><SelectTrigger><SelectValue placeholder="Select CPC" /></SelectTrigger></FormControl>
                     <SelectContent>
                       <SelectItem value="5th">5th CPC (Upto 31.12.2005)</SelectItem>
@@ -2186,7 +2255,7 @@ export default function Home() {
                     field.onChange(val);
                     form.clearErrors(`${type}.payLevel`);
                     form.clearErrors(`${type}.basicPay`);
-                  }} value={field.value} disabled={!cpc}>
+                  }} value={field.value ?? ''} disabled={!cpc}>
                     <FormControl><SelectTrigger className={fieldState.error ? "border-red-500 focus-visible:ring-red-500" : ""}><SelectValue placeholder={cpc ? "Select a level" : "Select CPC first"} /></SelectTrigger></FormControl>
                     <SelectContent>
                       {payLevels.map(level => <SelectItem key={level.value} value={level.value}>{level.label}</SelectItem>)}
@@ -2298,7 +2367,7 @@ export default function Home() {
                             newDate.setMonth(parseInt(value, 10) - 1);
                             form.setValue(`${type}.incrementDate`, newDate);
                           }
-                        }} value={field.value}>
+                        }} value={field.value ?? ''}>
                           <FormControl><SelectTrigger><SelectValue placeholder="Select a month" /></SelectTrigger></FormControl>
                           <SelectContent>{ALL_INCREMENT_MONTHS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent>
                         </Select>
@@ -2317,8 +2386,8 @@ export default function Home() {
                       <FormLabel>Increment Month</FormLabel>
                       <Select onValueChange={(value) => {
                         field.onChange(value);
-                        form.setValue(`${type}.incrementDate`, undefined);
-                      }} value={field.value}>
+                        form.setValue(`${type}.incrementDate`, null as any);
+                      }} value={field.value ?? ''}>
                         <FormControl><SelectTrigger><SelectValue placeholder="Select a month" /></SelectTrigger></FormControl>
                         <SelectContent>{INCREMENT_MONTHS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent>
                       </Select>
@@ -2869,9 +2938,26 @@ export default function Home() {
               </DialogHeader>
               <div className="py-2 px-1">
                 <Input
-                  placeholder="Search by Employee ID or Name..."
+                  placeholder="Search by Employee ID or Name... (Enter to load)"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter') return;
+                    e.preventDefault();
+                    if (isLoading || isDeletingStatement) return;
+                    const result = getFilteredSavedStatements();
+                    const q = searchQuery.trim().toLowerCase();
+                    const exactId = result.filter(s => (s.employeeInfo?.employeeId || '').toLowerCase() === q);
+                    const target = result.length === 1 ? result[0] : exactId[0];
+                    if (target) {
+                      loadStatement(target);
+                    } else if (result.length > 1) {
+                      toast({ title: `${result.length} statements found`, description: "Click Load on the one you want." });
+                    } else {
+                      toast({ variant: "destructive", title: "No statement found", description: "Check the Employee ID or name." });
+                    }
+                  }}
+                  autoFocus
                   className="max-w-sm"
                 />
               </div>
@@ -2879,23 +2965,7 @@ export default function Home() {
                 {isLoading ? (
                   <div className="flex justify-center items-center py-8"><Loader2 className="h-8 w-8 animate-spin" /></div>
                 ) : (() => {
-                  let result = [...savedStatements];
-                  if (searchQuery.trim() !== '') {
-                    const q = searchQuery.toLowerCase();
-                    result = result.filter(s => 
-                      (s.employeeInfo?.employeeName || '').toLowerCase().includes(q) ||
-                      (s.employeeInfo?.employeeId || '').toLowerCase().includes(q)
-                    );
-                  }
-                  if (sortDirection) {
-                    result.sort((a, b) => {
-                      const nameA = (a.employeeInfo?.employeeName || '').toLowerCase();
-                      const nameB = (b.employeeInfo?.employeeName || '').toLowerCase();
-                      if (nameA < nameB) return sortDirection === 'asc' ? -1 : 1;
-                      if (nameA > nameB) return sortDirection === 'asc' ? 1 : -1;
-                      return 0;
-                    });
-                  }
+                  const result = getFilteredSavedStatements();
                   return result.length > 0 ? (
                   <Table>
                     <TableHeader>
@@ -3294,7 +3364,7 @@ export default function Home() {
                   <CardDescription>Define salary structures before and after the revision.</CardDescription>
                 </CardHeader>
                 <CardContent className="pt-4">
-                  <Tabs defaultValue="paid" className="w-full">
+                  <Tabs value={salaryTab} onValueChange={(v) => setSalaryTab(v as 'paid' | 'toBePaid')} className="w-full">
                     <TabsList className="grid w-full grid-cols-2 p-1.5 bg-slate-100/90 dark:bg-slate-900/90 border border-slate-200/90 dark:border-slate-800 rounded-2xl gap-3 h-auto shadow-xs">
                       <TabsTrigger 
                         value="paid" 
