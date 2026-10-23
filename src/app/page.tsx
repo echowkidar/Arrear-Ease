@@ -3303,8 +3303,9 @@ export default function Home() {
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8 no-print">
             {/* Top row: Employee Details & Calculation Period side-by-side */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <Card id="employee-details-card" className="border-t-4 border-t-blue-500 border-border/80 shadow-sm hover:shadow-md transition-shadow bg-card flex flex-col justify-between">
+            {/* 5 : 7 split — the employee card is short, the period card has more fields */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              <Card id="employee-details-card" className="lg:col-span-5 border-t-4 border-t-blue-500 border-border/80 shadow-sm hover:shadow-md transition-shadow bg-card flex flex-col justify-between">
                 <div>
                   <CardHeader className="pb-3 border-b bg-blue-50/40 dark:bg-blue-950/20">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -3347,11 +3348,11 @@ export default function Home() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4 pt-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
                       <FormField control={form.control} name="employeeId" render={({ field }) => (<FormItem> <FormLabel>Employee ID</FormLabel> <FormControl><Input placeholder="Employee ID" {...field} maxLength={5} onChange={(e) => { const val = e.target.value.replace(/\D/g, '').slice(0, 5); field.onChange(val); }} /></FormControl> <FormMessage /> </FormItem>)} />
                       <FormField control={form.control} name="employeeName" render={({ field }) => (<FormItem> <FormLabel>Employee Name</FormLabel> <FormControl><Input placeholder="Full Name" {...field} /></FormControl> <FormMessage /> </FormItem>)} />
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
                       <FormField control={form.control} name="designation" render={({ field }) => (<FormItem> <FormLabel>Designation</FormLabel> <FormControl><Input placeholder="Designation" {...field} /></FormControl> <FormMessage /> </FormItem>)} />
                       <FormField control={form.control} name="department" render={({ field }) => (<FormItem> <FormLabel>Department</FormLabel> <FormControl><Input placeholder="Department" {...field} /></FormControl> <FormMessage /> </FormItem>)} />
                       <FormField control={form.control} name="salaryRegisterNo" render={({ field }) => (<FormItem> <FormLabel>Salary Register No.</FormLabel> <FormControl><Input placeholder="e.g., 88IIIU" {...field} /></FormControl> <FormMessage /> </FormItem>)} />
@@ -3360,7 +3361,7 @@ export default function Home() {
                 </div>
               </Card>
 
-              <Card className="border-t-4 border-t-amber-500 border-border/80 shadow-sm hover:shadow-md transition-shadow bg-card flex flex-col justify-between">
+              <Card className="lg:col-span-7 border-t-4 border-t-amber-500 border-border/80 shadow-sm hover:shadow-md transition-shadow bg-card flex flex-col justify-between">
                 <div>
                   <CardHeader className="pb-3 border-b bg-amber-50/40 dark:bg-amber-950/20">
                     <div className="flex items-center justify-between">
