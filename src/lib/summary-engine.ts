@@ -460,7 +460,7 @@ export const ymdToDisplay = (ymd: string) => {
 };
 
 export function summaryToCsv(summary: ArrearSummary, rows: SummaryRow[], showUser: boolean): string {
-  const head = ["S.No", ...(showUser ? ["User", "User Email"] : []), "Employee ID", "Employee Name", "Designation", "Department", "From", "To", "Reason", "Due (Rs.)", "Drawn (Rs.)", "Arrear (Rs.)", "Recovery (Rs.)"];
+  const head = ["S.No", ...(showUser ? ["User", "User Email"] : []), "Employee ID", "Employee Name", "Designation", "Department", "From", "To", "Reason", "Arrear (Rs.)", "Recovery (Rs.)"];
   const lines = [head.map(csvCell).join(",")];
   rows.forEach((r, i) => {
     lines.push(
@@ -474,8 +474,6 @@ export function summaryToCsv(summary: ArrearSummary, rows: SummaryRow[], showUse
         ymdToDisplay(r.fromDate),
         ymdToDisplay(r.toDate),
         r.reason,
-        r.due,
-        r.drawn,
         r.difference > 0 ? r.difference : 0,
         r.difference < 0 ? -r.difference : 0,
       ]
@@ -486,8 +484,8 @@ export function summaryToCsv(summary: ArrearSummary, rows: SummaryRow[], showUse
   const t = totalsOf(rows);
   const pre = showUser ? 2 : 0;
   const blank = (k: number) => Array(k).fill("");
-  lines.push(["", ...blank(pre), "", "TOTAL", "", "", "", "", "", t.due, t.drawn, t.arrear, t.recovery].map(csvCell).join(","));
-  lines.push(["", ...blank(pre), "", "NET PAYABLE", "", "", "", "", "", "", "", t.net, ""].map(csvCell).join(","));
+  lines.push(["", ...blank(pre), "", "TOTAL", "", "", "", "", "", t.arrear, t.recovery].map(csvCell).join(","));
+  lines.push(["", ...blank(pre), "", "NET PAYABLE", "", "", "", "", "", t.net, ""].map(csvCell).join(","));
   const meta = [`Summary,${csvCell(summary.title)}`, `Reason,${csvCell(reasonText(summary))}`];
   if (summary.orderNo) meta.push(`Order / Ref,${csvCell(summary.orderNo)}`);
   return "﻿" + [...meta, "", ...lines].join("\r\n");

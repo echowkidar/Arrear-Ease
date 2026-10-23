@@ -37,8 +37,6 @@ const Amt = ({ v }: { v: number }) => <>{v ? formatINR(v) : "—"}</>;
 function TotalCells({ t }: { t: SummaryTotals }) {
   return (
     <>
-      <td className="num">{formatINR(t.due)}</td>
-      <td className="num">{formatINR(t.drawn)}</td>
       <td className="num">{formatINR(t.arrear)}</td>
       <td className="num">{formatINR(t.recovery)}</td>
     </>
@@ -79,8 +77,6 @@ export function SummaryPrint({
       <td className="wrap">{r.department}</td>
       <td className="c">{period(r)}</td>
       <td className="wrap">{r.reason || "—"}</td>
-      <td className="num">{formatINR(r.due)}</td>
-      <td className="num">{formatINR(r.drawn)}</td>
       <td className="num"><Amt v={r.difference > 0 ? r.difference : 0} /></td>
       <td className="num"><Amt v={r.difference < 0 ? -r.difference : 0} /></td>
     </tr>
@@ -128,8 +124,6 @@ export function SummaryPrint({
               <th>Department</th>
               <th>Arrear Period</th>
               <th>Reason</th>
-              <th>Due (Rs.)</th>
-              <th>Drawn (Rs.)</th>
               <th>Arrear (Rs.)</th>
               <th>Recovery (Rs.)</th>
             </tr>
@@ -139,7 +133,7 @@ export function SummaryPrint({
               ? groups.map((g) => (
                   <React.Fragment key={g.key}>
                     <tr className="sp-group">
-                      <td colSpan={10}>
+                      <td colSpan={8}>
                         {g.userName || g.userEmail || "Unknown user"}
                         {g.userName && g.userEmail ? ` (${g.userEmail})` : ""} — {g.rows.length} statement(s)
                       </td>
@@ -165,8 +159,6 @@ export function SummaryPrint({
               <th>S.No.</th>
               <th>{summary.groupByUser ? "User" : "Particulars"}</th>
               <th>Statements</th>
-              <th>Due (Rs.)</th>
-              <th>Drawn (Rs.)</th>
               <th>Arrear (Rs.)</th>
               <th>Recovery (Rs.)</th>
               <th>Net (Rs.)</th>
