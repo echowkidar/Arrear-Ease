@@ -92,7 +92,7 @@ const isoToDisplay = (iso: string) => {
 };
 
 const Money = ({ v, className = "" }: { v: number; className?: string }) => (
-  <span className={`tabular-nums ${className}`}>₹{formatINR(v)}</span>
+  <span className={`tabular-nums ${className}`}>Rs. {formatINR(v)}</span>
 );
 
 export default function SummariesPage() {
@@ -132,21 +132,33 @@ export default function SummariesPage() {
     if (!user?.uid) return;
     setLoading(true);
     setLoadError("");
-    try {
-      const [st, sm, ps, us] = await Promise.all([
-        fetchStatementsFor(user.uid, isAdmin),
-        fetchSummariesFor(user.uid, isAdmin),
-        fetchPrintSettings(),
-        isAdmin ? fetchUsers().catch(() => [] as AppUser[]) : Promise.resolve([] as AppUser[]),
-      ]);
-      setStatements(st);
-      setSummaries(sm);
-      setPrintSettings(ps);
-      setUsers(us);
-    } catch (e: any) {
-      console.error("Summaries load failed:", e);
-      setLoadError(e?.message || "Could not load data.");
+    // Each part loads on its own, so one failure (e.g. summaries rules not yet
+    // published) does not hide the statements.
+    const [st, sm, ps, us] = await Promise.allSettled([
+      fetchStatementsFor(user.uid, isAdmin),
+      fetchSummariesFor(user.uid, isAdmin),
+      fetchPrintSettings(),
+      isAdmin ? fetchUsers() : Promise.resolve([] as AppUser[]),
+    ]);
+    const problems: string[] = [];
+    const isPerm = (r: PromiseRejectedResult) => /permission/i.test(String(r.reason?.code || r.reason?.message || ""));
+    if (st.status === "fulfilled") setStatements(st.value);
+    else {
+      console.error("Statements load failed:", st.reason);
+      problems.push(`Saved statements could not be loaded (${st.reason?.message || "error"}).`);
     }
+    if (sm.status === "fulfilled") setSummaries(sm.value);
+    else {
+      console.error("Summaries load failed:", sm.reason);
+      problems.push(
+        isPerm(sm)
+          ? "Saved summaries could not be loaded: the database rules for Arrear Summaries are not published yet. Publish the latest firestore.rules in Firebase Console → Firestore → Rules."
+          : `Saved summaries could not be loaded (${sm.reason?.message || "error"}).`
+      );
+    }
+    if (ps.status === "fulfilled") setPrintSettings(ps.value);
+    if (us.status === "fulfilled") setUsers(us.value);
+    setLoadError(problems.join(" "));
     setLoading(false);
   }, [user?.uid, isAdmin]);
 
@@ -304,7 +316,13 @@ export default function SummariesPage() {
       return saved;
     } catch (e: any) {
       console.error("Summary save failed:", e);
-      toast({ variant: "destructive", title: "Could not save", description: e?.message || "Please try again." });
+      toast({
+        variant: "destructive",
+        title: "Could not save",
+        description: /permission/i.test(String(e?.code || e?.message || ""))
+          ? "Database rules for Arrear Summaries are not published yet (firestore.rules)."
+          : e?.message || "Please try again.",
+      });
       return null;
     } finally {
       setSaving(false);
@@ -965,7 +983,7 @@ function LockedRows({ rows, isAdmin }: { rows: ReturnType<typeof computeSummaryR
                 <div className="text-xs text-muted-foreground">{[r.employeeId, r.designation].filter(Boolean).join(" · ")}</div>
                 {r.changedSinceLock && (
                   <div className="text-[11px] text-amber-700 dark:text-amber-400 flex items-center gap-1 mt-0.5">
-                    <AlertTriangle className="h-3 w-3" /> Statement changed after locking (now ₹{formatINR(Math.abs(r.liveDifference || 0))}
+                    <AlertTriangle className="h-3 w-3" /> Statement changed after locking (now Rs. {formatINR(Math.abs(r.liveDifference || 0))}
                     {(r.liveDifference || 0) < 0 ? " recovery" : ""}). Locked figure is kept.
                   </div>
                 )}
@@ -979,7 +997,7 @@ function LockedRows({ rows, isAdmin }: { rows: ReturnType<typeof computeSummaryR
               {isAdmin && <td className="p-2 align-top text-xs hidden lg:table-cell">{r.userName || r.userEmail}</td>}
               <td className="p-2 align-top text-xs">{r.reason || "—"}</td>
               <td className={`p-2 align-top text-right font-semibold whitespace-nowrap ${r.difference < 0 ? "text-rose-600" : ""}`}>
-                ₹{formatINR(Math.abs(r.difference))}
+                Rs. {formatINR(Math.abs(r.difference))}
                 {r.difference < 0 && <div className="text-[10px] font-normal">recovery</div>}
               </td>
             </tr>
