@@ -13,7 +13,7 @@ import {
     signInWithEmailAndPassword,
     type AuthError
 } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 
 type AuthStatus = 'authenticated' | 'unauthenticated' | 'loading';
@@ -47,6 +47,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [isAuthModalOpen, setAuthModalOpen] = useState(false);
     const [authError, setAuthError] = useState<string | null>(null);
     const [authMessage, setAuthMessage] = useState<string | null>(null);
+    // re-render consumers after the profile name is synced from the users document
+    const [, setProfileVersion] = useState(0);
 
     const { toast } = useToast();
     const router = useRouter();
@@ -62,6 +64,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             if (currentUser) {
                 setUser(currentUser);
                 setAuthStatus('authenticated');
+                // The name saved in the users document (edited by the user/admin) is the
+                // one to show — not the Google account name.
+                if (db) {
+                    try {
+                        const snap = await getDoc(doc(db, 'users', currentUser.uid));
+                        const savedName = snap.exists() ? String(snap.data()?.displayName || '').trim() : '';
+                        if (savedName && savedName !== currentUser.displayName) {
+                            await updateProfile(currentUser, { displayName: savedName });
+                            setProfileVersion((v) => v + 1);
+                        }
+                    } catch (error) {
+                        console.warn("Could not sync profile name:", error);
+                    }
+                }
                 // Update last login timestamp, but only once per session
                 if (!sessionLoginUpdated && db) {
                     const userDocRef = doc(db, 'users', currentUser.uid);
@@ -163,13 +179,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             const result = await signInWithPopup(auth, provider);
             const firebaseUser = result.user;
             
-            // For Google sign-in, we check if the user doc exists. 
-            // If we want to safely set it without overwriting existing data, we can use setDoc with merge: true
-            await setDoc(doc(db, 'users', firebaseUser.uid), {
+            // Keep a name the user/admin has already set; the Google account name is
+            // used only for a new account (or one that has no name yet).
+            const userRef = doc(db, 'users', firebaseUser.uid);
+            const existing = await getDoc(userRef).catch(() => null);
+            const savedName = existing?.exists() ? String(existing.data()?.displayName || '').trim() : '';
+            await setDoc(userRef, {
                 email: firebaseUser.email,
-                displayName: firebaseUser.displayName || 'Google User',
+                ...(savedName ? {} : { displayName: firebaseUser.displayName || 'Google User' }),
+                ...(existing?.exists() ? {} : { createdAt: serverTimestamp() }),
                 lastLogin: serverTimestamp(),
             }, { merge: true });
+            if (savedName && savedName !== firebaseUser.displayName) {
+                await updateProfile(firebaseUser, { displayName: savedName }).catch(() => {});
+                setProfileVersion((v) => v + 1);
+            }
 
             setUser(firebaseUser);
             toast({ title: "Successfully signed in!", description: 'Welcome via Google!' });
