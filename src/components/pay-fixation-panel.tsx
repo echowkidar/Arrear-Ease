@@ -189,10 +189,10 @@ export function PayFixationPanel({
   const savedBytes = saved.reduce((a, t) => a + t.bytes + t.thumbBytes, 0);
 
   return (
-    <Card className="mt-6 no-print border-dashed" data-testid="pf-panel">
-      <CardHeader className="pb-3 flex flex-row flex-wrap items-start justify-between gap-2 space-y-0">
+    <Card className="no-print border-dashed shadow-none bg-muted/10" data-testid="pf-panel">
+      <CardHeader className="p-3 sm:p-4 pb-2 sm:pb-2 flex flex-row flex-wrap items-start justify-between gap-2 space-y-0">
         <div>
-          <CardTitle className="text-base flex items-center gap-2"><Paperclip className="h-4 w-4" /> Pay Fixation (original document)</CardTitle>
+          <CardTitle className="text-sm font-semibold flex items-center gap-2"><Paperclip className="h-4 w-4" /> Pay Fixation (original document)</CardTitle>
           <CardDescription className="text-xs mt-1">
             {saved.length > 0 && <>{saved.length} page(s) saved · {formatBytes(savedBytes)}. </>}
             {pending.length > 0 && (
@@ -216,15 +216,15 @@ export function PayFixationPanel({
               if (f) setScanFile(f);
             }}
           />
-          <Button size="sm" variant="outline" disabled={busy} onClick={() => inputRef.current?.click()} data-testid="pf-add">
+          <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => inputRef.current?.click()} data-testid="pf-add">
             {busy ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Camera className="h-4 w-4 mr-1.5" />} Add page
           </Button>
           {pages.length > 0 && (
             <>
-              <Button size="sm" variant="outline" onClick={() => setViewer({ open: true, index: 0 })} data-testid="pf-view">
+              <Button type="button" size="sm" variant="outline" onClick={() => setViewer({ open: true, index: 0 })} data-testid="pf-view">
                 <Eye className="h-4 w-4 mr-1.5" /> View
               </Button>
-              <Button size="sm" variant="outline" disabled={busy} onClick={printAll}>
+              <Button type="button" size="sm" variant="outline" disabled={busy} onClick={printAll}>
                 <Printer className="h-4 w-4 mr-1.5" /> Print
               </Button>
             </>
@@ -232,7 +232,7 @@ export function PayFixationPanel({
         </div>
       </CardHeader>
       {(pages.length > 0 || loading) && (
-        <CardContent>
+        <CardContent className="p-3 sm:p-4 pt-0 sm:pt-0">
           {loading && pages.length === 0 ? (
             <div className="text-xs text-muted-foreground flex items-center gap-1.5"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…</div>
           ) : (
@@ -248,7 +248,7 @@ export function PayFixationPanel({
                       aria-label={`Open page ${i + 1}`}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={p.thumbUrl} alt={`Pay fixation page ${i + 1}`} className="h-36 w-auto object-contain" />
+                      <img src={p.thumbUrl} alt={`Pay fixation page ${i + 1}`} className="h-28 w-auto object-contain" />
                     </button>
                     <div className="mt-1 flex items-center justify-between gap-1 text-[11px] text-muted-foreground">
                       <span>Page {i + 1}</span>

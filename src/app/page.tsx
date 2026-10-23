@@ -970,6 +970,7 @@ export default function Home() {
   );
 
   const watchedEmployeeId = form.watch("employeeId");
+  const watchedEmployeeName = form.watch("employeeName");
   React.useEffect(() => {
     const fetchEmployeeData = async () => {
       if (watchedEmployeeId && watchedEmployeeId.length === 5) {
@@ -3466,6 +3467,28 @@ export default function Home() {
                         Higher TA city: Delhi, Mumbai, Kolkata, Chennai, Lucknow, Kanpur, Ghaziabad etc. (as per TA order Annexure).
                       </p>
                     </div>
+                    {(() => {
+                      const savedCopy = loadedStatementId ? savedStatements.find((s) => s.id === loadedStatementId) : undefined;
+                      const cloudId = loadedStatementId && authStatus === 'authenticated' && isOnline && dbConfigured && savedCopy && !savedCopy.isLocal ? loadedStatementId : null;
+                      const empName = watchedEmployeeName || statement?.employeeInfo?.employeeName || '';
+                      const empId = watchedEmployeeId || statement?.employeeInfo?.employeeId || '';
+                      return (
+                        <PayFixationPanel
+                          statementId={cloudId}
+                          ownerId={savedCopy?.userId || assignedOwner?.uid || user?.uid || ''}
+                          uid={user?.uid || ''}
+                          isAdmin={isAdmin}
+                          userEmail={user?.email || ''}
+                          signedIn={authStatus === 'authenticated'}
+                          employeeLabel={`${empName || 'Employee'}${empId ? ` (${empId})` : ''}`}
+                          fileBase={`${empId}_${empName}`}
+                          pending={pendingPayFix}
+                          onPendingChange={setPendingPayFix}
+                          refreshKey={payFixRefresh}
+                          onToast={(t) => toast(t)}
+                        />
+                      );
+                    })()}
                   </CardContent>
                 </div>
               </Card>
@@ -3977,27 +4000,6 @@ export default function Home() {
                 );
               })()}
             </div>
-            {(() => {
-              const savedCopy = loadedStatementId ? savedStatements.find((s) => s.id === loadedStatementId) : undefined;
-              const cloudId = loadedStatementId && authStatus === 'authenticated' && isOnline && dbConfigured && savedCopy && !savedCopy.isLocal ? loadedStatementId : null;
-              const info = statement.employeeInfo || {};
-              return (
-                <PayFixationPanel
-                  statementId={cloudId}
-                  ownerId={savedCopy?.userId || assignedOwner?.uid || user?.uid || ''}
-                  uid={user?.uid || ''}
-                  isAdmin={isAdmin}
-                  userEmail={user?.email || ''}
-                  signedIn={authStatus === 'authenticated'}
-                  employeeLabel={`${info.employeeName || 'Employee'}${info.employeeId ? ` (${info.employeeId})` : ''}`}
-                  fileBase={`${info.employeeId || ''}_${info.employeeName || ''}`}
-                  pending={pendingPayFix}
-                  onPendingChange={setPendingPayFix}
-                  refreshKey={payFixRefresh}
-                  onToast={(t) => toast(t)}
-                />
-              );
-            })()}
           </div>
         )}
       </main>
