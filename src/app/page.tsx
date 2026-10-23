@@ -11,6 +11,8 @@ import { AIValidationModal } from "@/components/ai-validation-modal";
 import { RatesMatrixViewerModal } from "@/components/rates-matrix-viewer-modal";
 import { AIPricingModal } from "@/components/ai-pricing-modal";
 import { DocumentScannerModal } from "@/components/document-scanner-modal";
+import { PayFixationPanel, makePending, releasePending, uploadPending, type PendingPayFixation } from "@/components/pay-fixation-panel";
+import { deleteAllPayFixations, reassignPayFixations } from "@/lib/pay-fixation-data";
 import { AIAuditReportModal, AIAuditResult } from "@/components/ai-audit-report-modal";
 import { useSubscription } from "@/context/subscription-context";
 import {
@@ -25,6 +27,7 @@ import {
   Save,
   FolderOpen,
   ListChecks,
+  Images,
   Trash2,
   Loader2,
   Wifi,
@@ -576,6 +579,18 @@ export default function Home() {
   const [auditResult, setAuditResult] = React.useState<AIAuditResult | null>(null);
   const [isAuditing, setIsAuditing] = React.useState(false);
   const [scannedImageBase64, setScannedImageBase64] = React.useState<string | null>(null);
+  // Pay fixation pages waiting to be saved with the statement (see PayFixationPanel)
+  const [pendingPayFix, setPendingPayFixState] = React.useState<PendingPayFixation[]>([]);
+  const pendingPayFixRef = React.useRef<PendingPayFixation[]>([]);
+  const setPendingPayFix = (next: PendingPayFixation[]) => {
+    pendingPayFixRef.current = next;
+    setPendingPayFixState(next);
+  };
+  const clearPendingPayFix = () => {
+    releasePending(pendingPayFixRef.current);
+    setPendingPayFix([]);
+  };
+  const [payFixRefresh, setPayFixRefresh] = React.useState(0);
   const [scannedProformaDetails, setScannedProformaDetails] = React.useState<{ fullTextSummary?: string; orderClauses?: string } | null>(null);
   const [isViewDocumentModalOpen, setIsViewDocumentModalOpen] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -1315,6 +1330,28 @@ export default function Home() {
     }
   }
 
+  /** Uploads pay fixation pages waiting for this statement (after it is saved online). */
+  const savePendingPayFixation = async (statementId: string, ownerId: string) => {
+    const list = pendingPayFixRef.current;
+    if (!list.length || !user) return;
+    try {
+      const n = await uploadPending(list, statementId, ownerId, user.email || '');
+      releasePending(list);
+      setPendingPayFix([]);
+      setPayFixRefresh((k) => k + 1);
+      toast({ title: `Pay fixation saved (${n} page${n > 1 ? 's' : ''})` });
+    } catch (e: any) {
+      console.error("Pay fixation save failed:", e);
+      toast({
+        variant: "destructive",
+        title: "Pay fixation not saved",
+        description: /permission/i.test(String(e?.code || e?.message || ''))
+          ? "Database rules for pay fixation are not published yet (firestore.rules). The arrear itself is saved."
+          : "The arrear is saved, but the pay fixation image could not be saved. Add it again from the Pay Fixation box.",
+      });
+    }
+  };
+
   const saveStatement = async () => {
     if (!statement || !user) return;
     setIsLoading(true);
@@ -1344,6 +1381,7 @@ export default function Home() {
     if (isOnline && dbConfigured && db) {
       try {
         await setDoc(doc(db, FIRESTORE_STATEMENTS_COLLECTION, docId), sanitizeForFirebase(docToSave));
+        await savePendingPayFixation(docId, effectiveUserId);
 
         const updatedLocalStatements = getLocalStatements().map(s => s.id === docId ? { ...s, isLocal: false } : s);
         saveLocalStatements(updatedLocalStatements);
@@ -1602,6 +1640,7 @@ export default function Home() {
       try {
         const docRef = doc(db, FIRESTORE_STATEMENTS_COLLECTION, loadedStatementId);
         await updateDoc(docRef, sanitizeForFirebase(docToUpdate));
+        await savePendingPayFixation(loadedStatementId, effectiveUserId);
 
         const finalLocalStatements = getLocalStatements().map(s =>
           s.id === loadedStatementId ? { ...s, isLocal: false } : s
@@ -1641,6 +1680,8 @@ export default function Home() {
         userEmail: newOwner.email || undefined,
         lastAccessedAt: serverTimestamp(),
       });
+      // its pay fixation pages move to the new owner too
+      await reassignPayFixations(statementId, newOwner.uid).catch((e) => console.error("Pay fixation reassign failed:", e));
 
       setSavedStatements(prev => prev.map(s => s.id === statementId ? {
         ...s,
@@ -1755,6 +1796,7 @@ export default function Home() {
     const { employeeInfo, ...restOfStatement } = statementToLoad;
 
     const fullyProcessedInfo = processFirestoreDataRecursive(employeeInfo);
+    clearPendingPayFix();
     const fullyProcessedRest = processFirestoreDataRecursive(restOfStatement);
 
     let periodsToLoad = fullyProcessedRest.periods;
@@ -1856,6 +1898,8 @@ export default function Home() {
 
       if (isOnline && dbConfigured && db && !isLocal) {
         try {
+          // remove its saved pay fixation pages first (no orphan images)
+          if (user?.uid) await deleteAllPayFixations(id, user.uid, isAdmin).catch((e) => console.error("Pay fixation delete failed:", e));
           await deleteDoc(doc(db!, FIRESTORE_STATEMENTS_COLLECTION, id));
           toast({
             title: "Arrear Deleted",
@@ -1901,6 +1945,7 @@ export default function Home() {
     setAiScannedData(null);
     setScannedProformaDetails(null);
     setScannedImageBase64(null);
+    clearPendingPayFix();
     setAuditResult(null);
     setBasicPayWarning(null);
     setShowDiffToast({ show: false, diff: 0 });
@@ -1934,6 +1979,16 @@ export default function Home() {
 
     try {
       const compressedFile = await compressImage(file);
+      // keep this page so it can be saved with the statement (replaces an earlier scan)
+      if (file.type.startsWith('image/')) {
+        makePending(file, 'scan')
+          .then((p) => {
+            const prev = pendingPayFixRef.current;
+            releasePending(prev.filter((x) => x.source === 'scan'));
+            setPendingPayFix([...prev.filter((x) => x.source !== 'scan'), p]);
+          })
+          .catch((e) => console.warn("Pay fixation image not kept:", e));
+      }
       
       const formData = new FormData();
       formData.append("file", compressedFile);
@@ -3200,6 +3255,17 @@ export default function Home() {
               </Link>
             </Button>
           )}
+          {authStatus === 'authenticated' && (
+            <Button
+              variant="outline"
+              asChild
+              className="border-amber-200 text-amber-700 hover:bg-amber-50 hover:text-amber-800 hover:border-amber-300 dark:border-amber-900/40 dark:text-amber-400 dark:hover:bg-amber-950/40 transition-colors"
+            >
+              <Link href="/pay-fixations">
+                <Images className="mr-2 h-4 w-4" /> Pay Fixations
+              </Link>
+            </Button>
+          )}
           {authStatus === 'authenticated' && isAdmin && (
             <>
               <Button 
@@ -3902,6 +3968,27 @@ export default function Home() {
                 );
               })()}
             </div>
+            {(() => {
+              const savedCopy = loadedStatementId ? savedStatements.find((s) => s.id === loadedStatementId) : undefined;
+              const cloudId = loadedStatementId && authStatus === 'authenticated' && isOnline && dbConfigured && savedCopy && !savedCopy.isLocal ? loadedStatementId : null;
+              const info = statement.employeeInfo || {};
+              return (
+                <PayFixationPanel
+                  statementId={cloudId}
+                  ownerId={savedCopy?.userId || assignedOwner?.uid || user?.uid || ''}
+                  uid={user?.uid || ''}
+                  isAdmin={isAdmin}
+                  userEmail={user?.email || ''}
+                  signedIn={authStatus === 'authenticated'}
+                  employeeLabel={`${info.employeeName || 'Employee'}${info.employeeId ? ` (${info.employeeId})` : ''}`}
+                  fileBase={`${info.employeeId || ''}_${info.employeeName || ''}`}
+                  pending={pendingPayFix}
+                  onPendingChange={setPendingPayFix}
+                  refreshKey={payFixRefresh}
+                  onToast={(t) => toast(t)}
+                />
+              );
+            })()}
           </div>
         )}
       </main>

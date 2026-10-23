@@ -39,6 +39,9 @@ const toStatementLite = (id: string, d: any): StatementLite => ({
     toDate: toIsoString(d?.employeeInfo?.toDate),
   },
   totals: d?.totals,
+  payFixation: d?.payFixation
+    ? { count: Number(d.payFixation.count) || 0, bytes: Number(d.payFixation.bytes) || 0, updatedAt: d.payFixation.updatedAt || "" }
+    : undefined,
 });
 
 export async function fetchStatementsFor(uid: string, isAdmin: boolean): Promise<StatementLite[]> {

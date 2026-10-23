@@ -62,6 +62,8 @@ export interface StatementLite {
     toDate?: any;
   };
   totals?: { drawn?: { total?: number }; due?: { total?: number }; difference?: number };
+  /** saved pay fixation pages (counters kept on the statement) */
+  payFixation?: { count?: number; bytes?: number; updatedAt?: string };
 }
 
 /** One summary line (also what is stored in a locked snapshot). */

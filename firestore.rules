@@ -61,6 +61,38 @@ service cloud.firestore {
       allow delete: if isAdmin() || (isSignedIn() && resource.data.ownerId == request.auth.uid);
     }
 
+    // Pay fixation images. ownerId = owner of the statement the image belongs to.
+    // payFixationFiles holds the full image, payFixationThumbs a small thumbnail.
+    function ownsStatement(statementId) {
+      return get(/databases/$(database)/documents/savedStatements/$(statementId)).data.userId == request.auth.uid;
+    }
+
+    match /payFixationFiles/{fileId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.ownerId == request.auth.uid);
+      allow create: if isAdmin()
+        || (isSignedIn()
+            && request.resource.data.ownerId == request.auth.uid
+            && request.resource.data.statementId is string
+            && ownsStatement(request.resource.data.statementId)
+            && request.resource.data.image is bytes
+            && request.resource.data.image.size() <= 900 * 1024);
+      allow update: if isAdmin();
+      allow delete: if isAdmin() || (isSignedIn() && resource.data.ownerId == request.auth.uid);
+    }
+
+    match /payFixationThumbs/{fileId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.ownerId == request.auth.uid);
+      allow create: if isAdmin()
+        || (isSignedIn()
+            && request.resource.data.ownerId == request.auth.uid
+            && request.resource.data.statementId is string
+            && ownsStatement(request.resource.data.statementId)
+            && request.resource.data.thumb is bytes
+            && request.resource.data.thumb.size() <= 64 * 1024);
+      allow update: if isAdmin();
+      allow delete: if isAdmin() || (isSignedIn() && resource.data.ownerId == request.auth.uid);
+    }
+
     match /configurations/{docId} {
       allow read: if true;
       allow write: if isAdmin();

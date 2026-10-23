@@ -24,6 +24,7 @@ import {
   Unlock,
   X,
   AlertTriangle,
+  Paperclip,
 } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
 import { Button } from "@/components/ui/button";
@@ -49,6 +50,7 @@ import {
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useToast } from "@/hooks/use-toast";
 import { SummaryPrint } from "@/components/summary-print";
+import { usePayFixationOpener } from "@/components/pay-fixation-opener";
 import {
   SUMMARY_REASONS,
   DEFAULT_PRINT_SETTINGS,
@@ -99,6 +101,11 @@ export default function SummariesPage() {
   const { user, authStatus } = useAuth();
   const isAdmin = user?.email === ADMIN_EMAIL;
   const { toast } = useToast();
+  const pfError = React.useCallback((msg: string) => toast({ variant: "destructive", title: msg }), [toast]);
+  const pfOpener = usePayFixationOpener(user?.uid || "", isAdmin, pfError);
+  const openPf = (id: string, name: string, empId: string) =>
+    pfOpener.openFor(id, `${name || "Employee"}${empId ? ` (${empId})` : ""}`, `${empId}_${name}`);
+  const pfCount = (id: string) => statements.find((s) => s.id === id)?.payFixation?.count || 0;
 
   const [statements, setStatements] = React.useState<StatementLite[]>([]);
   const [summaries, setSummaries] = React.useState<ArrearSummary[]>([]);
@@ -718,7 +725,7 @@ export default function SummariesPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 {locked ? (
-                  <LockedRows rows={computed?.rows || []} isAdmin={isAdmin} />
+                  <LockedRows rows={computed?.rows || []} isAdmin={isAdmin} pfCount={pfCount} onOpenPf={openPf} />
                 ) : (
                   <>
                     <div className="flex flex-wrap items-center gap-2">
@@ -793,6 +800,11 @@ export default function SummariesPage() {
                                     <Link href={`/?statement=${encodeURIComponent(s.id)}`} target="_blank" title="Open statement" className="text-muted-foreground hover:text-primary">
                                       <ExternalLink className="h-3.5 w-3.5" />
                                     </Link>
+                                    {(s.payFixation?.count || 0) > 0 && (
+                                      <button type="button" title="View pay fixation" className="text-muted-foreground hover:text-primary" onClick={() => openPf(s.id, v.employeeName, v.employeeId)}>
+                                        <Paperclip className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
                                   </div>
                                   <div className="text-xs text-muted-foreground">{[v.employeeId, v.designation].filter(Boolean).join(" · ")}</div>
                                   <div className="flex flex-wrap gap-1 mt-1">
@@ -876,6 +888,7 @@ export default function SummariesPage() {
       )}
 
       {printData && <SummaryPrint summary={printData.summary} rows={printData.rows} settings={printSettings} />}
+      {pfOpener.element}
 
       {/* delete */}
       <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
@@ -959,7 +972,17 @@ export default function SummariesPage() {
   );
 }
 
-function LockedRows({ rows, isAdmin }: { rows: ReturnType<typeof computeSummaryRows>["rows"]; isAdmin: boolean }) {
+function LockedRows({
+  rows,
+  isAdmin,
+  pfCount,
+  onOpenPf,
+}: {
+  rows: ReturnType<typeof computeSummaryRows>["rows"];
+  isAdmin: boolean;
+  pfCount: (id: string) => number;
+  onOpenPf: (id: string, name: string, empId: string) => void;
+}) {
   if (!rows.length) return <div className="text-muted-foreground text-sm">No statements.</div>;
   return (
     <div className="overflow-x-auto border rounded-md">
@@ -979,7 +1002,14 @@ function LockedRows({ rows, isAdmin }: { rows: ReturnType<typeof computeSummaryR
             <tr key={r.statementId} className="border-t">
               <td className="p-2 align-top">{i + 1}</td>
               <td className="p-2 align-top">
-                <div className="font-medium">{r.employeeName}</div>
+                <div className="font-medium flex items-center gap-1.5">
+                  {r.employeeName}
+                  {pfCount(r.statementId) > 0 && (
+                    <button type="button" title="View pay fixation" className="text-muted-foreground hover:text-primary no-print" onClick={() => onOpenPf(r.statementId, r.employeeName, r.employeeId)}>
+                      <Paperclip className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
                 <div className="text-xs text-muted-foreground">{[r.employeeId, r.designation].filter(Boolean).join(" · ")}</div>
                 {r.changedSinceLock && (
                   <div className="text-[11px] text-amber-700 dark:text-amber-400 flex items-center gap-1 mt-0.5">
