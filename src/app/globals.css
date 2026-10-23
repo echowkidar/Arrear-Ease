@@ -488,3 +488,72 @@
 }
 
 
+
+/* ─────────────────────────────────────────────────────────────
+   ARREAR SUMMARY PRINT (A4) — src/components/summary-print.tsx
+   ───────────────────────────────────────────────────────────── */
+@media print {
+  .summary-print-area,
+  .summary-print-area * {
+    visibility: visible;
+    color: #000 !important;
+    background: transparent !important;
+  }
+  .summary-print-area {
+    width: 100%;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 9.5pt;
+    line-height: 1.3;
+  }
+  .summary-print-area .sp-head { text-align: center; margin-bottom: 6px; }
+  .summary-print-area .sp-h1 { font-size: 15pt; font-weight: bold; }
+  .summary-print-area .sp-h2 { font-size: 11pt; font-weight: bold; }
+  .summary-print-area .sp-title {
+    display: inline-block;
+    margin-top: 6px;
+    font-size: 12pt;
+    font-weight: bold;
+    letter-spacing: 1px;
+    border-bottom: 1px solid #000;
+  }
+  .summary-print-area .sp-sub { font-size: 10.5pt; margin-top: 2px; }
+  .summary-print-area .sp-meta { width: 100%; margin: 6px 0 4px; border-collapse: collapse; font-size: 9pt; }
+  .summary-print-area .sp-meta td { vertical-align: top; padding: 0; border: none !important; }
+  .summary-print-area .r { text-align: right; }
+  .summary-print-area .c { text-align: center; }
+  .summary-print-area .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .summary-print-area .wrap { white-space: normal; word-break: normal; overflow-wrap: break-word; }
+  .summary-print-area table.sp-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8.5pt;
+  }
+  .summary-print-area .sp-table thead { display: table-header-group; }
+  .summary-print-area .sp-table tr { page-break-inside: avoid; break-inside: avoid; }
+  .summary-print-area .sp-table th,
+  .summary-print-area .sp-table td {
+    border: 0.5px solid #000 !important;
+    padding: 3px 3px;
+    vertical-align: top;
+  }
+  .summary-print-area .sp-table th { font-weight: bold; text-align: center; background: #eee !important; }
+  .summary-print-area .sp-group td { font-weight: bold; background: #f3f3f3 !important; }
+  .summary-print-area .sp-subtotal td { font-weight: bold; font-style: italic; }
+  .summary-print-area .sp-total td { font-weight: bold; border-top: 1.5px solid #000 !important; }
+  .summary-print-area .sp-keep { page-break-inside: avoid; break-inside: avoid; margin-top: 10px; }
+  .summary-print-area .sp-totals { margin-left: auto; border-collapse: collapse; font-size: 9.5pt; min-width: 45%; }
+  .summary-print-area .sp-totals td { border: 0.5px solid #000 !important; padding: 3px 8px; }
+  .summary-print-area .sp-net td { font-weight: bold; font-size: 10.5pt; }
+  .summary-print-area .sp-pass { margin-top: 10px; text-align: justify; font-size: 10pt; }
+  .summary-print-area .sp-remark { margin-top: 4px; font-size: 9.5pt; }
+  .summary-print-area .sp-sign {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 55px;
+    font-size: 9.5pt;
+    font-weight: bold;
+    text-align: center;
+  }
+  .summary-print-area .sp-sign > div { flex: 1; }
+}

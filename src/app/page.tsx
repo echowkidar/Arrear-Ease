@@ -24,6 +24,7 @@ import {
   Settings,
   Save,
   FolderOpen,
+  ListChecks,
   Trash2,
   Loader2,
   Wifi,
@@ -171,6 +172,8 @@ type SavedStatement = {
   id: string;
   isLocal?: boolean;
   savedAt: string;
+  /** First save (savedAt changes on every update). Old statements do not have it. */
+  createdAt?: string;
   lastAccessedAt?: string;
   rows: StatementRow[];
   totals: StatementTotals;
@@ -855,6 +858,7 @@ export default function Home() {
           serverStatements.push({
             id: docSnap.id,
             savedAt: toISOStringSafe(processedData.savedAt),
+            createdAt: toISOStringSafe(processedData.createdAt) || undefined,
             lastAccessedAt: toISOStringSafe(processedData.lastAccessedAt),
             rows: restOfData.rows,
             totals: restOfData.totals,
@@ -914,6 +918,17 @@ export default function Home() {
       fetchSavedStatements();
     }
   }, [isLoadDialogOpen, authStatus, isAdmin]);
+
+  // "/?statement=<id>" (link from Arrear Summaries) opens that saved statement.
+  const pendingOpenIdRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const id = new URLSearchParams(window.location.search).get('statement');
+    if (id) pendingOpenIdRef.current = id;
+  }, []);
+  React.useEffect(() => {
+    if (authStatus === 'authenticated' && pendingOpenIdRef.current) fetchSavedStatements();
+  }, [authStatus, isAdmin]);
 
   React.useEffect(() => {
     if (isOnline && dbConfigured && authStatus === 'authenticated') {
@@ -1315,6 +1330,7 @@ export default function Home() {
       ...statement,
       id: docId,
       savedAt: now,
+      createdAt: now,
       lastAccessedAt: now,
       userId: effectiveUserId,
       userName: effectiveUserName,
@@ -1559,10 +1575,16 @@ export default function Home() {
       ? (assignedOwner?.email || existingUserEmail || user.email || undefined)
       : (user.email || undefined);
 
+    // Keep the first-save date (used by Arrear Summaries' date range). Old statements
+    // have no createdAt, so their previous save date is the best available.
+    const previousCopy = savedStatements.find(s => s.id === loadedStatementId);
+    const createdAt = previousCopy?.createdAt || (statement as any)?.createdAt || previousCopy?.savedAt || new Date().toISOString();
+
     const docToUpdate: Omit<SavedStatement, 'isLocal'> = {
       ...statementToSave,
       id: loadedStatementId,
       savedAt: new Date().toISOString(),
+      createdAt,
       lastAccessedAt: new Date().toISOString(),
       userId: effectiveUserId,
       userName: effectiveUserName,
@@ -1716,6 +1738,18 @@ export default function Home() {
     }
     return result;
   };
+
+  React.useEffect(() => {
+    const id = pendingOpenIdRef.current;
+    if (!id || isLoading || authStatus !== 'authenticated') return;
+    const target = savedStatements.find(s => s.id === id);
+    if (!target && savedStatements.length === 0) return; // still loading
+    pendingOpenIdRef.current = null;
+    window.history.replaceState(null, '', window.location.pathname);
+    if (target) loadStatement(target);
+    else toast({ variant: "destructive", title: "Statement not found", description: "It may have been deleted or belongs to another user." });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedStatements, isLoading, authStatus]);
 
   const loadStatement = async (statementToLoad: SavedStatement) => {
     const { employeeInfo, ...restOfStatement } = statementToLoad;
@@ -3155,6 +3189,17 @@ export default function Home() {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+          {authStatus === 'authenticated' && (
+            <Button
+              variant="outline"
+              asChild
+              className="border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-300 dark:border-emerald-900/40 dark:text-emerald-400 dark:hover:bg-emerald-950/40 transition-colors"
+            >
+              <Link href="/summaries">
+                <ListChecks className="mr-2 h-4 w-4" /> Arrear Summaries
+              </Link>
+            </Button>
+          )}
           {authStatus === 'authenticated' && isAdmin && (
             <>
               <Button 
