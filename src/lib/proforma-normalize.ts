@@ -1,7 +1,10 @@
 // Server-side checks on the AI's reading of a "Proforma for Fixation of Pay".
 // The vision model sometimes (a) reads Indian dates DD.MM.YYYY as MM.DD.YYYY
 // (01.07.2024 -> 7 Jan 2024) and (b) invents a "re-fixed" pay (often the existing
-// basic pay) when Section 12(a) is not in the document. Fix both deterministically.
+// basic pay) when Section 12(a) is not in the document.
+// - Fixation date (From Date): can be any day (depends on date of joining), so it is
+//   only read day-first from the printed text — never guessed.
+// - Re-fixation date: always 1 January or 1 July, so a day/month swap is corrected.
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -29,22 +32,28 @@ export function parseIndianDate(text: unknown): string {
   return "";
 }
 
+const isRefixDay = (iso: string) => /-(01-01|07-01)$/.test(iso); // 1 January or 1 July
+
 /**
- * For an ISO date coming from the model (no printed text available): pay fixation,
- * re-fixation and increments almost always fall on the 1st of a month, so a date
- * like 2024-01-07 is the classic day/month swap of 01.07.2024 -> correct it.
+ * Re-fixation (Section 12(a)) is always on 1 January or 1 July (mostly 1 July).
+ * If the date read is not one of these but swapping day and month gives one
+ * (2024-01-07 -> 2024-07-01, the classic MM.DD misreading of 01.07.2024), swap it.
  */
-export function fixLikelySwappedIso(iso: unknown): string {
-  const p = parseIndianDate(typeof iso === "string" ? iso : "");
-  if (!p) return "";
-  const [y, mo, d] = p.split("-").map(Number);
-  if (d !== 1 && d <= 12 && mo === 1 && isValidYmd(y, d, mo)) {
-    return `${y}-${pad(d)}-${pad(mo)}`;
+export function fixRefixationDate(iso: string): string {
+  if (!iso || isRefixDay(iso)) return iso;
+  const [y, mo, d] = iso.split("-").map(Number);
+  if (d <= 12 && isValidYmd(y, d, mo)) {
+    const swapped = `${y}-${pad(d)}-${pad(mo)}`;
+    if (isRefixDay(swapped)) return swapped;
   }
-  return p;
+  return iso;
 }
 
-const pickDate = (printed: unknown, iso: unknown): string => parseIndianDate(printed) || fixLikelySwappedIso(iso);
+/** Re-fixation date: prefer the printed text, then the model's ISO date; correct day/month swaps. */
+const pickRefixDate = (printed: unknown, iso: unknown): string => {
+  const candidates = [parseIndianDate(printed), parseIndianDate(iso)].filter(Boolean).map(fixRefixationDate);
+  return candidates.find(isRefixDay) || candidates[0] || "";
+};
 
 const num = (v: unknown): number => {
   const m = typeof v === "number" ? null : String(v ?? "").replace(/,/g, "").match(/\d+(\.\d+)?/);
@@ -60,8 +69,8 @@ export function normalizeProformaExtraction(raw: any): { data: any; notes: Norma
   data.paid = data.paid && typeof data.paid === "object" ? { ...data.paid } : {};
   data.toBePaid = data.toBePaid && typeof data.toBePaid === "object" ? { ...data.toBePaid } : {};
 
-  // From date: prefer the date exactly as printed (day first)
-  const from = pickDate(data.fromDateText, data.fromDate);
+  // From date (fixation): exactly as printed, day first; otherwise the model's date as is
+  const from = parseIndianDate(data.fromDateText) || parseIndianDate(data.fromDate);
   if (from !== (data.fromDate || "")) notes.corrections.push(`fromDate ${data.fromDate || "(empty)"} -> ${from || "(empty)"}`);
   data.fromDate = from;
 
@@ -72,7 +81,7 @@ export function normalizeProformaExtraction(raw: any): { data: any; notes: Norma
   for (const key of ["toBePaid", "paid"] as const) {
     const side = data[key];
     const amount = num(side.refixedBasicPay);
-    const date = pickDate(side.refixedBasicPayDateText, side.refixedBasicPayDate);
+    const date = pickRefixDate(side.refixedBasicPayDateText, side.refixedBasicPayDate);
     let reason = "";
     if (amount > 0) {
       if (!hasSection) reason = "no Section 12(a) re-fixation in the document";
@@ -83,6 +92,7 @@ export function normalizeProformaExtraction(raw: any): { data: any; notes: Norma
     if (amount > 0 && !reason) {
       side.refixedBasicPay = amount;
       side.refixedBasicPayDate = date;
+      if (!isRefixDay(date)) notes.corrections.push(`${key}.refixedBasicPayDate ${date} is not 1 Jan / 1 July — please check`);
     } else {
       if (amount > 0) notes.corrections.push(`${key}.refixedBasicPay ${amount} removed (${reason})`);
       side.refixedBasicPay = 0;

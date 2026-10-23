@@ -87,7 +87,7 @@ Use the image to extract:
 - Date of Next Increment in upgraded level (Section 13) (extract month number for toBePaid.incrementMonth, e.g. "7" if July, "1" if Jan)
 - hasRefixationSection: true ONLY if the document has a separate item numbered "12(a)" (or "12 (a)") that gives a RE-FIXED pay with its own date. Otherwise false. Most proformas do NOT have it.
 - Re-fixed amount (Section 12(a)) (this is toBePaid.refixedBasicPay, e.g. 27600). If there is no Section 12(a), return 0. NEVER copy the existing pay, the pay in the upgraded level, or any other number into this field.
-- Date of re-fixation (Section 12(a)) (this is toBePaid.refixedBasicPayDate as YYYY-MM-DD and refixedBasicPayDateText exactly as printed). If there is no Section 12(a), return "" for both.
+- Date of re-fixation (Section 12(a)) (this is toBePaid.refixedBasicPayDate as YYYY-MM-DD and refixedBasicPayDateText exactly as printed). A re-fixation date is always 1st January or 1st July (usually "01.07.YYYY" = 1st July). If there is no Section 12(a), return "" for both.
 - Full Text Summary of the entire proforma: Include all sections (1 to 15), table headers, and remarks.
 - Order Clauses: Include exact text from Internal Audit Endorsement, option availed under FR 22(1)(a)(1), notional increment notes, and administrative conditions.
 
