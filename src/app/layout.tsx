@@ -3,6 +3,7 @@ import './globals.css';
 import { Toaster } from "@/components/ui/toaster"
 import { RatesProvider } from '@/context/rates-context';
 import { ThemeProvider } from '@/components/theme-provider';
+import { PrintLightTheme } from '@/components/print-light-theme';
 import { AuthProvider } from '@/context/auth-context';
 import { SubscriptionProvider } from '@/context/subscription-context';
 
@@ -40,6 +41,7 @@ export default function RootLayout({
             </SubscriptionProvider>
           </AuthProvider>
           <Toaster />
+          <PrintLightTheme />
         </ThemeProvider>
       </body>
     </html>
