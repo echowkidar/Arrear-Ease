@@ -367,7 +367,9 @@ export function createArrearEngine(rates: EngineRates) {
           }
         }
 
-        if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd }) && startOfDay(incrementTriggerDate) >= startOfDay(arrearFromDate)) {
+        // The Basic Pay entered is the pay ON the From Date, so an increment falling on
+        // the From Date itself is already included — only later increments apply.
+        if (incrementTriggerDate && isWithinInterval(incrementTriggerDate, { start: monthStart, end: monthEnd }) && startOfDay(incrementTriggerDate) > startOfDay(arrearFromDate)) {
           let newBasic: number | null = null;
 
           // Fixed pay (e.g. Vice Chancellor "15VC": 7th CPC 2,10,000 / 6th CPC 75,000,
