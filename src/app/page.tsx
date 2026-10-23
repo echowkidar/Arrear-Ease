@@ -395,10 +395,16 @@ const FixedRateFields = ({ type, name, isAmount }: { type: 'paid' | 'toBePaid', 
 
   React.useEffect(() => {
     if (!isFixedRateApplicable) {
-      // '' / null rather than undefined, so values of a loaded statement do not come back
-      form.setValue(`${type}.${name}FixedRate`, '', { shouldDirty: true });
-      form.setValue(`${type}.${name}FixedRateFromDate`, null, { shouldDirty: true });
-      form.setValue(`${type}.${name}FixedRateToDate`, null, { shouldDirty: true });
+      // '' / null rather than undefined, so values of a loaded statement do not come back.
+      // Only clear a value that is really there: clearing an already empty field (0 / '')
+      // must not mark the form as changed, or Save would ask to recalculate again.
+      const clear = (key: string, empty: '' | null) => {
+        const v = form.getValues(key);
+        if (v !== undefined && v !== null && v !== '' && v !== 0) form.setValue(key, empty, { shouldDirty: true });
+      };
+      clear(`${type}.${name}FixedRate`, '');
+      clear(`${type}.${name}FixedRateFromDate`, null);
+      clear(`${type}.${name}FixedRateToDate`, null);
     }
   }, [isFixedRateApplicable, form, type, name]);
 
@@ -957,10 +963,11 @@ export default function Home() {
   });
 
   const { dirtyFields } = form.formState;
-  const isCalcFieldDirty = React.useMemo(() => {
-    const dirtyKeys = Object.keys(dirtyFields);
-    return dirtyKeys.some(key => !['employeeId', 'employeeName', 'designation', 'department', 'payFixationRef', 'salaryRegisterNo', 'remark'].includes(key));
-  }, [dirtyFields]);
+  // Worked out on every render: react-hook-form updates dirtyFields in place, so a
+  // memo keyed on it kept an old answer (Recalculate stayed disabled after an edit).
+  const isCalcFieldDirty = Object.keys(dirtyFields).some(
+    (key) => !['employeeId', 'employeeName', 'designation', 'department', 'payFixationRef', 'salaryRegisterNo', 'remark'].includes(key)
+  );
 
   const watchedEmployeeId = form.watch("employeeId");
   React.useEffect(() => {
@@ -1198,7 +1205,9 @@ export default function Home() {
       }, 100);
 
       // Reset form dirty state so the calculate button becomes inactive again
-      form.reset(normalizeFormValues(data));
+      // Use the values exactly as the inputs hold them (not the parsed data, where an
+      // empty field became 0), so nothing shows as changed and Save works directly.
+      form.reset(normalizeFormValues(form.getValues()));
     } catch (error) {
       console.error(error);
       toast({
