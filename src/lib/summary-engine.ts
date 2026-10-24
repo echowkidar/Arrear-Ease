@@ -10,6 +10,8 @@
 //  - Per statement: difference = due − drawn. Positive = arrear payable,
 //    negative = recovery. Net payable = total arrear − total recovery.
 
+import { shortAppointedReason } from "@/lib/appointed";
+
 export const SUMMARY_REASONS = [
   "MACP-I",
   "MACP-II",
@@ -58,6 +60,8 @@ export interface StatementLite {
     employeeName?: string;
     designation?: string;
     department?: string;
+    /** pay fixation item 5, e.g. "Professor (CAS)"; shown short in the Reason column */
+    appointedAs?: string;
     fromDate?: any;
     toDate?: any;
   };
@@ -76,6 +80,8 @@ export interface SummaryRowValue {
   employeeName: string;
   designation: string;
   department: string;
+  /** "Appointed / Promoted as" text of the statement (optional for older rows) */
+  appointedAs?: string;
   fromDate: string; // YYYY-MM-DD or ""
   toDate: string;
   due: number;
@@ -185,6 +191,7 @@ const normalizeRowValue = (r: any): SummaryRowValue => ({
   employeeName: String(r?.employeeName ?? ""),
   designation: String(r?.designation ?? ""),
   department: String(r?.department ?? ""),
+  appointedAs: String(r?.appointedAs ?? ""),
   fromDate: String(r?.fromDate ?? ""),
   toDate: String(r?.toDate ?? ""),
   due: num(r?.due),
@@ -242,6 +249,7 @@ export const toRowValue = (s: StatementLite): SummaryRowValue => {
     employeeName: String(e.employeeName ?? ""),
     designation: String(e.designation ?? ""),
     department: String(e.department ?? ""),
+    appointedAs: String(e.appointedAs ?? ""),
     fromDate: toLocalYmd(e.fromDate),
     toDate: toLocalYmd(e.toDate),
     due,
@@ -311,8 +319,9 @@ export interface SummaryRow extends SummaryRowValue {
 
 export const reasonText = (summary: Pick<ArrearSummary, "reasons">) => summary.reasons.join(", ");
 
-const rowReason = (summary: Pick<ArrearSummary, "reasons" | "rowReasons">, id: string) =>
-  (summary.rowReasons?.[id] || "").trim() || reasonText(summary);
+// Row reason (Reason column): only the statement's own "Appointed / Promoted as" in short form
+// (CAS, MACP-I, Prom.). The summary-level reasons print at the top of the summary, not per row.
+const rowReason = (appointedAs?: string) => shortAppointedReason(appointedAs);
 
 const sortRows = <T extends SummaryRowValue>(rows: T[], byUser: boolean) =>
   [...rows].sort((a, b) => {
@@ -336,7 +345,7 @@ export function computeSummaryRows(summary: ArrearSummary, statements: Statement
       const liveVal = live ? toRowValue(live) : null;
       return {
         ...snap,
-        reason: rowReason(summary, snap.statementId),
+        reason: rowReason(snap.appointedAs),
         source: "snapshot",
         deletedSinceLock: statements.length > 0 && !live,
         changedSinceLock: !!liveVal && (liveVal.difference !== snap.difference || liveVal.due !== snap.due || liveVal.drawn !== snap.drawn),
@@ -348,7 +357,7 @@ export function computeSummaryRows(summary: ArrearSummary, statements: Statement
   const { included, missing, source } = resolveIncluded(summary, statements);
   const rows = included.map<SummaryRow>((id) => ({
     ...toRowValue(byId.get(id)!),
-    reason: rowReason(summary, id),
+    reason: rowReason(byId.get(id)?.employeeInfo?.appointedAs),
     source: source.get(id) || "added",
     changedSinceLock: false,
     deletedSinceLock: false,

@@ -10,6 +10,7 @@ import { format, parseISO } from 'date-fns';
 import { CalendarDays } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { cpcData } from '@/lib/cpc-data';
+import { APPOINTED_OPTIONS, shortAppointedReason } from '@/lib/appointed';
 
 interface AIValidationModalProps {
   isOpen: boolean;
@@ -123,6 +124,20 @@ export function AIValidationModal({ isOpen, onClose, data, onConfirm }: AIValida
                   onChange={(e) => handleChange('department', e.target.value)}
                   className={isInvalid(formData.department) ? 'border-red-500 dark:border-red-400' : ''}
                 />
+              </div>
+              <div className="space-y-1 col-span-2">
+                <Label htmlFor="appointedAs" className="dark:text-blue-100">Appointed / Promoted as (item 5)</Label>
+                <Input
+                  id="appointedAs"
+                  list="appointed-as-options-modal"
+                  placeholder="e.g., Professor (CAS)"
+                  value={formData.appointedAs || ''}
+                  onChange={(e) => handleChange('appointedAs', e.target.value)}
+                />
+                <p className="text-[11px] text-muted-foreground dark:text-blue-200/80">
+                  Pick from the list or type it. Summary reason: <strong>{shortAppointedReason(formData.appointedAs) || '—'}</strong>
+                </p>
+                <datalist id="appointed-as-options-modal">{APPOINTED_OPTIONS.map((o) => <option key={o} value={o} />)}</datalist>
               </div>
             </div>
           </div>

@@ -12,6 +12,9 @@ import { RatesMatrixViewerModal } from "@/components/rates-matrix-viewer-modal";
 import { AIPricingModal } from "@/components/ai-pricing-modal";
 import { DocumentScannerModal } from "@/components/document-scanner-modal";
 import { PayFixationPanel, makePending, releasePending, uploadPending, type PendingPayFixation } from "@/components/pay-fixation-panel";
+import { allowancePeriodNotes, allowanceNoteText } from "@/lib/allowance-periods";
+import { APPOINTED_OPTIONS, shortAppointedReason } from "@/lib/appointed";
+import { AppointedAsEditor } from "@/components/appointed-as-editor";
 import { deleteAllPayFixations, reassignPayFixations } from "@/lib/pay-fixation-data";
 import { AIAuditReportModal, AIAuditResult } from "@/components/ai-audit-report-modal";
 import { useSubscription } from "@/context/subscription-context";
@@ -290,6 +293,7 @@ const buildEmptyFormValues = (): any => ({
   employeeName: "",
   designation: "",
   department: "",
+  appointedAs: "",
   fromDate: null,
   toDate: null,
   payFixationRef: "",
@@ -966,7 +970,7 @@ export default function Home() {
   // Worked out on every render: react-hook-form updates dirtyFields in place, so a
   // memo keyed on it kept an old answer (Recalculate stayed disabled after an edit).
   const isCalcFieldDirty = Object.keys(dirtyFields).some(
-    (key) => !['employeeId', 'employeeName', 'designation', 'department', 'payFixationRef', 'salaryRegisterNo', 'remark'].includes(key)
+    (key) => !['employeeId', 'employeeName', 'designation', 'department', 'payFixationRef', 'salaryRegisterNo', 'remark', 'appointedAs'].includes(key)
   );
 
   const watchedEmployeeId = form.watch("employeeId");
@@ -1182,6 +1186,7 @@ export default function Home() {
           designation: data.designation,
           department: data.department,
           salaryRegisterNo: data.salaryRegisterNo,
+          appointedAs: data.appointedAs,
           payFixationRef: data.payFixationRef,
           remark: data.remark,
           fromDate: currentPeriods[0].formData.fromDate,
@@ -1265,6 +1270,7 @@ export default function Home() {
           designation: currentFormData.designation || statement.employeeInfo.designation,
           department: currentFormData.department || statement.employeeInfo.department,
           salaryRegisterNo: currentFormData.salaryRegisterNo || statement.employeeInfo.salaryRegisterNo,
+          appointedAs: currentFormData.appointedAs ?? statement.employeeInfo.appointedAs,
           payFixationRef: currentFormData.payFixationRef || statement.employeeInfo.payFixationRef,
           remark: currentFormData.remark || statement.employeeInfo.remark,
           fromDate: updatedPeriods[0].formData.fromDate,
@@ -1580,6 +1586,7 @@ export default function Home() {
       designation: formData.designation,
       department: formData.department,
       salaryRegisterNo: formData.salaryRegisterNo,
+      appointedAs: formData.appointedAs,
       payFixationRef: formData.payFixationRef,
       remark: formData.remark,
     };
@@ -1595,6 +1602,7 @@ export default function Home() {
           designation: formData.designation,
           department: formData.department,
           salaryRegisterNo: formData.salaryRegisterNo,
+          appointedAs: formData.appointedAs,
           payFixationRef: formData.payFixationRef,
           remark: formData.remark,
         }
@@ -1827,6 +1835,7 @@ export default function Home() {
       employeeName: fullyProcessedInfo.employeeName || "",
       designation: fullyProcessedInfo.designation || "",
       department: fullyProcessedInfo.department || "",
+      appointedAs: fullyProcessedInfo.appointedAs || firstPeriodData?.appointedAs || "",
     }
 
     form.reset(normalizeFormValues(formDataToReset));
@@ -1897,6 +1906,46 @@ export default function Home() {
       document.getElementById("statement-section")?.scrollIntoView({ behavior: 'smooth' });
     }, 100);
   }
+
+  // Sets "Appointed / Promoted as" on a saved statement from the Load list (no need to load it).
+  // The browser copy is updated first; the cloud copy when the statement is saved online.
+  const saveAppointedAs = async (s: SavedStatement, value: string) => {
+    const appointedAs = value.trim();
+    const withValue = (x: SavedStatement): SavedStatement => ({
+      ...x,
+      employeeInfo: { ...x.employeeInfo, appointedAs },
+      ...(x.periods ? { periods: x.periods.map((p) => ({ ...p, formData: { ...p.formData, appointedAs } })) } : {}),
+    });
+    saveLocalStatements(getLocalStatements().map((x) => (x.id === s.id ? withValue(x) : x)));
+    setSavedStatements((prev) => prev.map((x) => (x.id === s.id ? withValue(x) : x)));
+    if (loadedStatementId === s.id) {
+      form.setValue("appointedAs", appointedAs);
+      setStatement((prev) => (prev ? { ...prev, employeeInfo: { ...prev.employeeInfo, appointedAs } } : prev));
+    }
+
+    if (!s.isLocal && isOnline && dbConfigured && db && authStatus === 'authenticated') {
+      try {
+        const { id: _id, isLocal: _isLocal, ...rest } = withValue(s);
+        await updateDoc(doc(db, FIRESTORE_STATEMENTS_COLLECTION, s.id), sanitizeForFirebase(rest));
+        toast({
+          title: appointedAs ? "Saved" : "Cleared",
+          description: appointedAs ? `Appointed / Promoted as: ${appointedAs}` : "Appointed / Promoted as removed.",
+        });
+      } catch (error) {
+        console.error("Failed to save appointed value:", error);
+        toast({
+          variant: "destructive",
+          title: "Not saved to database",
+          description: "Saved in this browser only. Save again when the connection is back.",
+        });
+      }
+    } else {
+      toast({
+        title: "Saved in this browser",
+        description: "Connect and try again to update the cloud copy of this statement.",
+      });
+    }
+  };
 
   const deleteStatement = async (id: string, isLocal: boolean | undefined) => {
     setIsDeletingStatement(true);
@@ -2028,6 +2077,7 @@ export default function Home() {
         employeeId: data.employeeId || '',
         designation: data.designation || '',
         department: data.department || '',
+        appointedAs: data.appointedAs || '',
         fromDate: data.fromDate || '',
         toDate: lastDayOfPrevMonth,
         payFixationRef: data.payFixationRef || '',
@@ -2057,6 +2107,7 @@ export default function Home() {
     if (confirmedData.employeeId) form.setValue("employeeId", confirmedData.employeeId);
     if (confirmedData.designation) form.setValue("designation", confirmedData.designation);
     if (confirmedData.department) form.setValue("department", confirmedData.department);
+    form.setValue("appointedAs", confirmedData.appointedAs || "");
     
     if (confirmedData.fromDate) form.setValue("fromDate", parseLocalYmd(confirmedData.fromDate) as any);
     if (confirmedData.toDate) form.setValue("toDate", (confirmedData.toDate instanceof Date ? confirmedData.toDate : parseLocalYmd(confirmedData.toDate)) as any);
@@ -3060,6 +3111,7 @@ export default function Home() {
                   className="max-w-sm"
                 />
               </div>
+              <datalist id="appointed-as-load-options">{APPOINTED_OPTIONS.map((o) => <option key={o} value={o} />)}</datalist>
               <div className="max-h-[60vh] overflow-y-auto overflow-x-auto">
                 {isLoading ? (
                   <div className="flex justify-center items-center py-8"><Loader2 className="h-8 w-8 animate-spin" /></div>
@@ -3076,6 +3128,7 @@ export default function Home() {
                           </div>
                         </TableHead>
                         <TableHead>Period</TableHead>
+                        <TableHead className="min-w-[190px]">Appointed / Promoted as</TableHead>
                         <TableHead className="text-right">Difference</TableHead>
                         {isAdmin && <TableHead className="hidden lg:table-cell">User</TableHead>}
                         <TableHead className="hidden sm:table-cell">Saved On</TableHead>
@@ -3092,6 +3145,15 @@ export default function Home() {
                           </TableCell>
                           <TableCell className="whitespace-nowrap text-muted-foreground text-xs">
                             {s.employeeInfo.fromDate ? format(new Date(s.employeeInfo.fromDate), "dd-MM-yy") : "-"} - {s.employeeInfo.toDate ? format(new Date(s.employeeInfo.toDate), "dd-MM-yy") : "-"}
+                          </TableCell>
+                          <TableCell className="min-w-[190px] align-top">
+                            <AppointedAsEditor
+                              key={`${s.id}-${s.employeeInfo?.appointedAs || ""}`}
+                              value={s.employeeInfo?.appointedAs || ""}
+                              listId="appointed-as-load-options"
+                              disabled={isLoading || isDeletingStatement}
+                              onSave={(v) => saveAppointedAs(s, v)}
+                            />
                           </TableCell>
                           <TableCell className="font-semibold text-right">
                             {s.totals?.difference?.toLocaleString('en-IN') || 0}
@@ -3356,6 +3418,7 @@ export default function Home() {
                       <FormField control={form.control} name="designation" render={({ field }) => (<FormItem> <FormLabel>Designation</FormLabel> <FormControl><Input placeholder="Designation" {...field} /></FormControl> <FormMessage /> </FormItem>)} />
                       <FormField control={form.control} name="department" render={({ field }) => (<FormItem> <FormLabel>Department</FormLabel> <FormControl><Input placeholder="Department" {...field} /></FormControl> <FormMessage /> </FormItem>)} />
                       <FormField control={form.control} name="salaryRegisterNo" render={({ field }) => (<FormItem> <FormLabel>Salary Register No.</FormLabel> <FormControl><Input placeholder="e.g., 88IIIU" {...field} /></FormControl> <FormMessage /> </FormItem>)} />
+                      <FormField control={form.control} name="appointedAs" render={({ field }) => (<FormItem> <FormLabel>Appointed / Promoted as</FormLabel> <FormControl><Input placeholder="e.g., Professor (CAS)" list="appointed-as-options" {...field} value={field.value ?? ""} /></FormControl> <p className="text-[11px] text-muted-foreground">Pick from list or type. Summary reason: <strong>{shortAppointedReason(field.value) || "—"}</strong></p> <datalist id="appointed-as-options">{APPOINTED_OPTIONS.map((o) => <option key={o} value={o} />)}</datalist> <FormMessage /> </FormItem>)} />
                     </div>
                   </CardContent>
                 </div>
@@ -3653,8 +3716,8 @@ export default function Home() {
                                   </span>
                                 </>
                               )}
-                              <span className="font-normal text-muted-foreground/60 print:text-black shrink-0">|</span>
-                              <span className="shrink-0">
+                              <span className="font-normal text-muted-foreground/60 print:hidden shrink-0">|</span>
+                              <span className="shrink-0 print:hidden">
                                 <strong>City:</strong> {cityLabel(resolveCitySettings(p.formData), p.formData.paid?.cpc === '5th' || p.formData.toBePaid?.cpc === '5th')}
                               </span>
                             </div>
@@ -3701,12 +3764,29 @@ export default function Home() {
                               </span>
                             </>
                           )}
-                          <span className="font-normal text-muted-foreground/60 print:text-black shrink-0">|</span>
-                          <span className="shrink-0">
+                          <span className="font-normal text-muted-foreground/60 print:hidden shrink-0">|</span>
+                          <span className="shrink-0 print:hidden">
                             <strong>City:</strong> {cityLabel(resolveCitySettings(statement.employeeInfo), statement.employeeInfo.paid?.cpc === '5th' || statement.employeeInfo.toBePaid?.cpc === '5th')}
                           </span>
                         </div>
                       )}
+                      {(() => {
+                        const groups = statement.periods && statement.periods.length > 0
+                          ? statement.periods.map((p, idx) => ({ tag: statement.periods!.length > 1 ? `P-${idx + 1}` : "", notes: allowancePeriodNotes(p.formData as any) }))
+                          : [{ tag: "", notes: allowancePeriodNotes(statement.employeeInfo as any) }];
+                        const shown = groups.filter((g) => g.notes.length > 0);
+                        if (shown.length === 0) return null;
+                        return (
+                          <div className="mt-1.5 space-y-0.5 text-[11px] sm:text-xs print:text-[8pt] print:leading-tight text-muted-foreground print:text-black" data-testid="allowance-period-notes">
+                            {shown.map((g, i) => (
+                              <div key={i}>
+                                {g.tag ? <strong>{g.tag}: </strong> : null}
+                                <strong>Allowance period:</strong> {g.notes.map(allowanceNoteText).join(" · ")}
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </CardDescription>
                   </div>
                     <div className="flex flex-wrap gap-2 no-print">

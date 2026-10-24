@@ -74,6 +74,8 @@ export const formSchema = z.object({
   employeeName: z.string().min(1, "Employee name is required"),
   designation: z.string().min(1, "Designation is required"),
   department: z.string().min(1, "Department is required"),
+  // Pay fixation item 5 "Appointed / Promoted as", e.g. "Professor (CAS)". Optional.
+  appointedAs: z.string().optional(),
   fromDate: z.preprocess(emptyToUndefined, z.date({ required_error: "From date is required." })),
   toDate: z.preprocess(emptyToUndefined, z.date({ required_error: "To date is required." })),
   payFixationRef: z.string().optional(),

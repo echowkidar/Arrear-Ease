@@ -46,6 +46,7 @@ Extract the following information and return it strictly as a JSON object matchi
   "employeeId": "string",
   "designation": "string",
   "department": "string",
+  "appointedAs": "string - item 5 'Appointed / Promoted as' copied EXACTLY as printed, e.g. 'Professor (CAS)'. Empty string if not present.",
   "fromDate": "YYYY-MM-DD",
   "fromDateText": "the same date copied EXACTLY as printed, e.g. 01.07.2024",
   "payFixationRef": "string",
@@ -77,6 +78,7 @@ Use the image to extract:
 - I.D. No.
 - Designation (Old)
 - Department
+- Item 5 "Appointed / Promoted as": copy the value written there exactly as printed, e.g. "Professor (CAS)" or "Associate Professor (Promotion)". Do not shorten it.
 - From Date: Find the "Internal Audit Office Endorsement" section at the bottom. Extract the date immediately following the first "on" (e.g. "Pay Fixed at 26000 on 17.01.2023"). Format as YYYY-MM-DD.
 - Pay Fixation Reference: Combine the "D.No./PRC Dated" from the top right corner AND the details from Section 14 "O.M./Ref. No. & Date".
 - Existing Level in the revised pay structure (extract the level number, e.g. "12" from "Level - 12" or "AL-12" if applicable). IMPORTANT: Must EXACTLY match one of these valid levels: [${validPayLevels}]. If it doesn't match, choose the closest valid level.

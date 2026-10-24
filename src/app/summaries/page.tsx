@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { shortAppointedReason } from "@/lib/appointed";
 import {
   ArrowLeft,
   CalendarRange,
@@ -303,13 +304,6 @@ export default function SummariesPage() {
     setRangeTo("");
   };
 
-  const setRowReason = (id: string, reason: string) => {
-    if (!draft) return;
-    const rr = { ...draft.rowReasons };
-    if (reason) rr[id] = reason;
-    else delete rr[id];
-    update({ rowReasons: rr });
-  };
 
   // ---------- save / lock ----------
   const persist = async (s: ArrearSummary, message: string) => {
@@ -640,7 +634,7 @@ export default function SummariesPage() {
                       <Button type="button" variant="outline" onClick={addCustomReason}>Add</Button>
                     </div>
                   )}
-                  <p className="text-xs text-muted-foreground">This reason prints on every row; a different reason can be set for any row below.</p>
+                  <p className="text-xs text-muted-foreground">This reason prints at the top of the summary. The Reason column of each row shows that statement's "Appointed / Promoted as" (CAS, MACP-I, Prom.).</p>
                 </div>
 
                 <div className="space-y-1.5">
@@ -787,8 +781,6 @@ export default function SummariesPage() {
                             const on = includedSet.has(s.id);
                             const src = resolved?.source.get(s.id);
                             const other = usage.get(s.id);
-                            const rowReason = draft.rowReasons[s.id] || "";
-                            const reasonChoices = [...new Set([...draft.reasons, ...SUMMARY_REASONS, ...(rowReason ? [rowReason] : [])])];
                             return (
                               <tr key={s.id} className={`border-t ${on ? "bg-emerald-50/60 dark:bg-emerald-950/20" : ""}`} data-testid="statement-row">
                                 <td className="p-2 align-top">
@@ -827,18 +819,7 @@ export default function SummariesPage() {
                                   <Money v={Math.abs(v.difference)} />
                                   {v.difference < 0 && <div className="text-[10px] font-normal">recovery</div>}
                                 </td>
-                                <td className="p-2 align-top">
-                                  <select
-                                    className="h-8 rounded-md border bg-background px-1.5 text-xs max-w-[150px] disabled:opacity-50"
-                                    disabled={!on}
-                                    value={rowReason}
-                                    onChange={(e) => setRowReason(s.id, e.target.value)}
-                                    aria-label="Reason for this statement"
-                                  >
-                                    <option value="">{reasonText(draft) ? `Same (${reasonText(draft)})` : "Same as summary"}</option>
-                                    {reasonChoices.map((r) => <option key={r} value={r}>{r}</option>)}
-                                  </select>
-                                </td>
+                                <td className="p-2 align-top text-xs">{shortAppointedReason(v.appointedAs) || "—"}</td>
                               </tr>
                             );
                           })}
