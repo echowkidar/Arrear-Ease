@@ -26,6 +26,12 @@ import {
   X,
   AlertTriangle,
   Paperclip,
+  ArrowUp,
+  ArrowDown,
+  ChevronLeft,
+  ChevronRight,
+  ListOrdered,
+  RotateCcw,
 } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
 import { Button } from "@/components/ui/button";
@@ -55,6 +61,10 @@ import { usePayFixationOpener } from "@/components/pay-fixation-opener";
 import {
   SUMMARY_REASONS,
   DEFAULT_PRINT_SETTINGS,
+  DEFAULT_SORT,
+  SORT_FIELDS,
+  compareBySortKeys,
+  sortFieldLabel,
   buildSnapshot,
   computeSummaryRows,
   emptySummary,
@@ -72,6 +82,8 @@ import {
   type ArrearSummary,
   type StatementLite,
   type SummaryPrintSettings,
+  type SortField,
+  type SortKey,
 } from "@/lib/summary-engine";
 import {
   deleteSummaryDoc,
@@ -196,6 +208,10 @@ export default function SummariesPage() {
   const includedSet = React.useMemo(() => new Set(resolved?.included || []), [resolved]);
   const usage = React.useMemo(() => statementUsage(summaries, statements, draft?.id || undefined), [summaries, statements, draft?.id]);
 
+  const sortKeys: SortKey[] = draft?.sortKeys?.length ? draft.sortKeys : DEFAULT_SORT;
+  const savedSortKeys = summaries.find((x) => x.id === draft?.id)?.sortKeys || DEFAULT_SORT;
+  const sortChangedOnLocked = !!draft?.locked && JSON.stringify(sortKeys) !== JSON.stringify(savedSortKeys);
+
   const visibleStatements = React.useMemo(() => {
     const q = search.trim().toLowerCase();
     return statements
@@ -211,8 +227,26 @@ export default function SummariesPage() {
         return [e.employeeName, e.employeeId, e.designation, e.department, s.userName, s.userEmail]
           .some((v) => String(v ?? "").toLowerCase().includes(q));
       })
-      .sort((a, b) => (b.createdAt || b.savedAt || "").localeCompare(a.createdAt || a.savedAt || ""));
-  }, [statements, userFilter, showFilter, search, includedSet]);
+      .map((s) => {
+        const v = toRowValue(s);
+        return {
+          s,
+          key: {
+            userName: userLabel(s.userId || "", s.userName, s.userEmail),
+            salaryRegisterNo: v.salaryRegisterNo || "",
+            employeeId: v.employeeId,
+            employeeName: v.employeeName,
+            department: v.department,
+            madeOn: v.madeOn || "",
+            amount: v.difference,
+            reason: shortAppointedReason(v.appointedAs),
+            fromDate: v.fromDate,
+          },
+        };
+      })
+      .sort((a, b) => compareBySortKeys(a.key, b.key, sortKeys))
+      .map((x) => x.s);
+  }, [statements, userFilter, showFilter, search, includedSet, sortKeys, userLabel]);
 
   const printData = React.useMemo(() => {
     const target = printTarget || draft;
@@ -223,6 +257,22 @@ export default function SummariesPage() {
   const update = (patch: Partial<ArrearSummary>) => {
     setDraft((d) => (d ? { ...d, ...patch } : d));
     setDirty(true);
+  };
+
+  // Row order. Changing it never changes any figure, so it is allowed on a locked summary too.
+  const setSortKeys = (keys: SortKey[]) => {
+    const next = keys.length ? keys : [...DEFAULT_SORT];
+    if (draft?.locked) setDraft((d) => (d ? { ...d, sortKeys: next } : d));
+    else update({ sortKeys: next });
+  };
+  /** Column header click: already a sort level -> flip asc/desc; otherwise add as the next level. */
+  const clickSortHeader = (key: SortField) => {
+    const i = sortKeys.findIndex((k) => k.key === key);
+    if (i >= 0) setSortKeys(sortKeys.map((k, j) => (j === i ? { ...k, dir: k.dir === "asc" ? "desc" : "asc" } : k)));
+    else setSortKeys([...sortKeys, { key, dir: "asc" }]);
+  };
+  const saveLockedOrder = () => {
+    if (draft) persist({ ...draft, sortKeys }, "Row order saved");
   };
 
   const openDraft = (s: ArrearSummary) => {
@@ -250,6 +300,7 @@ export default function SummariesPage() {
       remark: s.remark,
       groupByUser: s.groupByUser,
       layout: s.layout,
+      sortKeys: [...(s.sortKeys || DEFAULT_SORT)],
       range: s.locked ? null : s.range,
       // a copy of a locked summary starts with the same statements, as live values
       addedIds: s.locked ? s.snapshot.map((r) => r.statementId) : [...s.addedIds],
@@ -718,8 +769,17 @@ export default function SummariesPage() {
                 )}
               </CardHeader>
               <CardContent className="space-y-3">
+                <SortBar
+                  keys={sortKeys}
+                  isAdmin={isAdmin}
+                  groupByUser={!!draft.groupByUser}
+                  onChange={setSortKeys}
+                  showSaveOrder={sortChangedOnLocked}
+                  saving={saving}
+                  onSaveOrder={saveLockedOrder}
+                />
                 {locked ? (
-                  <LockedRows rows={computed?.rows || []} isAdmin={isAdmin} pfCount={pfCount} onOpenPf={openPf} />
+                  <LockedRows rows={computed?.rows || []} isAdmin={isAdmin} pfCount={pfCount} onOpenPf={openPf} sortKeys={sortKeys} onSort={clickSortHeader} />
                 ) : (
                   <>
                     <div className="flex flex-wrap items-center gap-2">
@@ -763,18 +823,19 @@ export default function SummariesPage() {
                         <thead className="bg-muted/50">
                           <tr className="text-left">
                             <th className="p-2 w-8"></th>
-                            <th className="p-2">Employee</th>
-                            <th className="p-2 hidden md:table-cell">Department</th>
+                            <SortTh field="employeeId" keys={sortKeys} onSort={clickSortHeader}>Employee</SortTh>
+                            <SortTh field="salaryRegisterNo" keys={sortKeys} onSort={clickSortHeader} className="whitespace-nowrap">Sal. Reg. No.</SortTh>
+                            <SortTh field="department" keys={sortKeys} onSort={clickSortHeader} className="hidden md:table-cell">Department</SortTh>
                             <th className="p-2 whitespace-nowrap">Arrear period</th>
-                            <th className="p-2 whitespace-nowrap hidden lg:table-cell">Made on</th>
-                            {isAdmin && <th className="p-2 hidden lg:table-cell">User</th>}
-                            <th className="p-2 text-right">Amount</th>
-                            <th className="p-2">Reason</th>
+                            <SortTh field="madeOn" keys={sortKeys} onSort={clickSortHeader} className="whitespace-nowrap hidden lg:table-cell">Made on</SortTh>
+                            {isAdmin && <SortTh field="userName" keys={sortKeys} onSort={clickSortHeader} className="hidden lg:table-cell">User</SortTh>}
+                            <SortTh field="amount" keys={sortKeys} onSort={clickSortHeader} align="right">Amount</SortTh>
+                            <SortTh field="reason" keys={sortKeys} onSort={clickSortHeader}>Reason</SortTh>
                           </tr>
                         </thead>
                         <tbody>
                           {visibleStatements.length === 0 && (
-                            <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">No statements to show.</td></tr>
+                            <tr><td colSpan={9} className="p-6 text-center text-muted-foreground">No statements to show.</td></tr>
                           )}
                           {visibleStatements.map((s) => {
                             const v = toRowValue(s);
@@ -809,6 +870,7 @@ export default function SummariesPage() {
                                     )}
                                   </div>
                                 </td>
+                                <td className="p-2 align-top text-xs whitespace-nowrap">{v.salaryRegisterNo || "—"}</td>
                                 <td className="p-2 align-top hidden md:table-cell">{v.department || "—"}</td>
                                 <td className="p-2 align-top whitespace-nowrap text-xs">
                                   {ymdToDisplay(v.fromDate) || "—"}<br />{ymdToDisplay(v.toDate) || "—"}
@@ -958,11 +1020,15 @@ function LockedRows({
   isAdmin,
   pfCount,
   onOpenPf,
+  sortKeys,
+  onSort,
 }: {
   rows: ReturnType<typeof computeSummaryRows>["rows"];
   isAdmin: boolean;
   pfCount: (id: string) => number;
   onOpenPf: (id: string, name: string, empId: string) => void;
+  sortKeys: SortKey[];
+  onSort: (key: SortField) => void;
 }) {
   if (!rows.length) return <div className="text-muted-foreground text-sm">No statements.</div>;
   return (
@@ -971,11 +1037,14 @@ function LockedRows({
         <thead className="bg-muted/50">
           <tr className="text-left">
             <th className="p-2">#</th>
-            <th className="p-2">Employee</th>
+            <SortTh field="employeeId" keys={sortKeys} onSort={onSort}>Employee</SortTh>
+            <SortTh field="salaryRegisterNo" keys={sortKeys} onSort={onSort} className="whitespace-nowrap">Sal. Reg. No.</SortTh>
+            <SortTh field="department" keys={sortKeys} onSort={onSort} className="hidden md:table-cell">Department</SortTh>
             <th className="p-2">Arrear period</th>
-            {isAdmin && <th className="p-2 hidden lg:table-cell">User</th>}
-            <th className="p-2">Reason</th>
-            <th className="p-2 text-right">Amount</th>
+            <SortTh field="madeOn" keys={sortKeys} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell">Made on</SortTh>
+            {isAdmin && <SortTh field="userName" keys={sortKeys} onSort={onSort} className="hidden lg:table-cell">User</SortTh>}
+            <SortTh field="reason" keys={sortKeys} onSort={onSort}>Reason</SortTh>
+            <SortTh field="amount" keys={sortKeys} onSort={onSort} align="right">Amount</SortTh>
           </tr>
         </thead>
         <tbody>
@@ -1004,7 +1073,10 @@ function LockedRows({
                   </div>
                 )}
               </td>
+              <td className="p-2 align-top text-xs whitespace-nowrap">{r.salaryRegisterNo || "—"}</td>
+              <td className="p-2 align-top hidden md:table-cell">{r.department || "—"}</td>
               <td className="p-2 align-top text-xs whitespace-nowrap">{ymdToDisplay(r.fromDate) || "—"} to {ymdToDisplay(r.toDate) || "—"}</td>
+              <td className="p-2 align-top text-xs whitespace-nowrap hidden lg:table-cell">{ymdToDisplay(r.madeOn || "") || "—"}</td>
               {isAdmin && <td className="p-2 align-top text-xs hidden lg:table-cell">{r.userName || r.userEmail}</td>}
               <td className="p-2 align-top text-xs">{r.reason || "—"}</td>
               <td className={`p-2 align-top text-right font-semibold whitespace-nowrap ${r.difference < 0 ? "text-rose-600" : ""}`}>
@@ -1015,6 +1087,121 @@ function LockedRows({
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/** Sortable column header: shows the level number (1, 2, 3…) and the direction. */
+function SortTh({
+  field,
+  keys,
+  onSort,
+  children,
+  className = "",
+  align = "left",
+}: {
+  field: SortField;
+  keys: SortKey[];
+  onSort: (key: SortField) => void;
+  children: React.ReactNode;
+  className?: string;
+  align?: "left" | "right";
+}) {
+  const i = keys.findIndex((k) => k.key === field);
+  const k = i >= 0 ? keys[i] : null;
+  return (
+    <th className={`p-2 ${align === "right" ? "text-right" : ""} ${className}`} aria-sort={k ? (k.dir === "asc" ? "ascending" : "descending") : undefined}>
+      <button
+        type="button"
+        onClick={() => onSort(field)}
+        title={k ? `Sort level ${i + 1}: click to make it ${k.dir === "asc" ? "descending" : "ascending"}` : "Click to add as next sort level"}
+        className={`inline-flex items-center gap-1 hover:text-primary ${k ? "text-primary" : ""} ${align === "right" ? "flex-row-reverse" : ""}`}
+      >
+        <span>{children}</span>
+        {k && (
+          <span className="inline-flex items-center text-[10px] font-semibold">
+            {k.dir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+            {keys.length > 1 ? i + 1 : ""}
+          </span>
+        )}
+      </button>
+    </th>
+  );
+}
+
+/** Multi-level sort: 1st, 2nd, 3rd… level, each ascending or descending. */
+function SortBar({
+  keys,
+  isAdmin,
+  groupByUser,
+  onChange,
+  showSaveOrder,
+  saving,
+  onSaveOrder,
+}: {
+  keys: SortKey[];
+  isAdmin: boolean;
+  groupByUser: boolean;
+  onChange: (keys: SortKey[]) => void;
+  showSaveOrder: boolean;
+  saving: boolean;
+  onSaveOrder: () => void;
+}) {
+  const fields = SORT_FIELDS.filter((f) => isAdmin || f.key !== "userName");
+  const unused = fields.filter((f) => !keys.some((k) => k.key === f.key));
+  const move = (i: number, d: -1 | 1) => {
+    const j = i + d;
+    if (j < 0 || j >= keys.length) return;
+    const next = [...keys];
+    [next[i], next[j]] = [next[j], next[i]];
+    onChange(next);
+  };
+  const isDefault = JSON.stringify(keys) === JSON.stringify(DEFAULT_SORT);
+  return (
+    <div className="rounded-md border bg-muted/30 p-2 flex flex-wrap items-center gap-2 text-sm" data-testid="sort-bar">
+      <span className="flex items-center gap-1 text-muted-foreground"><ListOrdered className="h-4 w-4" /> Sort order:</span>
+      {keys.map((k, i) => (
+        <span key={k.key} className="inline-flex items-center rounded-full border bg-background pl-2 pr-1 py-0.5 gap-0.5" data-testid="sort-level">
+          <span className="text-xs text-muted-foreground mr-1">{i + 1}.</span>
+          <span className="font-medium">{sortFieldLabel(k.key)}</span>
+          <button type="button" className="ml-1 inline-flex items-center rounded px-1 text-xs hover:bg-muted"
+            title="Ascending / descending"
+            onClick={() => onChange(keys.map((x, j) => (j === i ? { ...x, dir: x.dir === "asc" ? "desc" : "asc" } : x)))}>
+            {k.dir === "asc" ? <><ArrowUp className="h-3 w-3" />Asc</> : <><ArrowDown className="h-3 w-3" />Desc</>}
+          </button>
+          <button type="button" className="rounded p-0.5 hover:bg-muted disabled:opacity-30" title="Move earlier (higher priority)" disabled={i === 0} onClick={() => move(i, -1)}>
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" className="rounded p-0.5 hover:bg-muted disabled:opacity-30" title="Move later (lower priority)" disabled={i === keys.length - 1} onClick={() => move(i, 1)}>
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" className="rounded p-0.5 hover:bg-muted text-muted-foreground hover:text-rose-600" title="Remove this level"
+            onClick={() => onChange(keys.filter((_, j) => j !== i))}>
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </span>
+      ))}
+      {unused.length > 0 && (
+        <Select value="" onValueChange={(v) => onChange([...keys, { key: v as SortField, dir: "asc" }])}>
+          <SelectTrigger className="h-7 w-[170px] text-xs" data-testid="sort-add"><SelectValue placeholder="+ Add sort level" /></SelectTrigger>
+          <SelectContent>
+            {unused.map((f) => <SelectItem key={f.key} value={f.key}>{f.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      )}
+      {!isDefault && (
+        <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => onChange([...DEFAULT_SORT])} title="Back to Employee ID (ascending)">
+          <RotateCcw className="h-3.5 w-3.5 mr-1" /> Reset
+        </Button>
+      )}
+      {showSaveOrder && (
+        <Button type="button" size="sm" className="h-7 px-2 text-xs" disabled={saving} onClick={onSaveOrder}>
+          <Save className="h-3.5 w-3.5 mr-1" /> Save order
+        </Button>
+      )}
+      {groupByUser && isAdmin && keys[0]?.key !== "userName" && (
+        <span className="text-xs text-muted-foreground w-full">Group user-wise is on, so the print keeps each user&apos;s rows together (users A–Z) and uses this order inside each user.</span>
+      )}
     </div>
   );
 }

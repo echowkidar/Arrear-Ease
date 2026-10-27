@@ -35,6 +35,7 @@ const toStatementLite = (id: string, d: any): StatementLite => ({
     employeeName: d?.employeeInfo?.employeeName,
     designation: d?.employeeInfo?.designation,
     department: d?.employeeInfo?.department,
+    salaryRegisterNo: d?.employeeInfo?.salaryRegisterNo,
     appointedAs: d?.employeeInfo?.appointedAs,
     fromDate: toIsoString(d?.employeeInfo?.fromDate),
     toDate: toIsoString(d?.employeeInfo?.toDate),
