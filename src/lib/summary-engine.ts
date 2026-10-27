@@ -60,6 +60,7 @@ export interface StatementLite {
     employeeName?: string;
     designation?: string;
     department?: string;
+    salaryRegisterNo?: string;
     /** pay fixation item 5, e.g. "Professor (CAS)"; shown short in the Reason column */
     appointedAs?: string;
     fromDate?: any;
@@ -80,8 +81,12 @@ export interface SummaryRowValue {
   employeeName: string;
   designation: string;
   department: string;
+  /** Salary Register No. of the employee (optional for older rows) */
+  salaryRegisterNo?: string;
   /** "Appointed / Promoted as" text of the statement (optional for older rows) */
   appointedAs?: string;
+  /** day the statement was first saved, YYYY-MM-DD (optional for older rows) */
+  madeOn?: string;
   fromDate: string; // YYYY-MM-DD or ""
   toDate: string;
   due: number;
@@ -95,6 +100,91 @@ export interface SummaryRange {
   to: string;
   userId: string; // "all" or a user id (admin); for a normal user always their own id
 }
+
+// ---------------- sorting ----------------
+export const SORT_FIELDS = [
+  { key: "userName", label: "User" },
+  { key: "salaryRegisterNo", label: "Salary Register No." },
+  { key: "employeeId", label: "Employee ID" },
+  { key: "department", label: "Department" },
+  { key: "madeOn", label: "Made on" },
+  { key: "amount", label: "Amount" },
+  { key: "reason", label: "Reason" },
+] as const;
+export type SortField = (typeof SORT_FIELDS)[number]["key"];
+export interface SortKey {
+  key: SortField;
+  dir: "asc" | "desc";
+}
+export const DEFAULT_SORT: SortKey[] = [{ key: "employeeId", dir: "asc" }];
+export const sortFieldLabel = (k: SortField) => SORT_FIELDS.find((f) => f.key === k)?.label || k;
+
+const SORT_KEYS = new Set<string>(SORT_FIELDS.map((f) => f.key));
+export const normalizeSortKeys = (v: any): SortKey[] => {
+  if (!Array.isArray(v)) return [...DEFAULT_SORT];
+  const seen = new Set<string>();
+  const out: SortKey[] = [];
+  for (const x of v) {
+    const key = String(x?.key ?? "");
+    if (!SORT_KEYS.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ key: key as SortField, dir: x?.dir === "desc" ? "desc" : "asc" });
+  }
+  return out.length ? out : [...DEFAULT_SORT];
+};
+
+/** Values a row is sorted on. */
+export interface SortableRow {
+  userName: string;
+  salaryRegisterNo: string;
+  employeeId: string;
+  employeeName: string;
+  department: string;
+  madeOn: string;
+  amount: number;
+  reason: string;
+  fromDate: string;
+}
+
+const textCmp = (a: string, b: string) => {
+  // empty values always go to the end (both for ascending and descending)
+  if (!a && !b) return 0;
+  if (!a) return 1;
+  if (!b) return -1;
+  return a.localeCompare(b, "en", { numeric: true, sensitivity: "base" });
+};
+
+/** Compares two rows by the sort levels in order (1st, then 2nd, ...). */
+export function compareBySortKeys(a: SortableRow, b: SortableRow, keys: SortKey[]): number {
+  for (const { key, dir } of keys) {
+    const m = dir === "desc" ? -1 : 1;
+    let c = 0;
+    if (key === "amount") c = (a.amount - b.amount) * m;
+    else {
+      const x = String(a[key] ?? "").trim();
+      const y = String(b[key] ?? "").trim();
+      if (!x || !y) c = textCmp(x, y); // blanks last regardless of direction
+      else c = textCmp(x, y) * m;
+    }
+    if (c) return c;
+  }
+  return textCmp(a.employeeName, b.employeeName) || textCmp(a.employeeId, b.employeeId) || textCmp(a.fromDate, b.fromDate);
+}
+
+const rowSortable = (r: SummaryRowValue & { reason?: string }): SortableRow => ({
+  userName: r.userName || r.userEmail || r.userId,
+  salaryRegisterNo: r.salaryRegisterNo || "",
+  employeeId: r.employeeId,
+  employeeName: r.employeeName,
+  department: r.department,
+  madeOn: r.madeOn || "",
+  amount: r.difference,
+  reason: r.reason ?? shortAppointedReason(r.appointedAs),
+  fromDate: r.fromDate,
+});
+
+export const sortSummaryRows = <T extends SummaryRowValue & { reason?: string }>(rows: T[], keys: SortKey[]) =>
+  [...rows].sort((a, b) => compareBySortKeys(rowSortable(a), rowSortable(b), keys));
 
 export interface ArrearSummary {
   id: string;
@@ -113,6 +203,8 @@ export interface ArrearSummary {
   rowReasons: Record<string, string>;
   groupByUser: boolean;
   layout: "detailed" | "totals";
+  /** row order (1st, 2nd, 3rd... level); default Employee ID ascending */
+  sortKeys: SortKey[];
   locked: boolean;
   lockedAt: string;
   lockedBy: string;
@@ -138,6 +230,7 @@ export const emptySummary = (owner: { uid: string; name?: string; email?: string
     rowReasons: {},
     groupByUser: false,
     layout: "detailed",
+    sortKeys: [...DEFAULT_SORT],
     locked: false,
     lockedAt: "",
     lockedBy: "",
@@ -170,6 +263,7 @@ export const normalizeSummary = (d: any, id?: string): ArrearSummary => {
     rowReasons: d?.rowReasons && typeof d.rowReasons === "object" ? { ...d.rowReasons } : {},
     groupByUser: d?.groupByUser === true,
     layout: d?.layout === "totals" ? "totals" : "detailed",
+    sortKeys: normalizeSortKeys(d?.sortKeys),
     locked: d?.locked === true,
     lockedAt: str(d?.lockedAt),
     lockedBy: str(d?.lockedBy),
@@ -191,7 +285,9 @@ const normalizeRowValue = (r: any): SummaryRowValue => ({
   employeeName: String(r?.employeeName ?? ""),
   designation: String(r?.designation ?? ""),
   department: String(r?.department ?? ""),
+  salaryRegisterNo: String(r?.salaryRegisterNo ?? ""),
   appointedAs: String(r?.appointedAs ?? ""),
+  madeOn: String(r?.madeOn ?? ""),
   fromDate: String(r?.fromDate ?? ""),
   toDate: String(r?.toDate ?? ""),
   due: num(r?.due),
@@ -249,7 +345,9 @@ export const toRowValue = (s: StatementLite): SummaryRowValue => {
     employeeName: String(e.employeeName ?? ""),
     designation: String(e.designation ?? ""),
     department: String(e.department ?? ""),
+    salaryRegisterNo: String(e.salaryRegisterNo ?? ""),
     appointedAs: String(e.appointedAs ?? ""),
+    madeOn: statementCreatedYmd(s),
     fromDate: toLocalYmd(e.fromDate),
     toDate: toLocalYmd(e.toDate),
     due,
@@ -323,18 +421,11 @@ export const reasonText = (summary: Pick<ArrearSummary, "reasons">) => summary.r
 // (CAS, MACP-I, Prom.). The summary-level reasons print at the top of the summary, not per row.
 const rowReason = (appointedAs?: string) => shortAppointedReason(appointedAs);
 
-const sortRows = <T extends SummaryRowValue>(rows: T[], byUser: boolean) =>
-  [...rows].sort((a, b) => {
-    if (byUser) {
-      const u = (a.userName || a.userEmail || a.userId).localeCompare(b.userName || b.userEmail || b.userId);
-      if (u) return u;
-    }
-    return (
-      a.employeeName.localeCompare(b.employeeName) ||
-      a.employeeId.localeCompare(b.employeeId) ||
-      a.fromDate.localeCompare(b.fromDate)
-    );
-  });
+// Group user-wise keeps the rows of one user together (users A-Z), then the chosen order.
+const sortRows = <T extends SummaryRowValue & { reason?: string }>(rows: T[], byUser: boolean, keys: SortKey[]) => {
+  const k = byUser && keys[0]?.key !== "userName" ? [{ key: "userName" as const, dir: "asc" as const }, ...keys.filter((x) => x.key !== "userName")] : keys;
+  return sortSummaryRows(rows, k);
+};
 
 /** The rows of a summary: snapshot when locked, live statement values otherwise. */
 export function computeSummaryRows(summary: ArrearSummary, statements: StatementLite[]): { rows: SummaryRow[]; missing: string[] } {
@@ -345,6 +436,9 @@ export function computeSummaryRows(summary: ArrearSummary, statements: Statement
       const liveVal = live ? toRowValue(live) : null;
       return {
         ...snap,
+        // rows locked before these fields existed: fill them from the statement (display/sort only)
+        salaryRegisterNo: snap.salaryRegisterNo || liveVal?.salaryRegisterNo || "",
+        madeOn: snap.madeOn || liveVal?.madeOn || "",
         reason: rowReason(snap.appointedAs),
         source: "snapshot",
         deletedSinceLock: statements.length > 0 && !live,
@@ -352,7 +446,7 @@ export function computeSummaryRows(summary: ArrearSummary, statements: Statement
         liveDifference: liveVal ? liveVal.difference : null,
       };
     });
-    return { rows: sortRows(rows, summary.groupByUser), missing: [] };
+    return { rows: sortRows(rows, summary.groupByUser, summary.sortKeys || DEFAULT_SORT), missing: [] };
   }
   const { included, missing, source } = resolveIncluded(summary, statements);
   const rows = included.map<SummaryRow>((id) => ({
@@ -363,7 +457,7 @@ export function computeSummaryRows(summary: ArrearSummary, statements: Statement
     deletedSinceLock: false,
     liveDifference: null,
   }));
-  return { rows: sortRows(rows, summary.groupByUser), missing };
+  return { rows: sortRows(rows, summary.groupByUser, summary.sortKeys || DEFAULT_SORT), missing };
 }
 
 /** Values to freeze when a summary is locked. */
@@ -409,7 +503,8 @@ export function groupRowsByUser<T extends SummaryRowValue>(rows: T[]): UserGroup
   }
   const groups = [...map.values()];
   groups.forEach((g) => (g.totals = totalsOf(g.rows)));
-  return groups.sort((a, b) => (a.userName || a.userEmail).localeCompare(b.userName || b.userEmail));
+  // groups keep the order in which their first row appears (rows are already sorted)
+  return groups;
 }
 
 /** For each statement id, the titles of OTHER summaries that include it. */
@@ -469,7 +564,7 @@ export const ymdToDisplay = (ymd: string) => {
 };
 
 export function summaryToCsv(summary: ArrearSummary, rows: SummaryRow[], showUser: boolean): string {
-  const head = ["S.No", ...(showUser ? ["User", "User Email"] : []), "Employee ID", "Employee Name", "Designation", "Department", "From", "To", "Reason", "Arrear (Rs.)", "Recovery (Rs.)"];
+  const head = ["S.No", ...(showUser ? ["User", "User Email"] : []), "Employee ID", "Salary Register No.", "Employee Name", "Designation", "Department", "Made On", "From", "To", "Reason", "Arrear (Rs.)", "Recovery (Rs.)"];
   const lines = [head.map(csvCell).join(",")];
   rows.forEach((r, i) => {
     lines.push(
@@ -477,9 +572,11 @@ export function summaryToCsv(summary: ArrearSummary, rows: SummaryRow[], showUse
         i + 1,
         ...(showUser ? [r.userName, r.userEmail] : []),
         r.employeeId,
+        r.salaryRegisterNo || "",
         r.employeeName,
         r.designation,
         r.department,
+        ymdToDisplay(r.madeOn || ""),
         ymdToDisplay(r.fromDate),
         ymdToDisplay(r.toDate),
         r.reason,
@@ -493,8 +590,8 @@ export function summaryToCsv(summary: ArrearSummary, rows: SummaryRow[], showUse
   const t = totalsOf(rows);
   const pre = showUser ? 2 : 0;
   const blank = (k: number) => Array(k).fill("");
-  lines.push(["", ...blank(pre), "", "TOTAL", "", "", "", "", "", t.arrear, t.recovery].map(csvCell).join(","));
-  lines.push(["", ...blank(pre), "", "NET PAYABLE", "", "", "", "", "", t.net, ""].map(csvCell).join(","));
+  lines.push(["", ...blank(pre), "", "", "TOTAL", "", "", "", "", "", "", t.arrear, t.recovery].map(csvCell).join(","));
+  lines.push(["", ...blank(pre), "", "", "NET PAYABLE", "", "", "", "", "", "", t.net, ""].map(csvCell).join(","));
   const meta = [`Summary,${csvCell(summary.title)}`, `Reason,${csvCell(reasonText(summary))}`];
   if (summary.orderNo) meta.push(`Order / Ref,${csvCell(summary.orderNo)}`);
   return "﻿" + [...meta, "", ...lines].join("\r\n");

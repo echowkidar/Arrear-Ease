@@ -70,6 +70,7 @@ export function SummaryPrint({
     <tr key={r.statementId}>
       <td className="c">{i + 1}</td>
       <td>{r.employeeId}</td>
+      <td className="c">{r.salaryRegisterNo || "—"}</td>
       <td className="wrap">
         <b>{r.employeeName}</b>
         {r.designation ? <div>{r.designation}</div> : null}
@@ -120,6 +121,7 @@ export function SummaryPrint({
             <tr>
               <th>S.No.</th>
               <th>Emp. ID</th>
+              <th>Sal. Reg. No.</th>
               <th>Name &amp; Designation</th>
               <th>Department</th>
               <th>Arrear Period</th>
@@ -133,21 +135,21 @@ export function SummaryPrint({
               ? groups.map((g) => (
                   <React.Fragment key={g.key}>
                     <tr className="sp-group">
-                      <td colSpan={8}>
+                      <td colSpan={9}>
                         {g.userName || g.userEmail || "Unknown user"}
                         {g.userName && g.userEmail ? ` (${g.userEmail})` : ""} — {g.rows.length} statement(s)
                       </td>
                     </tr>
                     {g.rows.map((r) => detailRow(r, serial++))}
                     <tr className="sp-subtotal">
-                      <td colSpan={6} className="r">Sub-total</td>
+                      <td colSpan={7} className="r">Sub-total</td>
                       <TotalCells t={g.totals} />
                     </tr>
                   </React.Fragment>
                 ))
               : rows.map((r, i) => detailRow(r, i))}
             <tr className="sp-total">
-              <td colSpan={6} className="r">GRAND TOTAL ({totals.count} statement{totals.count === 1 ? "" : "s"})</td>
+              <td colSpan={7} className="r">GRAND TOTAL ({totals.count} statement{totals.count === 1 ? "" : "s"})</td>
               <TotalCells t={totals} />
             </tr>
           </tbody>
