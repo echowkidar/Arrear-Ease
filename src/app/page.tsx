@@ -4026,7 +4026,7 @@ export default function Home() {
                                     <span>Less: Total Recovery</span>
                                     <span className="font-semibold">(−) {fmtRs(recoveryTotal)}</span>
                                   </div>
-                                  <div className="flex justify-between pt-1 mt-0.5 border-t border-black dark:border-slate-400 print:border-black font-bold">
+                                  <div className="flex justify-between pt-1 mt-0.5 net-rule font-bold">
                                     <span>{netAmount > 0 ? 'Net Arrear' : netAmount < 0 ? 'Net Recovery' : 'Net Amount'}</span>
                                     <span>{fmtRs(Math.abs(netAmount))}</span>
                                   </div>

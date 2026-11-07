@@ -64,6 +64,10 @@
   margin: 0;
 }
 
+.net-rule {
+  border-top: 1px solid currentColor;
+}
+
 .hide-arrows {
   -moz-appearance: textfield;
 }
@@ -272,6 +276,11 @@
 
   .printable-area .signature-section * {
     color: #000000 !important;
+  }
+
+  .printable-area .net-rule {
+    border-top: 0.75px solid #000000 !important;
+    padding-top: 2px !important;
   }
 
   .printable-area .print-disclaimer {
