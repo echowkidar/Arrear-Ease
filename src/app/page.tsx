@@ -3976,31 +3976,86 @@ export default function Home() {
                           for (let i = 0; i < entries.length; i += 3) {
                             chunkedRows.push(entries.slice(i, i + 3));
                           }
+                          // Month-wise split: positive differences are arrear, negative are recovery
+                          let arrearTotal = 0, recoveryTotal = 0, arrearMonths = 0, recoveryMonths = 0;
+                          statement.rows.forEach(row => {
+                            if (row.difference > 0) { arrearTotal += row.difference; arrearMonths++; }
+                            else if (row.difference < 0) { recoveryTotal += Math.abs(row.difference); recoveryMonths++; }
+                          });
+                          const netAmount = arrearTotal - recoveryTotal;
+                          const fmtRs = (n: number) => `Rs. ${n.toLocaleString('en-IN')}/-`;
+                          const monthLabel = (n: number) => `${n} month${n === 1 ? '' : 's'}`;
+                          const headCls = "font-bold border-r border-black text-center py-1 h-8 text-slate-700 dark:text-slate-200 print:text-black";
+                          const fyValCls = (v: number | undefined) =>
+                            `text-right py-1 h-8 pr-4 font-semibold tabular-nums ${v !== undefined && v < 0 ? 'text-rose-600 dark:text-rose-400' : ''} print:text-black`;
                           return (
+                            <>
                             <Table className="border border-black text-xs min-w-full">
                               <TableHeader>
                                 <TableRow className="bg-muted/50 border-b border-black">
-                                  <TableHead className="font-bold border-r border-black text-center py-1 h-8 text-black print:text-black">Financial Year</TableHead>
-                                  <TableHead className="font-bold border-r border-black text-center py-1 h-8 text-black print:text-black">Difference</TableHead>
-                                  <TableHead className="font-bold border-r border-black text-center py-1 h-8 text-black print:text-black">Financial Year</TableHead>
-                                  <TableHead className="font-bold border-r border-black text-center py-1 h-8 text-black print:text-black">Difference</TableHead>
-                                  <TableHead className="font-bold border-r border-black text-center py-1 h-8 text-black print:text-black">Financial Year</TableHead>
-                                  <TableHead className="font-bold text-center py-1 h-8 text-black print:text-black">Difference</TableHead>
+                                  <TableHead className={headCls}>Financial Year</TableHead>
+                                  <TableHead className={headCls}>Difference</TableHead>
+                                  <TableHead className={headCls}>Financial Year</TableHead>
+                                  <TableHead className={headCls}>Difference</TableHead>
+                                  <TableHead className={headCls}>Financial Year</TableHead>
+                                  <TableHead className={`${headCls} border-r-0`}>Difference</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
                                 {chunkedRows.map((row, idx) => (
                                   <TableRow key={idx} className="border-b border-black hover:bg-transparent">
                                     <TableCell className="border-r border-black text-center py-1 h-8">{row[0] ? `FY ${row[0][0]}` : ''}</TableCell>
-                                    <TableCell className="border-r border-black text-right py-1 h-8 pr-4 font-semibold">{row[0] ? Number(row[0][1]).toLocaleString('en-IN') : ''}</TableCell>
+                                    <TableCell className={`border-r border-black ${fyValCls(row[0]?.[1])}`}>{row[0] ? Number(row[0][1]).toLocaleString('en-IN') : ''}</TableCell>
                                     <TableCell className="border-r border-black text-center py-1 h-8">{row[1] ? `FY ${row[1][0]}` : ''}</TableCell>
-                                    <TableCell className="border-r border-black text-right py-1 h-8 pr-4 font-semibold">{row[1] ? Number(row[1][1]).toLocaleString('en-IN') : ''}</TableCell>
+                                    <TableCell className={`border-r border-black ${fyValCls(row[1]?.[1])}`}>{row[1] ? Number(row[1][1]).toLocaleString('en-IN') : ''}</TableCell>
                                     <TableCell className="border-r border-black text-center py-1 h-8">{row[2] ? `FY ${row[2][0]}` : ''}</TableCell>
-                                    <TableCell className="text-right py-1 h-8 pr-4 font-semibold">{row[2] ? Number(row[2][1]).toLocaleString('en-IN') : ''}</TableCell>
+                                    <TableCell className={fyValCls(row[2]?.[1])}>{row[2] ? Number(row[2][1]).toLocaleString('en-IN') : ''}</TableCell>
                                   </TableRow>
                                 ))}
                               </TableBody>
                             </Table>
+
+                            {/* Arrear / Recovery abstract — only when some month has a negative difference */}
+                            {recoveryMonths > 0 && (
+                              <div className="mt-4 print:mt-3 flex justify-end break-inside-avoid">
+                                <div className="w-full sm:w-[440px] print:w-[340px]">
+                                  <div className="font-bold mb-1.5 text-[11px] uppercase tracking-wide text-slate-600 dark:text-slate-300 print:text-black print:normal-case print:tracking-normal print:text-xs">
+                                    Abstract of Arrear &amp; Recovery
+                                  </div>
+                                  <table className="w-full border border-black border-collapse text-xs">
+                                    <tbody>
+                                      <tr className="border-b border-black">
+                                        <td className="px-3 py-1.5">
+                                          <div className="font-semibold">Total Arrear</div>
+                                          <div className="text-[10px] text-muted-foreground print:text-black">Due &gt; Drawn · {monthLabel(arrearMonths)}</div>
+                                        </td>
+                                        <td className="px-3 py-1.5 text-right font-semibold tabular-nums whitespace-nowrap border-l border-black text-emerald-700 dark:text-emerald-400 print:text-black">
+                                          {fmtRs(arrearTotal)}
+                                        </td>
+                                      </tr>
+                                      <tr className="border-b border-black">
+                                        <td className="px-3 py-1.5">
+                                          <div className="font-semibold">Less: Total Recovery</div>
+                                          <div className="text-[10px] text-muted-foreground print:text-black">Drawn &gt; Due · {monthLabel(recoveryMonths)}</div>
+                                        </td>
+                                        <td className="px-3 py-1.5 text-right font-semibold tabular-nums whitespace-nowrap border-l border-black text-rose-600 dark:text-rose-400 print:text-black">
+                                          (−) {fmtRs(recoveryTotal)}
+                                        </td>
+                                      </tr>
+                                      <tr className="bg-slate-100 dark:bg-slate-800/80 print:bg-transparent">
+                                        <td className="px-3 py-2 font-bold text-[13px] print:text-xs">
+                                          {netAmount > 0 ? 'Net Arrear Payable' : netAmount < 0 ? 'Net Recovery' : 'Net Amount'}
+                                        </td>
+                                        <td className={`px-3 py-2 text-right font-bold text-[13px] print:text-xs tabular-nums whitespace-nowrap border-l border-black ${netAmount < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-700 dark:text-emerald-400'} print:text-black`}>
+                                          {fmtRs(Math.abs(netAmount))}
+                                        </td>
+                                      </tr>
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            )}
+                            </>
                           );
                         })()}
                       </div>
