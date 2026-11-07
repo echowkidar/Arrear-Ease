@@ -3977,14 +3977,13 @@ export default function Home() {
                             chunkedRows.push(entries.slice(i, i + 3));
                           }
                           // Month-wise split: positive differences are arrear, negative are recovery
-                          let arrearTotal = 0, recoveryTotal = 0, arrearMonths = 0, recoveryMonths = 0;
+                          let arrearTotal = 0, recoveryTotal = 0;
                           statement.rows.forEach(row => {
-                            if (row.difference > 0) { arrearTotal += row.difference; arrearMonths++; }
-                            else if (row.difference < 0) { recoveryTotal += Math.abs(row.difference); recoveryMonths++; }
+                            if (row.difference > 0) arrearTotal += row.difference;
+                            else if (row.difference < 0) recoveryTotal += Math.abs(row.difference);
                           });
                           const netAmount = arrearTotal - recoveryTotal;
                           const fmtRs = (n: number) => `Rs. ${n.toLocaleString('en-IN')}/-`;
-                          const monthLabel = (n: number) => `${n} month${n === 1 ? '' : 's'}`;
                           const headCls = "font-bold border-r border-black text-center py-1 h-8 text-slate-700 dark:text-slate-200 print:text-black";
                           const fyValCls = (v: number | undefined) =>
                             `text-right py-1 h-8 pr-4 font-semibold tabular-nums ${v !== undefined && v < 0 ? 'text-rose-600 dark:text-rose-400' : ''} print:text-black`;
@@ -4016,42 +4015,21 @@ export default function Home() {
                             </Table>
 
                             {/* Arrear / Recovery abstract — only when some month has a negative difference */}
-                            {recoveryMonths > 0 && (
-                              <div className="mt-4 print:mt-3 flex justify-end break-inside-avoid">
-                                <div className="w-full sm:w-[440px] print:w-[340px]">
-                                  <div className="font-bold mb-1.5 text-[11px] uppercase tracking-wide text-slate-600 dark:text-slate-300 print:text-black print:normal-case print:tracking-normal print:text-xs">
-                                    Abstract of Arrear &amp; Recovery
+                            {recoveryTotal > 0 && (
+                              <div className="mt-3 flex justify-end break-inside-avoid">
+                                <div className="w-64 text-xs tabular-nums">
+                                  <div className="flex justify-between py-0.5">
+                                    <span>Total Arrear</span>
+                                    <span className="font-semibold">{fmtRs(arrearTotal)}</span>
                                   </div>
-                                  <table className="w-full border border-black border-collapse text-xs">
-                                    <tbody>
-                                      <tr className="border-b border-black">
-                                        <td className="px-3 py-1.5">
-                                          <div className="font-semibold">Total Arrear</div>
-                                          <div className="text-[10px] text-muted-foreground print:text-black">Due &gt; Drawn · {monthLabel(arrearMonths)}</div>
-                                        </td>
-                                        <td className="px-3 py-1.5 text-right font-semibold tabular-nums whitespace-nowrap border-l border-black text-emerald-700 dark:text-emerald-400 print:text-black">
-                                          {fmtRs(arrearTotal)}
-                                        </td>
-                                      </tr>
-                                      <tr className="border-b border-black">
-                                        <td className="px-3 py-1.5">
-                                          <div className="font-semibold">Less: Total Recovery</div>
-                                          <div className="text-[10px] text-muted-foreground print:text-black">Drawn &gt; Due · {monthLabel(recoveryMonths)}</div>
-                                        </td>
-                                        <td className="px-3 py-1.5 text-right font-semibold tabular-nums whitespace-nowrap border-l border-black text-rose-600 dark:text-rose-400 print:text-black">
-                                          (−) {fmtRs(recoveryTotal)}
-                                        </td>
-                                      </tr>
-                                      <tr className="bg-slate-100 dark:bg-slate-800/80 print:bg-transparent">
-                                        <td className="px-3 py-2 font-bold text-[13px] print:text-xs">
-                                          {netAmount > 0 ? 'Net Arrear Payable' : netAmount < 0 ? 'Net Recovery' : 'Net Amount'}
-                                        </td>
-                                        <td className={`px-3 py-2 text-right font-bold text-[13px] print:text-xs tabular-nums whitespace-nowrap border-l border-black ${netAmount < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-700 dark:text-emerald-400'} print:text-black`}>
-                                          {fmtRs(Math.abs(netAmount))}
-                                        </td>
-                                      </tr>
-                                    </tbody>
-                                  </table>
+                                  <div className="flex justify-between py-0.5">
+                                    <span>Less: Total Recovery</span>
+                                    <span className="font-semibold">(−) {fmtRs(recoveryTotal)}</span>
+                                  </div>
+                                  <div className="flex justify-between pt-1 mt-0.5 border-t border-black dark:border-slate-400 print:border-black font-bold">
+                                    <span>{netAmount > 0 ? 'Net Arrear' : netAmount < 0 ? 'Net Recovery' : 'Net Amount'}</span>
+                                    <span>{fmtRs(Math.abs(netAmount))}</span>
+                                  </div>
                                 </div>
                               </div>
                             )}
