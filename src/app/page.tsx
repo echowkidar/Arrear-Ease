@@ -2063,7 +2063,14 @@ export default function Home() {
         throw new Error("Please sign in to scan documents with AI.");
       }
       if (!response.ok) {
-        throw new Error("Failed to process document");
+        let errMsg = "Failed to process document";
+        try {
+          const errData = await response.json();
+          if (errData?.error) errMsg = errData.error;
+        } catch {
+          // ignore parsing error
+        }
+        throw new Error(errMsg);
       }
 
       const data = await response.json();
@@ -2088,12 +2095,12 @@ export default function Home() {
       setAiScannedData(preparedData);
       setIsAiModalOpen(true);
       
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
       toast({
         variant: "destructive",
         title: "Scan Failed",
-        description: "Could not extract data from the image.",
+        description: error?.message || "Could not extract data from the image.",
       });
     } finally {
       setIsScanning(false);

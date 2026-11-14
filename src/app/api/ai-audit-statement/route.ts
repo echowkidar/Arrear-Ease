@@ -398,10 +398,15 @@ AI Statement Audit Engine | Arrear Ease
         .trim();
     };
 
-    // 4. AI Model Deep Analysis with OLLAMA
+    // 4. AI Model Deep Analysis (Gemini / Ollama)
+    const geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
     const ollamaApiKey = process.env.OLLAMA_API_KEY;
     const ollamaUrl = process.env.OLLAMA_URL || (ollamaApiKey ? "https://ollama.com" : "http://127.0.0.1:11434");
-    const ollamaModel = process.env.OLLAMA_MODEL || "gemma4";
+    const configuredModel = process.env.OLLAMA_MODEL;
+    let ollamaModel = configuredModel || (ollamaApiKey ? "gemma4:31b" : "gemma4");
+    if (ollamaApiKey && ollamaModel === "gemma4") {
+      ollamaModel = "gemma4:31b";
+    }
 
     let aiAuditorComments = `Verified and audited in accordance with ${activeCpc} Central Pay Commission schedules. The arrear calculation for ${
       employeeInfo?.employeeName || employeeInfo?.name || "the employee"
@@ -411,7 +416,39 @@ AI Statement Audit Engine | Arrear Ease
       "en-IN"
     )} is mathematically sound. Basic Pay stages, annual increments, and allowance entitlements (DA, HRA, TA, NPA) conform strictly with statutory Department of Expenditure notifications and the recorded administrative remarks.`;
 
-    if (ollamaApiKey) {
+    if (geminiApiKey) {
+      try {
+        const geminiModel = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiApiKey}`;
+
+        const response = await fetch(geminiUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [{ text: fullPrompt }],
+              },
+            ],
+          }),
+        });
+
+        if (response.ok) {
+          const aiData = await response.json();
+          const candidateText = aiData.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (candidateText) {
+            aiAuditorComments = sanitizeAiComments(candidateText);
+          }
+        } else {
+          const errText = await response.text();
+          console.warn("Gemini API warning:", response.status, errText);
+        }
+      } catch (aiErr) {
+        console.warn("Gemini generation note (using comprehensive rule-based comments):", aiErr);
+      }
+    } else if (ollamaApiKey) {
       try {
         const response = await fetch(`${ollamaUrl}/api/generate`, {
           method: "POST",

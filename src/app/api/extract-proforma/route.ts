@@ -23,10 +23,16 @@ export async function POST(req: NextRequest) {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
     const base64Image = buffer.toString("base64");
+    const mimeType = file.type || "image/jpeg";
 
+    const geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
     const ollamaApiKey = process.env.OLLAMA_API_KEY;
     const ollamaUrl = process.env.OLLAMA_URL || (ollamaApiKey ? "https://ollama.com" : "http://127.0.0.1:11434");
-    const ollamaModel = process.env.OLLAMA_MODEL || "llama3.2-vision";
+    const configuredModel = process.env.OLLAMA_MODEL;
+    let ollamaModel = configuredModel || (ollamaApiKey ? "gemma4:31b" : "llama3.2-vision");
+    if (ollamaApiKey && ollamaModel === "gemma4") {
+      ollamaModel = "gemma4:31b";
+    }
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -96,34 +102,84 @@ Use the image to extract:
 Return ONLY the raw JSON object, without any markdown formatting, backticks, or extra text.
 `;
 
-    const response = await fetch(`${ollamaUrl}/api/generate`, {
-      method: "POST",
-      headers: headers,
-      body: JSON.stringify({
-        model: ollamaModel,
-        prompt: prompt,
-        images: [base64Image],
-        format: "json",
-        stream: false,
-      }),
-    });
+    let rawJsonResponseText = "";
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("Ollama API Error:", errText);
-      return NextResponse.json(
-        { error: `Ollama API Error: ${response.status} ${response.statusText}` },
-        { status: response.status }
-      );
+    if (geminiApiKey) {
+      const geminiModel = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiApiKey}`;
+
+      const response = await fetch(geminiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { text: prompt },
+                {
+                  inlineData: {
+                    mimeType: mimeType,
+                    data: base64Image,
+                  },
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            responseMimeType: "application/json",
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error("Gemini API Error:", errText);
+        return NextResponse.json(
+          { error: `Google Gemini API error (${response.status}): ${response.statusText}${errText ? ` - ${errText}` : ""}` },
+          { status: response.status }
+        );
+      }
+
+      const data = await response.json();
+      rawJsonResponseText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    } else {
+      const response = await fetch(`${ollamaUrl}/api/generate`, {
+        method: "POST",
+        headers: headers,
+        body: JSON.stringify({
+          model: ollamaModel,
+          prompt: prompt,
+          images: [base64Image],
+          format: "json",
+          stream: false,
+        }),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error("Ollama API Error:", errText);
+        if (response.status === 402) {
+          return NextResponse.json(
+            { error: "AI service quota exhausted (402 Payment Required). Please recharge credits on your Ollama account." },
+            { status: 402 }
+          );
+        }
+        return NextResponse.json(
+          { error: `AI service error (${response.status}): ${response.statusText}${errText ? ` - ${errText}` : ""}` },
+          { status: response.status }
+        );
+      }
+
+      const data = await response.json();
+      rawJsonResponseText = data.response;
     }
 
-    const data = await response.json();
     let jsonResponse;
     try {
-      jsonResponse = JSON.parse(data.response);
+      jsonResponse = JSON.parse(rawJsonResponseText);
     } catch (e) {
-      console.error("Failed to parse JSON from Ollama:", data.response);
-      return NextResponse.json({ error: "Failed to parse Ollama response as JSON" }, { status: 500 });
+      console.error("Failed to parse JSON from AI response:", rawJsonResponseText);
+      return NextResponse.json({ error: "Failed to parse AI response as JSON" }, { status: 500 });
     }
 
     // Fix day/month swaps and drop a re-fixed pay that is not really in the document
