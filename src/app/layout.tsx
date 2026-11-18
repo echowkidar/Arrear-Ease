@@ -1,4 +1,4 @@
-import type {Metadata} from 'next';
+import type {Metadata, Viewport} from 'next';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster"
 import { RatesProvider } from '@/context/rates-context';
@@ -6,10 +6,21 @@ import { ThemeProvider } from '@/components/theme-provider';
 import { PrintLightTheme } from '@/components/print-light-theme';
 import { AuthProvider } from '@/context/auth-context';
 import { SubscriptionProvider } from '@/context/subscription-context';
+import { PwaShell } from '@/components/pwa-shell';
 
 export const metadata: Metadata = {
   title: 'Arrear Ease: Salary Arrear Calculator',
   description: 'Easily calculate salary arrears with month-wise breakdowns, pay fixation, and dynamic allowance rates.',
+  applicationName: 'Arrear Ease',
+  appleWebApp: { capable: true, title: 'Arrear Ease', statusBarStyle: 'default' },
+  icons: { apple: '/icons/apple-touch-icon.png' },
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#f8fafc' },
+    { media: '(prefers-color-scheme: dark)', color: '#020817' },
+  ],
 };
 
 export default function RootLayout({
@@ -21,7 +32,6 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         <link rel="icon" href="/favicon.ico" />
-        <meta name="theme-color" content="#ffffff" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=PT+Sans:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet" />
@@ -42,6 +52,7 @@ export default function RootLayout({
           </AuthProvider>
           <Toaster />
           <PrintLightTheme />
+          <PwaShell />
         </ThemeProvider>
       </body>
     </html>

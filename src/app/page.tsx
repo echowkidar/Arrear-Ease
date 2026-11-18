@@ -18,6 +18,7 @@ import { AppointedAsEditor } from "@/components/appointed-as-editor";
 import { deleteAllPayFixations, reassignPayFixations } from "@/lib/pay-fixation-data";
 import { AIAuditReportModal, AIAuditResult } from "@/components/ai-audit-report-modal";
 import { useSubscription } from "@/context/subscription-context";
+import { useInstallPrompt } from "@/hooks/use-install-prompt";
 import {
   User,
   Building,
@@ -606,6 +607,7 @@ export default function Home() {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const { user, authStatus, loading, logout, openAuthModal } = useAuth();
+  const { canPrompt: canInstall, showIosHint, install: installApp } = useInstallPrompt();
   const { toast } = useToast();
   const { daRates, hraRates, npaRates, taRates, da6thRates, sixthCpcConfig, da5thRates, fifthCpcConfig, setFifthCpcConfig } = useRates();
   const { hasCredits, isUnlimited, credits } = useSubscription();
@@ -3020,6 +3022,17 @@ export default function Home() {
                     <Sparkles className="mr-2 h-4 w-4 text-amber-500" />
                     <span>Upgrade / Buy AI Credits</span>
                   </DropdownMenuItem>
+                  {canInstall && (
+                    <DropdownMenuItem onClick={() => installApp()} className="cursor-pointer text-xs">
+                      <Download className="mr-2 h-4 w-4" />
+                      <span>Install app</span>
+                    </DropdownMenuItem>
+                  )}
+                  {showIosHint && (
+                    <p className="px-2 py-1.5 text-[11px] text-muted-foreground">
+                      Install app: tap Share, then Add to Home Screen.
+                    </p>
+                  )}
                   <DropdownMenuItem onClick={logout} className="cursor-pointer text-xs text-red-600">
                     <LogOut className="mr-2 h-4 w-4" />
                     <span>Log out</span>
